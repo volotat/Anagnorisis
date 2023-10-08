@@ -1,0 +1,306 @@
+{% extends "base.html"%}
+{% block content %}
+  <script type="text/javascript">
+    let audioPlayer = null;
+
+    $(document).ready(function() {
+      /*var $audio = $('#my_audio');
+      $('input').on('change', function(e) {
+        console.log('adsda')
+        var target = e.currentTarget;
+        var file = target.files[0];
+        var reader = new FileReader();
+        
+        console.log($audio[0]);
+        if (target.files && file) {
+              var reader = new FileReader();
+              reader.onload = function (e) {
+                  $audio.attr('src', e.target.result);
+                  $audio.play();
+              }
+              reader.readAsDataURL(file);
+          }
+      });*/
+
+
+      // Get the audio element
+      audioPlayer = document.getElementById('my_audio');
+
+      // Request next song if the previous has ended
+      audioPlayer.onended = function() {
+        socket.emit('emit_music_page_get_next_song');
+      };
+
+      audioPlayer.addEventListener("timeupdate", function() {
+        var currentTime = audioPlayer.currentTime;
+        var duration = audioPlayer.duration;
+        //$('.hp_range').stop(true,true).animate({'width':(currentTime +.25)/duration*100+'%'},250,'linear');
+
+        if (duration>0)
+          $("#song_progress").val((currentTime +.25)/duration*100)
+        else
+          $("#song_progress").val(0)
+      });
+
+      $("#prev_btn").click(()=>{ });
+      $("#play_btn").click(()=>{
+        if (audioPlayer.paused)
+          audioPlayer.play();
+        else
+          audioPlayer.pause();
+      });
+      $("#next_btn").click(()=>{
+        socket.emit('emit_music_page_get_next_song');
+      });
+
+      /*$(window).on( "keyup", function(event) {
+        //event.preventDefault();
+        console.log(event)
+        if (event.code == "MediaTrackNext") {
+          socket.emit('emit_music_page_get_next_song');
+        }
+        });
+      */
+
+      if ('mediaSession' in navigator) {
+      //setting the metadata
+        navigator.mediaSession.metadata = new MediaMetadata({
+          title: 'Unforgettable',
+          artist: 'Nat King Cole',
+          album: 'The Ultimate Collection (Remastered)',
+          artwork: [
+            { src: 'https://dummyimage.com/96x96',   sizes: '96x96',   type: 'image/png' },
+            { src: 'https://dummyimage.com/128x128', sizes: '128x128', type: 'image/png' },
+            { src: 'https://dummyimage.com/192x192', sizes: '192x192', type: 'image/png' },
+            { src: 'https://dummyimage.com/256x256', sizes: '256x256', type: 'image/png' },
+            { src: 'https://dummyimage.com/384x384', sizes: '384x384', type: 'image/png' },
+            { src: 'https://dummyimage.com/512x512', sizes: '512x512', type: 'image/png' },
+          ]
+        });
+
+        navigator.mediaSession.setActionHandler('play', function() { 
+          audioPlayer.play()
+        });
+        navigator.mediaSession.setActionHandler('pause', function() { 
+          audioPlayer.pause()
+        });
+        navigator.mediaSession.setActionHandler('stop', function() { 
+          audioPlayer.stop()
+        });
+        navigator.mediaSession.setActionHandler('seekbackward', function() {  });
+        navigator.mediaSession.setActionHandler('seekforward', function() {  });
+        navigator.mediaSession.setActionHandler('seekto', function() {  });
+        navigator.mediaSession.setActionHandler('previoustrack', function() { 
+          console.log('previoustrack')
+        });
+        navigator.mediaSession.setActionHandler('nexttrack', function() { 
+          socket.emit('emit_music_page_get_next_song');
+        });
+        //navigator.mediaSession.setActionHandler('skipad', function() {  });
+      }
+      
+
+      // Read next song data and play it
+      socket.on('emit_music_page_send_next_song', (audio_element) => {
+        let file_path = audio_element['url_path']
+        let hash = audio_element['hash'];
+
+        /*$("table tr.is-selected").removeClass("is-selected has-background-link-dark");
+        $(`#play_${hash}`).addClass("is-selected has-background-link-dark")
+        console.log(file_path)
+        //audioPlayer.pause();
+
+        $("#song_label").text(`${audio_element['artist']} - ${audio_element['title']} | ${audio_element['album']}`)
+
+        show_song_rating(4)
+        
+        audioPlayer.setAttribute('src', file_path);
+        audioPlayer.currentTime = 0;
+        audioPlayer.play();*/
+        play_song(file_path, hash, audio_element)
+      })
+
+      // Request user's music list from the server
+      socket.emit('emit_music_page_get_music_list');
+
+      // Handle incoming audio data
+      socket.on('emit_music_page_send_music_list', (audioData) => {
+        console.log(audioData)
+        audioData.forEach((audio_element, ind) => {
+          let file_path = audio_element['url_path']
+          let hash = audio_element['hash'];
+          let short_hash = hash.slice(0, 4) + "..." + hash.slice(-4);
+
+          let artist = audio_element['artist'];
+          let title = audio_element['title'];
+          let album = audio_element['album'];
+          let track_num = audio_element['track_num'];
+          let genre = audio_element['genre'];
+          let duration = audio_element['duration'];
+          let date = audio_element['date'];
+          let bitrate = audio_element['bitrate'];
+          let user_rating = parseInt(audio_element['user_rating']) || 0;
+
+          $('#music_list_table tbody').append(`<tr class="is-clickable" id="play_${hash}">
+            <td>${ind + 1}</td>
+            <td>${short_hash}</td>
+            <td>${artist}</td>
+            <td>${title}</td>
+            <td>${album}</td>
+            <td>${track_num}</td>
+            <td>${genre}</td>
+            <td>${duration}</td>
+            <td>${date}</td>
+            <td>${bitrate}</td>
+            <td id="play_table_user_rating_${hash}">${createStarString(user_rating)}</td>
+          </tr>`);
+
+          $(`#play_${hash}`).click(()=>{ 
+            play_song(file_path, hash, audio_element)
+          });
+        });
+      });
+
+      $('#update_music_library').click(()=>{ 
+        socket.emit('emit_music_page_refresh_music_library');
+      })
+
+      $( "#song_rating" ).mouseleave(function() {
+        show_song_rating(cur_song_score)
+      });
+    });
+
+    function createStarString(N) {
+      const blackStars = '★'.repeat(N);
+      const whiteStars = '☆'.repeat(10 - N);
+      return blackStars + whiteStars;
+    }
+
+    let cur_song_score = 0;
+    let cur_song_hash = null;
+
+    function play_song(file_path, hash, audio_element){
+      $("table tr.is-selected").removeClass("is-selected has-background-link-dark");
+      $(`#play_${hash}`).addClass("is-selected has-background-link-dark")
+      console.log(file_path)
+      //audioPlayer.pause();
+
+      $("#song_label").text(`${audio_element['artist']} - ${audio_element['title']} | ${audio_element['album']}`)
+
+      show_song_rating(audio_element['user_rating'])
+      cur_song_hash = hash
+
+      audioPlayer.setAttribute('src', file_path);
+      audioPlayer.currentTime = 0;
+      audioPlayer.play();
+
+      document.querySelector(`#play_${hash}`).scrollIntoView({
+        behavior: 'smooth'
+      });
+    }
+
+    let show_song_rating_timeout = null;
+    function show_song_rating(score, on_hover = false){
+      //console.log(score)
+      if (!on_hover) cur_song_score = score;
+
+      $('#song_rating').text('')
+      let symbol = on_hover ? '•' : '◦';
+      $('#song_rating').append(`<span class="is-clickable" onmouseover="show_song_rating(0, true)" onmouseup="set_song_rating(0)">${symbol}</span>`)
+      for (let i = 1; i <= 10; i++) {
+        let symbol = score >= i ? '★' : '☆';
+        $('#song_rating').append(`<span class="is-clickable" onmouseover="show_song_rating(${i}, true)" onmouseup="set_song_rating(${i})">${symbol}</span>`)
+      }
+
+      delete(show_song_rating_timeout)
+      show_song_rating_timeout = setTimeout(() => {
+        show_song_rating(cur_song_score)
+      }, 500);
+    }
+
+    function set_song_rating(score){
+      console.log('set_song_rating', score)
+      cur_song_score = score;
+      show_song_rating(score)
+      $(`#play_table_user_rating_${cur_song_hash}`).text(createStarString(score));
+
+      socket.emit('emit_music_page_set_song_rating', {"hash": cur_song_hash, "score": score});
+    }
+  </script>  
+
+  <nav class="navbar level is-mobile is-fixed-bottom m-0 p-4 is-light">
+    <div class="level-left has-text-centered">
+      <div class="tags tags has-addons are-large">
+        <span class="mr-4">
+          <figure class="image is-128x128">
+            <img src="https://bulma.io/images/placeholders/128x128.png">
+          </figure>
+        </span>
+        <a class="tag button is-size-4" id="prev_btn">
+          <i class="fas fa-backward-fast"></i>
+        </a>
+        <a class="tag button is-size-4" id="play_btn"> 
+          <i class="fas fa-solid fa-play"></i>
+        </a>
+        <a class="tag button is-size-4 mr-4" id="next_btn">
+          <i class="fas fa-forward-fast"></i>
+        </a>
+      </div>
+    </div>
+    <div class="level-item has-text-centered">
+      <div style="width:100%">
+        <span class="tag is-size-5 mb-6" id="song_label"></span>
+        <progress class="progress" value="0" max="100" id="song_progress"></progress>
+      </div>
+    </div>
+    <div class="level-right has-text-centered is-size-3" id="song_rating">
+      ◦☆☆☆☆☆☆☆☆☆☆
+    </div>
+  </nav>
+
+  <div class="block py-6 content" style="max-width:1800px; margin:0 auto 300px auto; text-align: justify;">
+    <div class="is-flex mx-4 mb-4">
+      <div class="buttons my-0 is-flex-grow-1">
+        <button class="button is-link is-fullwidth m-0" id="update_music_library">Update music library</button>
+      </div>
+      <span class="icon is-large">
+        <i class="fas fa-2x fa-circle-check" id="update_music_library_status"></i>
+      </span>
+    </div>
+    <table class="table is-hoverable is-bordered" id="music_list_table">
+      <thead>
+        <tr>
+          <th style="width:4em">Index</th>
+          <th style="width:6em"><abbr title="Audio data hash">Hash</abbr></th>
+          <th style="width:10%">Artist</th>
+          <th>Title</th>
+          <th>Album</th>
+          <th style="width:4em"><abbr title="Track number">Track Num</abbr></th>
+          <th style="width:14em">Genre</th>
+          <th>Duration</th>
+          <th>Date</th>
+          <th style="width:6em">Bitrate</th>
+          <th style="width:10em">User rating</th>
+        </tr>
+      </thead>
+      <!--<tfoot>
+        <tr>
+          <th><abbr title="Position">Pos</abbr></th>
+          <th>Team</th>
+          <th><abbr title="Played">Pld</abbr></th>
+          <th><abbr title="Won">W</abbr></th>
+          <th><abbr title="Drawn">D</abbr></th>
+          <th><abbr title="Lost">L</abbr></th>
+          <th><abbr title="Goals for">GF</abbr></th>
+          <th><abbr title="Goals against">GA</abbr></th>
+          <th><abbr title="Goal difference">GD</abbr></th>
+          <th><abbr title="Points">Pts</abbr></th>
+          <th>Qualification or relegation</th>
+        </tr>
+      </tfoot>-->
+      <tbody>
+      </tbody>
+    </table>
+  </div>
+
+{% endblock %}

@@ -1,0 +1,63 @@
+{% extends "base.html"%}
+{% block content %}
+  <script type="text/javascript">
+    function replaceSpecialSymbols(inputText) {
+      const replacedText = inputText
+        .replace(/\n/g, '<br>')   // Replace newline with <br> tag
+        .replace(/\t/g, '&nbsp;&nbsp;&nbsp;&nbsp;');  // Replace tab with 4 non-breaking spaces
+      return replacedText;
+    }
+
+    $("document").ready(function(){
+      //var socket = io.connect("http://localhost:5001")
+      socket.on('connect', function(data){
+        socket.send("User connected!")
+        socket.emit("chat_connect")
+      })
+
+      socket.on('emit_chat_messages', function(data){
+        console.log(data)
+        $("#chat_messages").html('')
+        data.forEach(function (message, index) {
+          $("#chat_messages").append(`<p><b>${message[0]}</b><br>${replaceSpecialSymbols(message[1])}</p>`)
+        })
+        //$("#chat_messages").append($('<p>').text(data))
+
+        var elem = document.getElementById('chat_messages');
+        elem.scrollTop = elem.scrollHeight;
+      })
+
+      $('#btn_send_message').on('click', function(){
+        socket.emit("emit_chat_message", {"message": $('#message').val()})
+        $('#message').val('')
+      })
+
+      $('#btn_clean_history').on('click', function(){
+        socket.emit("emit_clean_history")
+      })
+    })
+  </script>
+
+  <div class="block py-6" id="chat_container" style="width:1200px; margin:0 auto; text-align: justify;">
+    <div class="content" style="width:100%; height:800px; border: 3px solid grey; border-radius: 12px; overflow-y: scroll;" id="chat_messages">
+
+    </div>
+
+    <div class="field has-addons">
+      <div class="control is-expanded">
+        <textarea class="textarea" placeholder="Input your text" id="message"></textarea>
+      </div>
+      <div class="control">
+        <a class="button is-info" id="btn_send_message">
+          Say
+        </a>
+      </div>
+    </div>
+
+    </br>
+    <button class="button" id="btn_clean_history">Clean history</button>
+    <button class="button">Button</button>
+    <button class="button">Button</button>
+    <button class="button">Button</button>
+  </div>
+{% endblock %}

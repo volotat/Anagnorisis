@@ -1,0 +1,328 @@
+{% extends "base.html"%}
+{% block content %}
+  <script type="text/javascript">
+    function formatTimestamp(timestamp) {
+      const date = new Date(timestamp * 1000); // Convert seconds to milliseconds
+      
+      const options = {
+          weekday: 'long',
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric',
+          hour: 'numeric',
+          minute: 'numeric',
+          second: 'numeric',
+          //timeZoneName: 'short'
+      };
+      
+      const formattedDate = new Intl.DateTimeFormat('en-US', options).format(date);
+      return `${formattedDate}`;
+    }
+
+    function createStarString(N) {
+      const blackStars = '★'.repeat(N);
+      const whiteStars = '☆'.repeat(10 - N);
+      return blackStars + whiteStars;
+    }
+
+    function makeid(length) {
+      let result = '';
+      const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+      const charactersLength = characters.length;
+      let counter = 0;
+      while (counter < length) {
+        result += characters.charAt(Math.floor(Math.random() * charactersLength));
+        counter += 1;
+      }
+      return result;
+    }
+
+    //<li>${Name}</li>
+    let all_news_cards = []
+    function create_news_card(container, news_data, map, markers_layer) {
+      let card_id = 'news_' + makeid(8)
+      all_news_cards.push(card_id)
+
+      let news_text = replaceSpecialSymbols(news_data['text'])
+
+      let unixTimestamp = news_data['datetime'];
+      let formattedDateTime = formatTimestamp(unixTimestamp);
+
+      let coordinates = news_data['coordinates']
+      let importance = createStarString(news_data['importance'])
+      let source_link = `<a href="${news_data['link']}">${news_data['source']}</a>`
+
+      let marker = null
+
+      // Add marker to the map
+      if (coordinates[0] == null || coordinates[1] == null){
+        coordinates[0] = 0
+        coordinates[1] = 0 
+      }
+      
+      
+      var coordinatesWithRandom = coordinates.map(x => {return (parseFloat(x) + Math.random() * 0.01 - 0.005)});
+      console.log(coordinatesWithRandom)
+      marker = L.marker(coordinatesWithRandom).addTo(markers_layer)
+      marker.bindPopup(importance + '<br>' + news_data['title']);
+      marker.on('click', function(e) {
+        all_news_cards.forEach((card_id) => {
+          $(`#${card_id}_article`).removeClass('is-dark')
+        })
+
+        $(`#${card_id}`)[0].scrollIntoView({ behavior: 'smooth', block: 'center' })
+        $(`#${card_id}_article`).addClass('is-dark')
+      });
+      /*var LeafIcon = L.Icon.extend({
+          options: {
+            iconSize:     [38, 95],
+            shadowSize:   [50, 64],
+            iconAnchor:   [22, 94],
+            shadowAnchor: [4, 62],
+            popupAnchor:  [-3, -76]
+          }
+      });
+
+      var customIcon = new LeafIcon({
+        iconUrl: '../static/marker_icon.png',
+        //shadowUrl: 'http://leafletjs.com/examples/custom-icons/leaf-shadow.png'
+      })
+      var marker = L.marker(coordinates, {icon: customIcon}).addTo(map)
+
+      if (marker) {
+        var icon = marker.options.icon;
+        icon.options.iconSize = [10, 10].map(x => x * (1 + parseInt(news_data['importance']) / 3)); 
+        marker.setIcon(icon);
+      }*/
+      
+
+      let template = `<div class="card" id="${card_id}">
+        <!--<header class="card-header is-info">
+          <p class="card-header-title">
+            Component
+          </p>
+          <button class="card-header-icon" aria-label="more options">
+            <span class="icon">
+              <i class="fas fa-angle-down" aria-hidden="true"></i>
+            </span>
+          </button>
+        </header>
+        <div class="card-content">
+          
+        </div>
+        -->
+        
+        <article class="message mb-0 is-clickable" id="${card_id}_article">
+          <div class="message-body">
+            <p>Predicted importance: <span class="is-size-4 has-text-link">${importance}</span></p>
+            <p>Predicted GPS: ${coordinates[0]}, ${coordinates[1]}</p>
+            <p>Source: ${source_link} </p>
+            <p>Datetime: <time datetime="${unixTimestamp}">${formattedDateTime}</time> </p>
+            <br>
+            <div class="content">
+              <b>${news_data['title']}</b>
+              <br>
+              <span style="display: -webkit-box;
+                -webkit-line-clamp: 6;
+                -webkit-box-orient: vertical;
+                overflow: hidden;
+                text-overflow: ellipsis;">${news_text}</span>
+              <br>
+              <b>Summary:</b> ${news_data['summary']}
+            </div>
+          </div>
+        </article>
+        <footer class="card-footer">
+          <a href="#" class="card-footer-item" id="${card_id}_read_btn">Read more</a>
+        </footer>
+      </div>
+      <br>` 
+
+      container.append(template)
+
+      $(`#${card_id}_article`).click(()=>{ 
+        if (marker) marker.openPopup()
+        map.flyTo(new L.LatLng(coordinates[0], coordinates[1]), 12, {animate: true, duration: 0.4});
+
+        all_news_cards.forEach((card_id) => {
+          $(`#${card_id}_article`).removeClass('is-dark')
+        })
+        $(`#${card_id}_article`).addClass('is-dark')
+      }); 
+
+      $(`#${card_id}_read_btn`).click(()=>{ 
+        // Remove all markers from the markers_layer
+        markers_layer.clearLayers();
+        marker.addTo(markers_layer)
+
+
+        if (marker) marker.openPopup()
+        map.flyTo(new L.LatLng(coordinates[0], coordinates[1]), 12, {animate: true, duration: 0.4})
+        marker.dragging.enable()
+        marker.on('dragend', function(event){
+          var marker = event.target;
+          var position = marker.getLatLng();
+          $('#news_open_coords').val(`${position.lat.toFixed(6)}, ${position.lng.toFixed(6)}`)
+
+          //marker.setLatLng(new L.LatLng(position.lat, position.lng),{draggable:'true'});
+          //map.panTo(new L.LatLng(position.lat, position.lng))
+        });
+
+        $(`#news_open_modal`).addClass('is-active')
+
+        $('#news_open_content').html('')
+
+        let template = `<div class="card-content">
+          <p>Source: Meduza </p>
+          <p>Datetime: <time datetime="${unixTimestamp}">${formattedDateTime}</time> </p>
+          <br>
+          <div class="content" style="max-height: 800px; overflow-y: scroll;">
+            <b>${news_data['title']}</b>
+            <br><br>
+            ${news_text}
+          </div>
+          <b>Summary:</b> <textarea id="news_open_summary" class="textarea has-fixed-size" rows="3">${news_data['summary']}</textarea>
+          <p>Importance: <input id="news_open_importance" class="input ml-2" type="number" value="${news_data['importance']}" style="vertical-align: middle; width:auto" min="0" max="10"></p>
+          <p>GPS: <input id="news_open_coords" class="input ml-2" type="text" value="${coordinates[0]}, ${coordinates[1]}" style="vertical-align: middle; width:auto"></p>
+          <br>
+        </div>
+
+        <footer class="card-footer">
+          <a href="#" class="card-footer-item is-info" id="news_open_add_to_db">Add to DB</a>
+          <a href="#" class="card-footer-item" id="news_open_btn_close">Close</a>
+        </footer>`
+
+        $('#news_open_content').append(template)
+
+        $('#news_open_add_to_db').click(()=>{ 
+          let coordinates = $('#news_open_coords').val().split(', ');
+
+          let latitude = parseFloat(coordinates[0]);
+          let longitude = parseFloat(coordinates[1]);
+
+          news_data['coordinates'] = [latitude, longitude]
+          news_data['summary'] = $('#news_open_summary').val()
+          news_data['importance'] = parseInt($('#news_open_importance').val())
+          socket.emit('emit_news_page_add_news_to_db', news_data)
+
+          $(`#news_open_modal`).removeClass('is-active')
+          marker.dragging.disable()
+
+          socket.emit('emit_news_page_get_news')
+        });
+
+        $('#news_open_btn_close').click(()=>{ 
+          $(`#news_open_modal`).removeClass('is-active')
+          marker.dragging.disable()
+          socket.emit('emit_news_page_get_news')
+        });
+      }); 
+    }
+
+    //Your rating: <br> 
+    //<span class="is-size-3 has-text-link">☆☆☆☆☆☆☆☆☆☆</span>
+
+    function replaceSpecialSymbols(inputText) {
+      const replacedText = inputText
+        .replace(/\n/g, '<br>')   // Replace newline with <br> tag
+        .replace(/\t/g, '&nbsp;&nbsp;&nbsp;&nbsp;');  // Replace tab with 4 non-breaking spaces
+      return replacedText;
+    }
+
+    $("document").ready(function(){
+      window.map = L.map('map').setView([31.2034, 5.4492], 2);
+      let map = window.map
+      console.log(map)
+
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          maxZoom: 19,
+      //    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+      }).addTo(map);
+
+      var markers = L.markerClusterGroup({maxClusterRadius: 30});
+      //markers.addLayer(L.marker(getRandomLatLng(map)));
+      map.addLayer(markers);
+
+      //var marker = L.marker([51.5, -0.09]).addTo(map);
+      //marker.bindPopup('A popup!');
+
+      //socket = io.connect("http://localhost:5001")
+      socket.on('connect', function(data){
+        socket.emit('emit_news_page_get_news')
+      })
+
+      socket.on('emit_news_page_news_list', function(news_data){
+        console.log('emit_news_page_news_list', news_data)
+        news_data.sort( (news1, news2) => {
+          time_range_in_seconds = 604800 // one week in seconds
+          timestamp_now = Math.floor(Date.now() / 1000)
+          timestamp_one_range_before = timestamp_now - time_range_in_seconds
+          v1 = (news1['datetime'] - timestamp_one_range_before) / time_range_in_seconds * 0.7 + news1['importance'] / 10 * 0.3
+          v2 = (news2['datetime'] - timestamp_one_range_before) / time_range_in_seconds * 0.7 + news2['importance'] / 10 * 0.3
+
+          //v1 = news1['datetime'] 
+          //v2 = news2['datetime']
+
+          return v2 - v1
+        });
+        console.log(news_data)
+
+        $("#news_container").empty();
+        markers.clearLayers();
+
+        news_data.forEach(function (news, index) {
+          create_news_card($("#news_container"), news, map, markers)
+        })
+      })
+      
+      socket.on('emit_news_page_start_loading', function(){
+        console.log('emit_news_page_start_loading')
+        $('#news_loading_status').removeClass('fa-circle-check').addClass('fa-spinner fa-pulse')
+      })
+
+      socket.on('emit_news_page_stop_loading', function(){
+        console.log('emit_news_page_stop_loading')
+        $('#news_loading_status').removeClass('fa-spinner fa-pulse').addClass('fa-circle-check')
+      })
+
+      $('#refresh_news').click(()=>{ 
+        socket.emit('emit_news_page_refresh_news')
+      });
+    })
+
+    
+  </script>
+
+  <div id="map" style="width: calc(100vw - 820px); height: calc(100vh - 65px); display: inline-block; background-color: gray; vertical-align: top;"></div>
+  <div class="block pt-4" style="width:800px; height: calc(100vh - 60px); margin:0 auto; display: inline-block; position: relative;">
+    <div class="is-flex mx-4 mb-4">
+      <div class="buttons my-0 is-flex-grow-1">
+        <button class="button is-link is-fullwidth m-0" id="refresh_news">Refresh</button>
+      </div>
+      <span class="icon is-large">
+        <!--<i class="fas fa-2x fa-spinner fa-pulse"></i>-->
+        <i class="fas fa-2x fa-circle-check" id="news_loading_status"></i>
+      </span>
+    </div>
+    
+    <div class="block mb-0 px-4 has-text-justified" id="news_container" style=" height: calc(100% - 70px); overflow-y: scroll;">
+    </div>
+    <!--<div class="card" id="test">
+      <article class="message mb-0 is-clickable" id="test_article">
+        adsdsadadssdasdasda
+      </article>
+      <footer class="card-footer">
+        <a href="#" class="card-footer-item">Read more</a>
+      </footer>
+    </div>-->
+
+    <div class="modal" style="
+            position: absolute;
+            right: 0;
+            bottom: 0;" id="news_open_modal">
+      <div class="modal-background"></div>
+      <div class="card mx-4 my-4" id="news_open_content">
+      </div>
+    </div>
+  </div>
+{% endblock %}
