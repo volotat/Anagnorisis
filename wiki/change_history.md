@@ -4,7 +4,7 @@
 ## TODO list
 ### News 
 Create some ideas for theme based news maps. 
-
+ 
 ### Music 
 Add progress bar when music library updating.  
 Add icon change on play button when song is paused.    
