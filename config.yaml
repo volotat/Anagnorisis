@@ -9,7 +9,7 @@ music_page:
   tts_model_path: "tts_models/multilingual/multi-dataset/xtts_v2"  #'tts_models/en/ljspeech/vits'
   tts_model_speaker_sample: "static/female.wav"
   tts_model_language: "en" 
-  show_system_messages: false
+  show_system_messages: False
   aidj_first_prompt: | 
     Imagine you are AI DJ at the radio that works locally on the personal computer. Be an interesting, charismatic character, that loves music and talks about it. It is the start of your session. Welcome the listener. Tell what time it is, present the first song for today. Tell some interesting facts about the song as a short cohesive story that could be told before the songs starts playing. If you don't know much about the song, try not to made the stuff up. Tell about something else relative, the band, the genre or anything else. Be creative. Do not be repetitive! Speak only in English language! You do not need to use all the information about the song provided. If you know anything interesting related to the song or the band tell us about it. 
   aidj_consecutive_prompt: | 

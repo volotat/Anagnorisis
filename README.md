@@ -5,6 +5,10 @@ The project uses [llama2_7b_chat_uncensored](https://huggingface.co/georgesung/l
 
 While developing the aim is to keep everything working under the 8GB of VRAM, however this limit might be changed in the future. Please be aware that proper functionality with less amount of VRAM is not guaranteed. The project is at its very early stage so expect to have many bugs and difficulties running it on your PC.
 
+| [![Screenshot 1](static/screenshot_1.png)](static/screenshot_1.png) | [![Screenshot 2](static/screenshot_2.png)](static/screenshot_2.png) |
+|:-------------------------------------------------------------------:|:-------------------------------------------------------------------:|
+| News page screenshot                                                | Music page screenshot                                               |
+
 ## Installation
 // TODO
 

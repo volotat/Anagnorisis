@@ -31,6 +31,7 @@ Add an ability to load out models from the GPU by pressing the button.
 Move to single page architecture or find any other way to store the current state of the media player.  
 Add some sort of a control panel that is active on all pages (may be hidden) and shows current GPU memory load by the system and console output. 
 Add installation info to the readme.md file. 
+Add some way of displaying active page at the head menu.
 
 ## Versions History
 ### Version 0.0.2 (10.11.2023)
