@@ -26,6 +26,9 @@ class MusicLibrary(db.Model):
   bitrate = db.Column(db.String, nullable=True)
   lyrics = db.Column(db.String, nullable=True)
   user_rating = db.Column(db.Integer, nullable=True)
+  skip_score = db.Column(db.Integer, nullable=True, default=20, server_default='20')
+  full_play_count = db.Column(db.Integer, nullable=True, default=0, server_default='0')
+  skip_count = db.Column(db.Integer, nullable=True, default=0, server_default='0')
 
   def as_dict(self):
     return {column.name: getattr(self, column.name) for column in self.__table__.columns}

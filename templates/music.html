@@ -1,7 +1,27 @@
 {% extends "base.html"%}
 {% block content %}
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jsmediatags/3.9.5/jsmediatags.min.js" integrity="sha512-YsR46MmyChktsyMMou+Bs74oCa/CDdwft7rJ5wlnmDzMj1mzqncsfJamEEf99Nk7IB0JpTMo5hS8rxB49FUktQ==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
   <script type="text/javascript">
+    let DEFAULT_COVER_IMAGE = "https://bulma.io/images/placeholders/128x128.png";
     let audioPlayer = null;
+    let AIDJ_speaker = null;
+    let bg_audio = null;
+    let play_history = [];
+
+    function replaceSpecialSymbols(inputText) {
+      const replacedText = inputText
+        .replace(/\n/g, '<br>')   // Replace newline with <br> tag
+        .replace(/\t/g, '&nbsp;&nbsp;&nbsp;&nbsp;');  // Replace tab with 4 non-breaking spaces
+      return replacedText;
+    }
+
+    function sigmoid(x) {
+      return 1 / (1 + Math.exp(-x));
+    }
+
+    function getRandomInt(max) {
+    return Math.floor(Math.random() * max);
+  }
 
     $(document).ready(function() {
       /*var $audio = $('#my_audio');
@@ -25,10 +45,20 @@
 
       // Get the audio element
       audioPlayer = document.getElementById('my_audio');
+      AIDJ_speaker = document.getElementById('AIDJ_speaker');
+      bg_audio = document.getElementById('bg_audio');
+
+      bg_audio.setAttribute('src', `static/background-music/angelic-pad-loopwav-14643.mp3?=${getRandomInt(999999)}`);
+      bg_audio.loop=true;
+      bg_audio.volume = 0.3;
+      bg_audio.pause()
 
       // Request next song if the previous has ended
       audioPlayer.onended = function() {
-        socket.emit('emit_music_page_get_next_song');
+        socket.emit('emit_music_page_AIDJ_get_next_song', [cur_song_hash, +1]);
+        audioPlayer.pause();
+        bg_audio.currentTime = 0;
+        bg_audio.play()
       };
 
       audioPlayer.addEventListener("timeupdate", function() {
@@ -42,25 +72,35 @@
           $("#song_progress").val(0)
       });
 
-      $("#prev_btn").click(()=>{ });
-      $("#play_btn").click(()=>{
-        if (audioPlayer.paused)
-          audioPlayer.play();
-        else
-          audioPlayer.pause();
-      });
-      $("#next_btn").click(()=>{
-        socket.emit('emit_music_page_get_next_song');
+      // Add a click event listener to the progress bar
+      const progressBar = $("#song_progress");
+      progressBar.on("click", function (event) {
+        // Calculate the click position as a percentage of the total width
+        const clickX = event.clientX - progressBar.get(0).getBoundingClientRect().left;
+        const progressBarWidth = progressBar.get(0).clientWidth;
+        const clickPercentage = (clickX / progressBarWidth) * 100;
+
+        // Update the progress bar value
+        progressBar.val(clickPercentage);
+
+        // Update the audio player's playback position
+        const audioDuration = audioPlayer.duration;
+        const newPosition = (clickPercentage / 100) * audioDuration;
+        audioPlayer.currentTime = newPosition;
       });
 
-      /*$(window).on( "keyup", function(event) {
-        //event.preventDefault();
-        console.log(event)
-        if (event.code == "MediaTrackNext") {
-          socket.emit('emit_music_page_get_next_song');
-        }
-        });
-      */
+      $("#prev_btn").click(()=>{ 
+        play_previous_track();
+      });
+      $("#play_btn").click(()=>{
+        if (audioPlayer.paused)
+          audio_play_song()
+        else
+          audio_pause_song()
+      });
+      $("#next_btn").click(()=>{
+        play_next_track();
+      });
 
       if ('mediaSession' in navigator) {
       //setting the metadata
@@ -77,24 +117,24 @@
             { src: 'https://dummyimage.com/512x512', sizes: '512x512', type: 'image/png' },
           ]
         });
-
+        
         navigator.mediaSession.setActionHandler('play', function() { 
-          audioPlayer.play()
+          audio_play_song()
         });
         navigator.mediaSession.setActionHandler('pause', function() { 
-          audioPlayer.pause()
+          audio_pause_song()
         });
         navigator.mediaSession.setActionHandler('stop', function() { 
-          audioPlayer.stop()
+          audio_stop_song()
         });
         navigator.mediaSession.setActionHandler('seekbackward', function() {  });
         navigator.mediaSession.setActionHandler('seekforward', function() {  });
         navigator.mediaSession.setActionHandler('seekto', function() {  });
         navigator.mediaSession.setActionHandler('previoustrack', function() { 
-          console.log('previoustrack')
+          play_previous_track();
         });
         navigator.mediaSession.setActionHandler('nexttrack', function() { 
-          socket.emit('emit_music_page_get_next_song');
+          play_next_track();
         });
         //navigator.mediaSession.setActionHandler('skipad', function() {  });
       }
@@ -117,11 +157,17 @@
         audioPlayer.setAttribute('src', file_path);
         audioPlayer.currentTime = 0;
         audioPlayer.play();*/
-        play_song(file_path, hash, audio_element)
+        AIDJ_speaker.setAttribute('src', `static/tmp/AIDJ.wav?=${getRandomInt(999999)}`);
+        AIDJ_speaker.currentTime = 0;
+        AIDJ_speaker.play();
+        AIDJ_speaker.onended = function() {
+          play_song(file_path, hash, audio_element)
+        }
       })
 
+      
       // Request user's music list from the server
-      socket.emit('emit_music_page_get_music_list');
+      //socket.emit('emit_music_page_get_music_list');
 
       // Handle incoming audio data
       socket.on('emit_music_page_send_music_list', (audioData) => {
@@ -139,7 +185,8 @@
           let duration = audio_element['duration'];
           let date = audio_element['date'];
           let bitrate = audio_element['bitrate'];
-          let user_rating = parseInt(audio_element['user_rating']) || 0;
+          let user_rating = isNaN(parseInt(audio_element['user_rating'])) ? 'N/A' : parseInt(audio_element['user_rating']);
+          let skip_multiplier = sigmoid(audio_element['skip_score'] / 10)
 
           $('#music_list_table tbody').append(`<tr class="is-clickable" id="play_${hash}">
             <td>${ind + 1}</td>
@@ -153,6 +200,9 @@
             <td>${date}</td>
             <td>${bitrate}</td>
             <td id="play_table_user_rating_${hash}">${createStarString(user_rating)}</td>
+            <!--<td id="play_table_skip_multiplier_${hash}">${skip_multiplier.toFixed(2)}</td>-->
+            <td>${audio_element['full_play_count']}</td>
+            <td>${audio_element['skip_count']}</td>
           </tr>`);
 
           $(`#play_${hash}`).click(()=>{ 
@@ -170,7 +220,33 @@
       });
     });
 
+    socket.on('emit_music_page_AIDJ_append_messages', (messages) => {
+      messages.forEach((message, ind) => {
+        const image_url = message['image'] == null ? 'https://bulma.io/images/placeholders/96x96.png' : message['image']
+        $("#page_AI_DJ").append(
+          `<div class="card" ${message['hidden'] ? 'style="opacity: 30%; {{"" if cfg.music_page.show_system_messages else "display:none" }}"': ''}>
+            <div class="card-content media">
+              <figure class="media-left mb-0 ml-0 mr-5">
+                <p class="image is-96x96">
+                  <img src="${image_url}">
+                </p>
+              </figure>
+              <div class="media-content">
+                <div class="content">
+                  <p>
+                    <strong>${message['head']}</strong>
+                    <br>
+                    ${replaceSpecialSymbols(message['body'])}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>`)
+        })
+    });
+
     function createStarString(N) {
+      if (!Number.isInteger(N)) return N;
       const blackStars = '★'.repeat(N);
       const whiteStars = '☆'.repeat(10 - N);
       return blackStars + whiteStars;
@@ -179,7 +255,32 @@
     let cur_song_score = 0;
     let cur_song_hash = null;
 
+    function show_song_cover(url) {
+      window.jsmediatags.read("http://{{cfg.main.host}}:{{cfg.main.port}}/" + url, {
+        onSuccess: function(tag) {
+          var image = tag.tags.picture;
+          if (image) {
+            var base64String = "";
+            for (var i = 0; i < image.data.length; i++) {
+                base64String += String.fromCharCode(image.data[i]);
+            }
+            var base64 = "data:" + image.format + ";base64," +
+                    window.btoa(base64String);
+            document.getElementById('song_cover_image').setAttribute('src',base64);
+          } else {
+            document.getElementById('song_cover_image').setAttribute('src',DEFAULT_COVER_IMAGE);
+          }
+        },
+        onError: function(error) {
+          console.log(error);
+          document.getElementById('song_cover_image').setAttribute('src',DEFAULT_COVER_IMAGE);
+        }
+      });
+    }
+
     function play_song(file_path, hash, audio_element){
+      play_history.push([file_path, hash, audio_element])
+
       $("table tr.is-selected").removeClass("is-selected has-background-link-dark");
       $(`#play_${hash}`).addClass("is-selected has-background-link-dark")
       console.log(file_path)
@@ -187,16 +288,23 @@
 
       $("#song_label").text(`${audio_element['artist']} - ${audio_element['title']} | ${audio_element['album']}`)
 
-      show_song_rating(audio_element['user_rating'])
+      let user_rating = parseInt(audio_element['user_rating']) || 0;
+      show_song_rating(user_rating)
       cur_song_hash = hash
 
+      show_song_cover(file_path)
       audioPlayer.setAttribute('src', file_path);
       audioPlayer.currentTime = 0;
       audioPlayer.play();
 
+
+      bg_audio.pause()
+
       document.querySelector(`#play_${hash}`).scrollIntoView({
         behavior: 'smooth'
       });
+
+      audio_play_song();
     }
 
     let show_song_rating_timeout = null;
@@ -226,6 +334,49 @@
 
       socket.emit('emit_music_page_set_song_rating', {"hash": cur_song_hash, "score": score});
     }
+
+    // AUDIO CONTROL METHODS
+
+    function play_next_track(){
+      socket.emit('emit_music_page_AIDJ_get_next_song', [cur_song_hash, -1]);
+      audioPlayer.pause();
+      bg_audio.currentTime = 0;
+      bg_audio.play()
+    }
+
+    function play_previous_track(){
+      if (play_history.length>1)
+        play_history.pop()
+
+      if (play_history.length>0)
+        play_song(...play_history.pop())
+    }
+
+    function audio_play_song(){
+      if (audioPlayer.getAttribute("src") == null) {
+        socket.emit('emit_music_page_AIDJ_get_next_song', [])
+        audioPlayer.pause();
+        bg_audio.currentTime = 0;
+        bg_audio.play()
+      } else {
+        bg_audio.pause()
+        audioPlayer.play()
+
+        $("#play_btn").find('i').removeClass('fa-play');
+        $("#play_btn").find('i').addClass('fa-pause');
+      }
+    }
+
+    function audio_pause_song(){
+      audioPlayer.pause()
+
+      $("#play_btn").find('i').removeClass('fa-pause');
+      $("#play_btn").find('i').addClass('fa-play');
+    }
+
+    function audio_stop_song(){
+      audioPlayer.stop()
+    }
   </script>  
 
   <nav class="navbar level is-mobile is-fixed-bottom m-0 p-4 is-light">
@@ -233,7 +384,7 @@
       <div class="tags tags has-addons are-large">
         <span class="mr-4">
           <figure class="image is-128x128">
-            <img src="https://bulma.io/images/placeholders/128x128.png">
+            <img src="https://bulma.io/images/placeholders/128x128.png" id="song_cover_image">
           </figure>
         </span>
         <a class="tag button is-size-4" id="prev_btn">
@@ -257,50 +408,74 @@
       ◦☆☆☆☆☆☆☆☆☆☆
     </div>
   </nav>
-
+  
   <div class="block py-6 content" style="max-width:1800px; margin:0 auto 300px auto; text-align: justify;">
-    <div class="is-flex mx-4 mb-4">
-      <div class="buttons my-0 is-flex-grow-1">
-        <button class="button is-link is-fullwidth m-0" id="update_music_library">Update music library</button>
-      </div>
-      <span class="icon is-large">
-        <i class="fas fa-2x fa-circle-check" id="update_music_library_status"></i>
-      </span>
+    <div class="tabs is-centered">
+      <ul>
+        <li>
+          <a>
+            <span class="icon is-small"><i class="fas fa-image" aria-hidden="true"></i></span>
+            <span>Library</span>
+          </a>
+        </li>
+        <li class="is-active">
+          <a>
+            <span class="icon is-small"><i class="fas fa-music" aria-hidden="true"></i></span>
+            <span>AI DJ</span>
+          </a>
+        </li>
+      </ul>
     </div>
-    <table class="table is-hoverable is-bordered" id="music_list_table">
-      <thead>
-        <tr>
-          <th style="width:4em">Index</th>
-          <th style="width:6em"><abbr title="Audio data hash">Hash</abbr></th>
-          <th style="width:10%">Artist</th>
-          <th>Title</th>
-          <th>Album</th>
-          <th style="width:4em"><abbr title="Track number">Track Num</abbr></th>
-          <th style="width:14em">Genre</th>
-          <th>Duration</th>
-          <th>Date</th>
-          <th style="width:6em">Bitrate</th>
-          <th style="width:10em">User rating</th>
-        </tr>
-      </thead>
-      <!--<tfoot>
-        <tr>
-          <th><abbr title="Position">Pos</abbr></th>
-          <th>Team</th>
-          <th><abbr title="Played">Pld</abbr></th>
-          <th><abbr title="Won">W</abbr></th>
-          <th><abbr title="Drawn">D</abbr></th>
-          <th><abbr title="Lost">L</abbr></th>
-          <th><abbr title="Goals for">GF</abbr></th>
-          <th><abbr title="Goals against">GA</abbr></th>
-          <th><abbr title="Goal difference">GD</abbr></th>
-          <th><abbr title="Points">Pts</abbr></th>
-          <th>Qualification or relegation</th>
-        </tr>
-      </tfoot>-->
-      <tbody>
-      </tbody>
-    </table>
+    <div id="page_library" style="display: none;">
+      <div class="is-flex mx-4 mb-4">
+        <div class="buttons my-0 is-flex-grow-1">
+          <button class="button is-link is-fullwidth m-0" id="update_music_library">Update music library</button>
+        </div>
+        <span class="icon is-large">
+          <i class="fas fa-2x fa-circle-check" id="update_music_library_status"></i>
+        </span>
+      </div>
+      <table class="table is-hoverable is-bordered" id="music_list_table">
+        <thead>
+          <tr>
+            <th style="width:4em">Index</th>
+            <th style="width:6em"><abbr title="Audio data hash">Hash</abbr></th>
+            <th style="width:10%">Artist</th>
+            <th>Title</th>
+            <th>Album</th>
+            <th style="width:4em"><abbr title="Track number">Track Num</abbr></th>
+            <th style="width:14em">Genre</th>
+            <th>Duration</th>
+            <th>Date</th>
+            <th style="width:6em">Bitrate</th>
+            <th style="width:10em">User rating</th>
+            <!--<th style="width:6em">Skip multiplier</th>-->
+            <th style="width:6em">Full play count</th>
+            <th style="width:6em">Skip count</th>
+          </tr>
+        </thead>
+        <!--<tfoot>
+          <tr>
+            <th><abbr title="Position">Pos</abbr></th>
+            <th>Team</th>
+            <th><abbr title="Played">Pld</abbr></th>
+            <th><abbr title="Won">W</abbr></th>
+            <th><abbr title="Drawn">D</abbr></th>
+            <th><abbr title="Lost">L</abbr></th>
+            <th><abbr title="Goals for">GF</abbr></th>
+            <th><abbr title="Goals against">GA</abbr></th>
+            <th><abbr title="Goal difference">GD</abbr></th>
+            <th><abbr title="Points">Pts</abbr></th>
+            <th>Qualification or relegation</th>
+          </tr>
+        </tfoot>-->
+        <tbody>
+        </tbody>
+      </table>
+    </div>
+
+    <div id="page_AI_DJ">
+    </div>
   </div>
 
 {% endblock %}

@@ -6,14 +6,14 @@
         <div class="column is-one-third">
           <label class="label">Number of training epochs</label>
           <div class="control">
-            <input class="input" type="number" id="input_num_train_epochs" value="?">
+            <input class="input" type="number" id="input_num_train_epochs" value="{{cfg.fine_tuning_page.num_train_epochs}}">
           </div>
         </div>
 
         <div class="column is-one-third">
           <label class="label">Maximum token size</label>
           <div class="control">
-            <input class="input" type="number" id="input_MAX_TOKEN_SIZE" value="?">
+            <input class="input" type="number" id="input_MAX_TOKEN_SIZE" value="{{cfg.fine_tuning_page.max_token_length}}">
           </div>
         </div>
 
@@ -22,7 +22,7 @@
           <div class="field-body">
             <div class="field has-addons is-expanded">
               <div class="control is-expanded">
-                <input class="input" type="number" id="input_openassistant_percent" value="?">
+                <input class="input" type="number" id="input_openassistant_percent" value="{{cfg.fine_tuning_page.openassistant_percent}}">
               </div>
               <p class="control">
                 <a class="button is-static">
@@ -121,7 +121,6 @@
       update_chart([1,2,3,4,5], [5,5,4,4,3]) 
 
       $("document").ready(function(){
-        //var socket = io.connect("http://localhost:5001")
         socket.on('connect', function(data){
           //socket.send("User connected!")
         })

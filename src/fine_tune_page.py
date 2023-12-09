@@ -16,6 +16,7 @@ import shutil
 import numpy as np
 
 import transformers
+import llm_engine
 
 from flask import request
 
@@ -65,17 +66,25 @@ class EmitLogDataCallback(transformers.TrainerCallback):
 
     self._emit_display_loss_data()
 
+    percent = np.floor(state.global_step / state.max_steps * 100)
+
 def init_socket_events(socketio, predictor):
   train_loss_hist = []
   eval_loss_hist = []
 
   def emit_display_loss_data():
-    print('emit_display_loss_data')
     data = {
       'train_loss_hist': train_loss_hist,
       'eval_loss_hist': eval_loss_hist
     }
-    socketio.emit("emit_display_loss_data", data, to=request.sid)  
+    socketio.emit("emit_display_loss_data", data)  
+  
+  def emit_display_progress():
+    data = {
+      'train_loss_hist': train_loss_hist,
+      'eval_loss_hist': eval_loss_hist
+    }
+    socketio.emit("emit_display_loss_data", data)  
 
   @socketio.on("connect")
   def handle_connect():
@@ -84,10 +93,11 @@ def init_socket_events(socketio, predictor):
   @socketio.on("emit_start_fine_tuning")
   def handle_emit_start_fine_tuning():
     nonlocal predictor, train_loss_hist, eval_loss_hist
+    if predictor is None: predictor = llm_engine.TextPredictor(socketio)
 
-    MAX_TOKEN_SIZE = 512
+    MAX_TOKEN_SIZE = 768
     num_train_epochs = 1
-    openassistant_percent = 5
+    openassistant_percent = 20
 
 
     ### Unload previous Peft model
@@ -159,6 +169,14 @@ def init_socket_events(socketio, predictor):
 
     print(f"OpenAssistant train size: {len(openassistant_train_dataset)}, OpenAssistant eval size: {len(openassistant_eval_dataset)}")
 
+    aidj_train_dataset = datasets.load_dataset("text", data_dir="datasets/ai_dj", split="train")
+    aidj_eval_dataset = datasets.load_dataset("text", data_dir="datasets/ai_dj", split="train[:10%]")
+
+    aidj_train_dataset = create_fixed_size_dataset(aidj_train_dataset, MAX_TOKEN_SIZE, tokenizer)
+    aidj_eval_dataset = create_fixed_size_dataset(aidj_eval_dataset, MAX_TOKEN_SIZE, tokenizer)
+
+    print(f"AIDJ train size: {len(aidj_train_dataset)}, AIDJ eval size: {len(aidj_eval_dataset)}")
+
     memory_train_dataset = datasets.load_dataset("text", data_dir="datasets/memory", split="train")
     memory_eval_dataset = datasets.load_dataset("text", data_dir="datasets/memory", split="train[:10%]")
 
@@ -175,8 +193,8 @@ def init_socket_events(socketio, predictor):
 
     print(f"News train size: {len(news_train_dataset)}, News eval size: {len(news_eval_dataset)}")
 
-    dataset_train = datasets.concatenate_datasets([memory_train_dataset, news_train_dataset, openassistant_train_dataset]).shuffle()
-    dataset_eval = datasets.concatenate_datasets([memory_eval_dataset, news_eval_dataset, openassistant_eval_dataset]).shuffle()
+    dataset_train = datasets.concatenate_datasets([aidj_train_dataset, memory_train_dataset, news_train_dataset, openassistant_train_dataset]).shuffle()
+    dataset_eval = datasets.concatenate_datasets([aidj_eval_dataset, memory_eval_dataset, news_eval_dataset, openassistant_eval_dataset]).shuffle()
 
     #dataset_train = trl.trainer.ConstantLengthDataset(tokenizer, dataset_train) 
     #dataset_eval = trl.trainer.ConstantLengthDataset(tokenizer, dataset_eval) 
@@ -204,8 +222,8 @@ def init_socket_events(socketio, predictor):
 
     ### Load trainer
     output_dir = "./models/training_checkpoints"
-    per_device_train_batch_size = 4
-    gradient_accumulation_steps = 4
+    per_device_train_batch_size = 2
+    gradient_accumulation_steps = 8
     optim = "paged_adamw_32bit"
     save_steps = 10
     logging_steps = 10
@@ -258,7 +276,36 @@ def init_socket_events(socketio, predictor):
           module = module.to(torch.float32)
 
     # Train the model
-    trainer.train()
+
+    # Number of retries in case of CUDA out of memory error
+    max_retries = 10
+    resume_from_checkpoint = False
+
+    for retry in range(max_retries):
+      try:
+        # Train the model
+        trainer.train(resume_from_checkpoint)
+        break  # If training is successful, exit the loop
+      #except torch.cuda.OutOfMemoryError as error: # Fixed in the latest Pytorch
+      #if "CUDA out of memory" in str(error):
+      #  print(f"Retry {retry + 1}/{max_retries} due to CUDA out of memory error.")
+      #  # Optionally, you can implement additional cleanup or logging here
+      #  # For example, saving checkpoints, logging relevant information, etc.
+      #  trainer.resume_from_checkpoint()
+      except RuntimeError as error:
+        resume_from_checkpoint = True
+        
+        if "CUDA out of memory" in str(error):
+          print(f"Retry {retry + 1}/{max_retries} due to CUDA out of memory error.")
+          # Optionally, you can implement additional cleanup or logging here
+          # For example, saving checkpoints, logging relevant information, etc.
+          # trainer.resume_from_checkpoint()
+        else:
+          # Handle other runtime errors here
+          print(f"Retry {retry + 1}/{max_retries} due to runtime error: {error}")
+          # Optionally, you can implement additional cleanup or logging here
+          # For example, saving checkpoints, logging relevant information, etc.
+          # trainer.resume_from_checkpoint()
 
     # Evaluate the model to see if the best checkpoint is active
     eval_metric = trainer.evaluate()

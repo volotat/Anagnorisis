@@ -125,7 +125,7 @@ def get_news(socketio, predictor):
     news_data = analyze_the_news(predictor, news_data)
     full_news_list.append(news_data)
     full_news_list = list(filter(lambda item: item is not None, full_news_list))
-    socketio.emit("emit_news_page_news_list", full_news_list, to=request.sid)
+    socketio.emit("emit_news_page_news_list", full_news_list)
 
   print("Getting news out of RSS:'TG/Astrapress' provider...")
   news_list = providers.rss.astrapress.get()[:20]
@@ -133,7 +133,7 @@ def get_news(socketio, predictor):
     news_data = analyze_the_news(predictor, news_data)
     full_news_list.append(news_data)
     full_news_list = list(filter(lambda item: item is not None, full_news_list))
-    socketio.emit("emit_news_page_news_list", full_news_list, to=request.sid)
+    socketio.emit("emit_news_page_news_list", full_news_list)
 
   print("Getting news out of RSS: N1 (Serbia) provider...")
   news_list = providers.rss.n1info.get()[:20]
@@ -141,7 +141,7 @@ def get_news(socketio, predictor):
     news_data = analyze_the_news(predictor, news_data)
     full_news_list.append(news_data)
     full_news_list = list(filter(lambda item: item is not None, full_news_list))
-    socketio.emit("emit_news_page_news_list", full_news_list, to=request.sid)
+    socketio.emit("emit_news_page_news_list", full_news_list)
   
   full_news_list = list(filter(lambda item: item is not None, full_news_list))
   return full_news_list
@@ -155,7 +155,7 @@ def init_socket_events(socketio, predictor):
   @socketio.on("emit_news_page_get_news")
   def get_news():
     nonlocal news_list
-    socketio.emit("emit_news_page_news_list", news_list, to=request.sid)
+    socketio.emit("emit_news_page_news_list", news_list)
 
   @socketio.on("emit_news_page_refresh_news")
   def refresh_news():
@@ -164,7 +164,7 @@ def init_socket_events(socketio, predictor):
     if predictor is None:
       predictor = llm_engine.TextPredictor(socketio)
     news_list = src.news_page.get_news(socketio, predictor)
-    socketio.emit("emit_news_page_news_list", news_list, to=request.sid)
+    socketio.emit("emit_news_page_news_list", news_list)
     socketio.emit("emit_news_page_stop_loading")
 
   @socketio.on("emit_news_page_add_news_to_db")

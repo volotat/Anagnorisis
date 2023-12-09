@@ -165,3 +165,5 @@ instance/
 migrations/
 models/
 cache/
+assets/
+static/tmp/

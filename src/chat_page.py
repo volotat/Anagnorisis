@@ -13,7 +13,7 @@ def init_socket_events(socketio, predictor):
   def handle_chat_message(msg, use_headers = True):
     nonlocal predictor
     if predictor is None:
-      predictor = llm_engine.TextPredictor()
+      predictor = llm_engine.TextPredictor(socketio)
     
     if use_headers:
       chat_messages.append(["### HUMAN:", msg['message']])

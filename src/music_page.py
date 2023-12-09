@@ -4,15 +4,21 @@ from pydub import AudioSegment
 import base64
 
 import os
-import eyed3
+#import eyed3
 import hashlib
 
 import datetime
 
 from tqdm import tqdm
 import numpy as np
-
+import traceback
 import src.db_models
+
+from tinytag import TinyTag
+import llm_engine
+from TTS.api import TTS
+from unidecode import unidecode
+import scipy.io.wavfile
 
 
 # Function to calculate the SHA-256 hash of audio data
@@ -39,26 +45,38 @@ def get_audiofile_data(file_path, url_path):
     'hash': calculate_audiodata_hash(file_path),
   }
 
-  audiofile = eyed3.load(file_path)
-  #print('tag:', dir(file.tag))
-  # Check if the file has tag information
-  if audiofile.tag is not None:
-    metadata['title'] = audiofile.tag.title or "N/A"
-    metadata['artist'] = audiofile.tag.artist or "N/A"
-    metadata['album'] = audiofile.tag.album or "N/A"
-    metadata['track_num'] = audiofile.tag.track_num[0] if audiofile.tag.track_num else "N/A"
-    metadata['genre'] = audiofile.tag.genre.name if audiofile.tag.genre else "N/A"
-    metadata['date'] = str(audiofile.tag.getBestDate()) if audiofile.tag.getBestDate() else "N/A"
-  else:
-    metadata['title'] = "N/A"
-    metadata['artist'] = "N/A"
-    metadata['album'] = "N/A"
-    metadata['track_num'] = "N/A"
-    metadata['genre'] = "N/A"
-    metadata['date'] = "N/A"
+  '''tag.album         # album as string
+  tag.albumartist   # album artist as string
+  tag.artist        # artist name as string
+  tag.audio_offset  # number of bytes before audio data begins
+  tag.bitdepth      # bit depth for lossless audio
+  tag.bitrate       # bitrate in kBits/s
+  tag.comment       # file comment as string
+  tag.composer      # composer as string 
+  tag.disc          # disc number
+  tag.disc_total    # the total number of discs
+  tag.duration      # duration of the song in seconds
+  tag.filesize      # file size in bytes
+  tag.genre         # genre as string
+  tag.samplerate    # samples per second
+  tag.title         # title of the song
+  tag.track         # track number as string
+  tag.track_total   # total number of tracks as string
+  tag.year          # year or date as string'''
 
-  metadata['duration'] = audiofile.info.time_secs #(seconds)
-  metadata['bitrate'] = audiofile.info.bit_rate_str #(kbps)
+  #audiofile = eyed3.load(file_path)
+
+  tag = TinyTag.get(file_path)
+
+  metadata['title'] = tag.title or "N/A"
+  metadata['artist'] = tag.artist or "N/A"
+  metadata['album'] = tag.album or "N/A"
+  metadata['track_num'] = tag.track if tag.track else "N/A"
+  metadata['genre'] = tag.genre if tag.genre else "N/A"
+  metadata['date'] = str(tag.year) if tag.year else "N/A"
+
+  metadata['duration'] = tag.duration #(seconds)
+  metadata['bitrate'] = tag.bitrate #(kbps)
 
     # Get all available tags and their values as a dictionary
     #tag_dict = audiofile.tag.frame_set
@@ -93,12 +111,24 @@ def get_music_list_metadata():
   return []
   
   
+def sigmoid(x):
+  return 1 / (1 + np.exp(-x))
 
-def init_socket_events(socketio, predictor, app=None):
+def init_socket_events(socketio, predictor, app=None, cfg=None):
   # Determine the absolute path to the media file
-  media_directory = '/media/alex/Expansion/Music'
+  media_directory = cfg.media_directory
   music_list = []
   music_ratings = None
+  AIDJ_history = ""
+  AIDJ_tts = TTS(cfg.tts_model_path) #'tts_models/en/ljspeech/vits'
+
+  def _music_list():
+    nonlocal music_list
+    if (music_list is not None) and (len(music_list)>0): return music_list
+    
+    music_list = src.db_models.MusicLibrary.query.all()
+    music_list = [music.as_dict() for music in music_list]
+
   # necessary to allow web application access to music files
   @app.route('/media/<path:filename>')
   def serve_media(filename):
@@ -107,21 +137,20 @@ def init_socket_events(socketio, predictor, app=None):
 
   @socketio.on('emit_music_page_refresh_music_library')
   def refresh_music_library():
-    #nonlocal music_list
-
-    folder = "/media/alex/Expansion/Music/"
+    nonlocal media_directory
   
     music_files = []
-    for root, dirs, files in os.walk(folder):
+    for root, dirs, files in os.walk(media_directory):
       for file in files:
-        if file.endswith(".mp3"):
+        #MP3, OGG, OPUS, MP4, M4A, FLAC, WMA, Wave and AIFF
+        if file.lower().endswith((".mp3", ".flac")):
           full_path = os.path.join(root, file)
           music_files.append(full_path)
 
     #music_list = []
     for full_path in tqdm(music_files):   
       try: 
-        url_path = 'media/' + full_path.replace(folder, '')
+        url_path = 'media/' + full_path.replace(media_directory, '')
         audiofile_data = get_audiofile_data(full_path, url_path)
 
         # Check if a row with the same primary key (hash) exists
@@ -140,40 +169,59 @@ def init_socket_events(socketio, predictor, app=None):
         src.db_models.db.session.commit()
       except Exception as ex:
         print('Something went wrong with', full_path)
-        print(ex)
+        print(traceback.format_exc())
 
 
   @socketio.on('emit_music_page_get_music_list')
   def get_music_list():
-    nonlocal music_list
-
-    music_list = src.db_models.MusicLibrary.query.all()
-    music_list = [music.as_dict() for music in music_list]
-    print(music_list[0].keys())
 
     #music_list = get_music_list_metadata()
-    socketio.emit('emit_music_page_send_music_list', music_list)  
+    socketio.emit('emit_music_page_send_music_list', _music_list())  
 
   @socketio.on('emit_music_page_get_next_song')
-  def request_new_song():
-    if len(music_list)>0:
+  def request_new_song(data):
+    cur_song_hash = None
+    song_score_change = None
+    
+    if len(data) > 0:
+      cur_song_hash = data[0]
+      skip_score_change = data[1]
+
+    if cur_song_hash is not None:
+      song = src.db_models.MusicLibrary.query.get(cur_song_hash)
+      if skip_score_change == 1:
+        song.full_play_count += 1
+      if skip_score_change == -1:
+        song.skip_count += 1
+      
+      #song.skip_score += skip_score_change
+      src.db_models.db.session.commit()
+
+    if len(_music_list())>0:
       # Convert the list to a NumPy array to work with numerical values
-      not_none_scores = np.array([music['user_rating'] for music in music_list if music['user_rating'] is not None])
+      not_none_scores = np.array([music['user_rating'] for music in _music_list() if music['user_rating'] is not None])
       print('Not none ratings:', list(not_none_scores))
       # Calculate the median of the existing values
       median_value = np.median(not_none_scores)
       print('Median song rating:', median_value)
 
       # Replace None values with the calculated median
-      scores = np.array([median_value if music['user_rating'] is None else music['user_rating'] for music in music_list])
+      scores = np.array([median_value * 0.3 if music['user_rating'] is None else music['user_rating'] for music in _music_list()])
       scores = np.minimum(0.1, scores) # we make a minimum small value to the rating so songs with 0 rating have some small chance to be played
       scores = (scores / 10) ** 2 # normalize scores and make songs with high rating much more likely to occur
+
+      #skip_score = np.array([music['skip_score'] for music in _music_list()])
+      full_play_count = np.array([music['full_play_count'] for music in _music_list()])
+      skip_count = np.array([music['skip_count'] for music in _music_list()])
+    
+      skip_score = sigmoid((10 + full_play_count - skip_count) / 10) # meaningful rage for skip_score [-30, 30] that result in a value ~ [0, 1]
+      scores = scores * skip_score
 
       # Generate a random index based on the weights
       sampled_index = np.random.choice(len(scores), p=scores/np.sum(scores))
 
       #ind = np.random.randint(len(music_list))
-      socketio.emit('emit_music_page_send_next_song', music_list[sampled_index])  
+      socketio.emit('emit_music_page_send_next_song', _music_list()[sampled_index])  
 
   @socketio.on('emit_music_page_set_song_rating')
   def set_song_rating(data):
@@ -186,8 +234,129 @@ def init_socket_events(socketio, predictor, app=None):
     song.user_rating = int(song_score)
     src.db_models.db.session.commit()
 
-    music = next((item for item in music_list if item['hash'] == song_hash), None)
+    music = next((item for item in _music_list() if item['hash'] == song_hash), None)
     music['user_rating'] = song_score
+
+  @socketio.on('emit_music_page_AIDJ_get_next_song')
+  def request_new_song(data):
+    nonlocal predictor, AIDJ_history, AIDJ_tts
+    if predictor is None: predictor = llm_engine.TextPredictor(socketio)
+
+    cur_song_hash = None
+    song_score_change = None
+    
+    if len(data) > 0:
+      cur_song_hash = data[0]
+      skip_score_change = data[1]
+
+    if cur_song_hash is not None:
+      song = src.db_models.MusicLibrary.query.get(cur_song_hash)
+      if skip_score_change == 1:
+        song.full_play_count += 1
+      if skip_score_change == -1:
+        song.skip_count += 1
+      
+      #song.skip_score += skip_score_change
+      src.db_models.db.session.commit()
+
+    _music_list() # Find a better way to initialize the list if it is not yet exist
+
+    if len(_music_list())>0:
+      # Convert the list to a NumPy array to work with numerical values
+      not_none_scores = np.array([music['user_rating'] for music in _music_list() if music['user_rating'] is not None])
+      print('Not none ratings:', list(not_none_scores))
+      # Calculate the median of the existing values
+      median_value = np.median(not_none_scores)
+      print('Median song rating:', median_value)
+
+      # Replace None values with the calculated median
+      
+      scores = np.array([median_value * 0.3 if music['user_rating'] is None else music['user_rating'] for music in _music_list()])
+      scores = np.minimum(0.1, scores) # we make a minimum small value to the rating so songs with 0 rating have some small chance to be played
+      scores = (scores / 10) ** 2 # normalize scores and make songs with high rating much more likely to occur
+
+      #skip_score = np.array([music['skip_score'] for music in _music_list()])
+      full_play_count = np.array([music['full_play_count'] for music in _music_list()])
+      skip_count = np.array([music['skip_count'] for music in _music_list()])
+    
+      skip_score = sigmoid((10 + full_play_count - skip_count) / 10) # meaningful rage for skip_score [-30, 30] that result in a value ~ [0, 1]
+      scores = scores * skip_score
+
+      # Generate a random index based on the weights
+      sampled_index = np.random.choice(len(scores), p=scores/np.sum(scores))
+
+      music_item = _music_list()[sampled_index]
+      user_rating_str = 'Not rated yet' if music_item['user_rating'] is None else '★' * music_item['user_rating'] + '☆' * (10 - music_item['user_rating'])
+      print(music_item)
+
+      AIDJ_messages = []
+      msg = {
+        "hidden": True,
+        "image": None,
+        "head": f"Next song selected:",
+        "body": f"{music_item['artist']} - {music_item['title']} | {music_item['album']}\n{user_rating_str}"
+      }
+      AIDJ_messages.append(msg)
+
+      current_time = datetime.datetime.now()
+      current_time_str = current_time.strftime("%A, %B %d, %Y, %H:%M")
+      if AIDJ_history == "":
+        AIDJ_history += f"### HUMAN:\n{cfg.aidj_first_prompt}"
+      else:
+        AIDJ_history += f"### HUMAN:\n{cfg.aidj_consecutive_prompt}"
+
+      #AIDJ_history += f" Do not use hackneyed phrases like 'So, sit back, relax, and enjoy..' and others like that."
+      AIDJ_history += f"\n\nCurrent time: {current_time_str};\n\nInformation about current song:\nBand/Artist: {music_item['artist']};\nSong title: {music_item['title']};\nAlbum: {music_item['album']};\nRelease year: {music_item['date']};\nLength: {music_item['duration']} seconds;\n### RESPONSE:\n"
+
+      AIDJ_history = AIDJ_history[-4000:]
+      msg = {
+        "hidden": True,
+        "image": None,
+        "head": f"System prompt:",
+        "body": AIDJ_history
+      }
+      AIDJ_messages.append(msg)
+
+      # Predict AI DJ remark before playing the song
+      llm_text = predictor.predict_from_text(msg['body'], temperature = cfg.llm_temperature)
+      AIDJ_history += llm_text
+      msg = {
+        "hidden": False,
+        "image": "/static/AI.jpg",
+        "head": f"AI DJ:",
+        "body": f"{llm_text}"
+      }
+      AIDJ_messages.append(msg)
+
+      # Use TTS to speak the text and save it to temporary file storage
+      # Split the text into sentences or paragraphs, depending on your needs
+      #sentences = llm_text.split('\n')
+
+      # Romanize each sentence and join them back together
+      #romanized_text = "\n".join([unidecode(sentence) for sentence in sentences])
+
+      #romanized_text = translit(text, 'ru', reversed=True)
+      AIDJ_tts.tts_to_file(llm_text, file_path="static/tmp/AIDJ.wav", speaker_wav=cfg.tts_model_speaker_sample, language=cfg.tts_model_language)
+
+       # Load the audio file
+      sound = AudioSegment.from_wav("static/tmp/AIDJ.wav")
+      # Increase the volume
+      sound = sound + 3 # plus 10db
+      # Save the modified audio to the same file
+      sound.export("static/tmp/AIDJ.wav", format="wav")
+
+      msg = {
+        "hidden": False,
+        "image": None, #link to the cover or bit64 image?
+        "head": f"Now playing:",
+        "body": f"{music_item['artist']} - {music_item['title']} | {music_item['album']}"
+      }
+      AIDJ_messages.append(msg)
+
+      socketio.emit('emit_music_page_AIDJ_append_messages', AIDJ_messages) 
+
+      #ind = np.random.randint(len(music_list))
+      socketio.emit('emit_music_page_send_next_song', _music_list()[sampled_index])  
   
 if __name__ == "__main__":
   print('start')

@@ -246,7 +246,6 @@
       //var marker = L.marker([51.5, -0.09]).addTo(map);
       //marker.bindPopup('A popup!');
 
-      //socket = io.connect("http://localhost:5001")
       socket.on('connect', function(data){
         socket.emit('emit_news_page_get_news')
       })

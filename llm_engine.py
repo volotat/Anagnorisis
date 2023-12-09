@@ -41,7 +41,7 @@ class TextPredictor():
     model_name = "georgesung/llama2_7b_chat_uncensored"
     #model_name = "models/your_llama2"
 
-    self.tokenizer = AutoTokenizer.from_pretrained(model_name, local_files_only=True)
+    self.tokenizer = AutoTokenizer.from_pretrained(model_name, local_files_only=False)
 
 
     bnb_config = BitsAndBytesConfig(
@@ -57,7 +57,7 @@ class TextPredictor():
         device_map="auto",
         trust_remote_code=True,
         load_in_4bit=True,
-        local_files_only=True,
+        local_files_only=False,
         #config="models/your_llama2/adapter_config.json"
     )
 
@@ -90,6 +90,7 @@ class TextPredictor():
       top_p=0.75,
       top_k=40,
       num_beams=1,
+      #early_stopping=True,
       #**kwargs,
     )
 
@@ -99,8 +100,8 @@ class TextPredictor():
         #return_dict_in_generate=True,
         #output_scores=True,
         #max_new_tokens=2048,
-        max_length= 512 * 5,
-        stopping_criteria=self.stopping_criteria
+        max_length=512 * 5,
+        stopping_criteria=self.stopping_criteria,
     )
     
     #output_tokens = self.tokenizer.convert_ids_to_tokens(generation_outputs[0])

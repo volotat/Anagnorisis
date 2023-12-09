@@ -17,7 +17,7 @@
 
 <body>
   <script type="text/javascript">
-    let socket = io.connect("http://localhost:5001")
+    let socket = io.connect("http://{{cfg.main.host}}:{{cfg.main.port}}")
 
     $("document").ready(function(){
       socket.on('emit_llm_engine_start_processing', function(){
@@ -113,7 +113,10 @@
     </div>
     <div class="navbar-end">
       <div class="mr-6 p-0 is-justify-content-center is-flex" style="vertical-align: middle;">
+        <audio controls id="bg_audio" autoplay class="is-hidden"></audio>
         <audio controls id="my_audio" autoplay class="is-hidden"></audio>
+        <audio controls id="AIDJ_speaker" autoplay class="is-hidden"></audio>
+        <!--
         <div class="tags has-addons">
           <span class="tag is-medium">
             <figure class="image is-48x48">
@@ -131,6 +134,7 @@
             <i class="fas fa-forward-fast"></i>
           </a>
         </div>
+        -->
       </div>
       <!--<div class="box">
         I'm in a box.
