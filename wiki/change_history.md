@@ -12,7 +12,7 @@ Add music control to the common page header.
 Display music structure in a way as it is stored in the folders.
 Add a way to change metadata of the song.
 Add volume control.
-Convert radio mode to a state based approach to see everything that is happening at the backend in a real time and stuck prepared announcements and songs in a stuck.
+
 
 ### Fine-tuning 
 Make the progress bar active when the model is fine-tuned.  
@@ -34,6 +34,10 @@ Add installation info to the readme.md file.
 Add some way of displaying active page at the head menu.
 
 ## Versions History
+
+### Version 0.0.3 (?)
+Radio mode converted to a state based approach to see everything that is happening at the backend in a real time and stack prepared announcements and songs in a buffer.
+
 ### Version 0.0.2 (10.11.2023)
 Added skip multiplier to music recommendation algorithm.  
 Added display of the music cover to the music page.  
