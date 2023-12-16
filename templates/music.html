@@ -8,6 +8,12 @@
     let bg_audio = null;
     let play_history = [];
 
+    let current_audio_element = null;
+
+    let state_index = 0;
+    let item_stack = [];
+    let item_index = 0;
+
     function replaceSpecialSymbols(inputText) {
       const replacedText = inputText
         .replace(/\n/g, '<br>')   // Replace newline with <br> tag
@@ -101,6 +107,84 @@
       });
       $("#next_btn").click(()=>{
         play_next_track();
+      });
+
+      $(`#song_edit_btn`).click(()=>{ 
+        let item = item_stack[item_index-1];
+        if (typeof item.audio_element === 'string') return;
+
+        $(`#song_edit_modal`).addClass('is-active')
+        $('#song_edit_content').html('')
+
+        //metadata['duration'] = tag.duration #(seconds)
+        //metadata['bitrate'] = tag.bitrate #(kbps)
+        function generate_field_template(field_name, field_key, type="text"){
+          return `<div class="field has-addons">
+                    <p class="control">
+                      <a class="button is-static">
+                        ${field_name}:
+                      </a>
+                    </p>
+                    <p class="control is-expanded">
+                      <input id="song_edit_${field_key}" class="input" type="${type}" value="${item.audio_element[field_key]}">
+                    </p>
+                  </div>`
+        }
+
+        let template = `<div class="card-content">
+          <p>File path: ${item.audio_element['file_path']} </p>
+          <p>Url path: ${item.audio_element['url_path']} </p>
+          <p>Hash: ${item.audio_element['hash']} </p>
+          <br>
+          ${generate_field_template('Artist', 'artist')}
+          ${generate_field_template('Title', 'title')}
+          ${generate_field_template('Album', 'album')}
+          ${generate_field_template('Year', 'date', 'number')}
+          ${generate_field_template('Track number', 'track_num', 'number')}
+          ${generate_field_template('Ganre', 'genre')}
+
+          <!--
+          <p>Artist:  <input id="song_edit_title" class="input ml-2" type="text" value="${item.audio_element['artist']}"></p>
+          <p>Title:  <input id="song_edit_title" class="input ml-2" type="text" value="${item.audio_element['title']}"></p>
+          <p>Album:  <input id="song_edit_album" class="input ml-2" type="text" value="${item.audio_element['album']}"></p>
+          <p>Track number: <input id="song_edit_track_num" class="input ml-2" type="number" value="${item.audio_element['track_num']}"></p>
+          <p>Ganre:  <input id="song_edit_genre" class="input ml-2" type="text" value="${item.audio_element['genre']}"></p>
+          <p>Year:   <input id="song_edit_date" class="input ml-2" type="number" value="${item.audio_element['date']}"></p>
+          -->
+          <!--<p>Importance: <input id="news_open_importance" class="input ml-2" type="number" value="????" style="vertical-align: middle; width:auto" min="0" max="10"></p>
+          <p>GPS: <input id="news_open_coords" class="input ml-2" type="text" value="????" style="vertical-align: middle; width:auto"></p>-->
+
+          <p>Lyrics:</p>
+          <textarea id="song_edit_lyrics" class="textarea has-fixed-size" rows="10">${item.audio_element['lyrics']}</textarea>
+          <br>
+        </div>
+
+        <footer class="card-footer">
+          <a href="#" class="card-footer-item is-info" id="song_edit_modal_btn_update">Update song info</a>
+          <a href="#" class="card-footer-item" id="song_edit_modal_btn_close">Close</a>
+        </footer>`
+
+        $('#song_edit_content').append(template);
+
+        $('#song_edit_modal_btn_close').click(()=>{ 
+          $(`#song_edit_modal`).removeClass('is-active');
+        });
+
+        $('#song_edit_modal_btn_update').click(()=>{ 
+          let data = {
+            'hash':      item.audio_element['hash'],
+            'file_path': item.audio_element['file_path'],
+            'artist':    $('#song_edit_artist').val(),
+            'title':     $('#song_edit_title').val(),
+            'album':     $('#song_edit_aalbum').val(),
+            'date':      $('#song_edit_date').val(),
+            'track_num': $('#song_edit_track_num').val(),
+            'genre':     $('#song_edit_genre').val(),
+            'lyrics':    $('#song_edit_lyrics').val(),
+          };
+
+          socket.emit('emit_music_page_update_song_info', data);
+        });
       });
 
       if ('mediaSession' in navigator) {
@@ -223,8 +307,6 @@
       
     });
 
-    let state_index = 0;
-    let item_stack = [];
     socket.on('emit_music_page_board_add_state', (state) => {
       console.log('New state:', state)
       
@@ -279,7 +361,6 @@
         const interval = setInterval(function () {
           currentVolume += volumeChange;
           bg_audio.volume = currentVolume;
-          console.log('bg_audio volume:', bg_audio.volume)
 
           currentStep += 1
           if (currentStep >= steps) {
@@ -288,7 +369,6 @@
         }, intervalTime);
       }
 
-    let item_index = 0
     function play_next_item_from_item_stack(){
       if (item_index >= item_stack.length){
         console.log('Not yet generated. Waiting...')
@@ -302,13 +382,21 @@
       $(".card").removeClass("has-background-light");
       $(`#state_${item['state_index']}`).addClass('has-background-light')
 
+      $(`#state_${item['state_index']}`)[0].scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+        inline: 'center'
+      });
+
       if (typeof item.audio_element  === 'string') {// In case it is an AI DJ audio
         console.log('AI DJ!!')
         cur_song_hash = null;
+        show_song_rating(0);
+
         let file_path = item.audio_element;
         
         $("#song_label").text(`AI DJ`)
-        //$('#song_cover_image').attr("src", item.image);
+        $('#song_cover_image').attr("src", item.image);
         audioPlayer.setAttribute('src', file_path);
         audioPlayer.currentTime = 0;
         audioPlayer.play();
@@ -316,9 +404,14 @@
         changeBackgroundVolume(0, 0.3, 1000);
       } else { // In case it is a song
         cur_song_hash = item.audio_element['hash'];
+
+        let user_rating = parseInt(item.audio_element['user_rating']) || 0;
+        show_song_rating(user_rating)
+
         let file_path = item.audio_element['url_path'];
         $("#song_label").text(`${item.audio_element['artist']} - ${item.audio_element['title']} | ${item.audio_element['album']}`)
-        show_song_cover(file_path); //should be $('#song_cover_image').attr("src", item.image); when it will be passed to frontend as base64
+        //show_song_cover(file_path); //should be 
+        $('#song_cover_image').attr("src", item.image); //when it will be passed to frontend as base64
         audioPlayer.setAttribute('src', file_path);
         audioPlayer.currentTime = 0;
         audioPlayer.play();
@@ -340,7 +433,9 @@
     let cur_song_hash = null;
 
     function show_song_cover(url) {
-      window.jsmediatags.read("http://{{cfg.main.host}}:{{cfg.main.port}}/" + url, {
+      let host = "{{ cfg.main.host }}";
+      let port = "{{ cfg.main.port }}";
+      window.jsmediatags.read(`http://${host}:${port}/` + url, {
         onSuccess: function(tag) {
           var image = tag.tags.picture;
           if (image) {
@@ -489,7 +584,24 @@
     </div>
     <div class="level-item has-text-centered">
       <div style="width:100%">
-        <span class="tag is-size-5 mb-6" id="song_label"></span>
+        <div class="level-item">
+          <div class="field has-addons">
+            <p class="control">
+              <span class="tag is-size-5 mb-6" id="song_label">Band - Title | Album</span>
+            </p>
+            <p class="control">
+              <button class="button" id="song_edit_btn">
+                <span class="icon-text">
+                  <span class="icon">
+                    <i class="fas fa-lg fa-solid fa-pen-to-square"></i>
+                  </span>
+                  <span>Edit</span>
+                </span>
+              </button>
+            </p>
+          </div>
+        </div>
+        
         <progress class="progress" value="0" max="100" id="song_progress"></progress>
       </div>
     </div>
@@ -564,6 +676,13 @@
     </div>
 
     <div id="page_AI_DJ">
+    </div>
+
+    <div class="modal" id="song_edit_modal">
+      <div class="modal-background"></div>
+      <div class="card mx-4 my-4" id="song_edit_content" style="width:800px">
+        TEST TEST TEST
+      </div>
     </div>
   </div>
 

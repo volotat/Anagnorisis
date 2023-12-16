@@ -32,11 +32,15 @@ Move to single page architecture or find any other way to store the current stat
 Add some sort of a control panel that is active on all pages (may be hidden) and shows current GPU memory load by the system and console output. 
 Add installation info to the readme.md file. 
 Add some way of displaying active page at the head menu.
+Replace all "georgesung/llama2_7b_chat_uncensored" instances with info from config.yaml.
 
 ## Versions History
 
-### Version 0.0.3 (?)
+### Version 0.0.3 (16.11.2023)
 Radio mode converted to a state based approach to see everything that is happening at the backend in a real time and stack prepared announcements and songs in a buffer.
+Images of song covers now send from backend to frontend as base64 images.
+There is now multiple prompts for AI DJ. It should help to avoid repetitions.
+Added a edit button that allows to change song metadata from the frontend UI. Right now only the lyrics of the song is actually changes.
 
 ### Version 0.0.2 (10.11.2023)
 Added skip multiplier to music recommendation algorithm.  

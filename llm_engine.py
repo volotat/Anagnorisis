@@ -8,6 +8,8 @@ import pickle
 from peft import PeftModel, LoraConfig, get_peft_model
 from transformers import GenerationConfig
 
+import gc
+
 cache_file = 'cache/llm_engine.pkl'
 try:
   with open(cache_file, 'rb') as f:
@@ -100,7 +102,7 @@ class TextPredictor():
         #return_dict_in_generate=True,
         #output_scores=True,
         #max_new_tokens=2048,
-        max_length=512 * 5,
+        max_length=512*5,
         stopping_criteria=self.stopping_criteria,
     )
     
@@ -131,3 +133,10 @@ class TextPredictor():
       save_cache()
 
     return result
+  
+  def unload_model(self):
+    del self.tokenizer
+    del self.base_model
+    del self.model
+    gc.collect()
+    torch.cuda.empty_cache()

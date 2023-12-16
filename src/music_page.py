@@ -19,7 +19,9 @@ import llm_engine
 from TTS.api import TTS
 from unidecode import unidecode
 import scipy.io.wavfile
+import io
 
+from mutagen.id3 import ID3, ID3NoHeaderError, USLT
 
 # Function to calculate the SHA-256 hash of audio data
 def calculate_audiodata_hash(mp3_file_path):
@@ -66,7 +68,7 @@ def get_audiofile_data(file_path, url_path):
 
   #audiofile = eyed3.load(file_path)
 
-  tag = TinyTag.get(file_path)
+  tag = TinyTag.get(file_path, image=True)
 
   metadata['title'] = tag.title or "N/A"
   metadata['artist'] = tag.artist or "N/A"
@@ -77,6 +79,21 @@ def get_audiofile_data(file_path, url_path):
 
   metadata['duration'] = tag.duration #(seconds)
   metadata['bitrate'] = tag.bitrate #(kbps)
+
+  metadata['lyrics'] = tag.extra.get('lyrics', "")
+
+  img = tag.get_image()
+  if img is not None:
+    base64_image = base64.b64encode(img).decode('utf-8')
+
+    #buffer = io.BytesIO()
+    #img.save(buffer, format='PNG')
+    #buffer.seek(0)
+    
+    #data_uri = base64.b64encode(buffer.read()).decode('ascii')
+    metadata['image'] = f"data:image/png;base64,{base64_image}"
+  else:
+    metadata['image'] = None
 
     # Get all available tags and their values as a dictionary
     #tag_dict = audiofile.tag.frame_set
@@ -298,95 +315,139 @@ def init_socket_events(socketio, predictor, app=None, cfg=None):
     _music_list() # Find a better way to initialize the list if it is not yet exist
 
     if len(_music_list())>0:
-      for i in range(20):
-        music_item = select_random_music()
-        user_rating_str = 'Not rated yet' if music_item['user_rating'] is None else '★' * music_item['user_rating'] + '☆' * (10 - music_item['user_rating'])
-
-        state = {
-          "hidden": True,
-          "head": f"Next song selected:",
-          "body": f"{music_item['artist']} - {music_item['title']} | {music_item['album']}\n{user_rating_str}"
-        }
-        socketio.emit('emit_music_page_board_add_state', state) 
-
-        current_time = datetime.datetime.now()
-        current_time_str = current_time.strftime("%A, %B %d, %Y, %H:%M")
-        if AIDJ_history == "":
-          AIDJ_history += f"### HUMAN:\n{cfg.aidj_first_prompt}"
+      for i in range(30):
+        if i==0:
+          music_item = next((x for x in _music_list() if x['hash'] == '19ae1ef83252736272c22edf16be95f09fb59f560097c9eb705fac95d6853a93'), None)
         else:
-          AIDJ_history += f"### HUMAN:\n{cfg.aidj_consecutive_prompt}"
+          music_item = select_random_music()
+          
+        try: 
+          audiofile_data = get_audiofile_data(music_item['file_path'], music_item['url_path'])
+          # Add information from meta data of audio file
+          music_item['lyrics'] = audiofile_data['lyrics']
+          
+          user_rating_str = 'Not rated yet' if music_item['user_rating'] is None else '★' * music_item['user_rating'] + '☆' * (10 - music_item['user_rating'])
 
-        #AIDJ_history += f" Do not use hackneyed phrases like 'So, sit back, relax, and enjoy..' and others like that."
-        AIDJ_history += f"\n\nCurrent time: {current_time_str};\n\nInformation about current song:\nBand/Artist: {music_item['artist']};\nSong title: {music_item['title']};\nAlbum: {music_item['album']};\nRelease year: {music_item['date']};\nLength: {int(music_item['duration'])} seconds;\n### RESPONSE:\n"
+          state = {
+            "hidden": True,
+            "head": f"Next song selected:",
+            "body": f"{music_item['artist']} - {music_item['title']} | {music_item['album']}\n{user_rating_str}"
+          }
+          socketio.emit('emit_music_page_board_add_state', state) 
 
-        AIDJ_history = AIDJ_history[-5000:]
-        state = {
-          "hidden": True,
-          "head": f"LLM Prompt generated:",
-          "body": AIDJ_history
-        }
-        socketio.emit('emit_music_page_board_add_state', state) 
+          current_time = datetime.datetime.now()
+          current_time_str = current_time.strftime("%A, %B %d, %Y, %H:%M")
 
-        state = {
-          "hidden": True,
-          "head": f"System:",
-          "body": f"Running LLM..."
-        }
-        socketio.emit('emit_music_page_board_add_state', state) 
+          AIDJ_history = AIDJ_history[-1000:]
 
-        # Predict AI DJ remark before playing the song
-        llm_text = predictor.predict_from_text(AIDJ_history, temperature = cfg.llm_temperature)
-        AIDJ_history += llm_text
+          if AIDJ_history == "":
+            AIDJ_history += f"### HUMAN:\n{cfg.aidj_first_prompt}"
+          else:
+            prompt = np.random.choice(cfg.aidj_consecutive_prompts)
+            AIDJ_history += f"### HUMAN:\n{prompt}"
 
-        state = {
-          "hidden": True,
-          "head": f"System:",
-          "body": f"Generating audio based on LLM output..."
-        }
-        socketio.emit('emit_music_page_board_add_state', state) 
-        
-        # Use TTS to speak the text and save it to temporary file storage
-        # Split the text into sentences or paragraphs, depending on your needs
-        #sentences = llm_text.split('\n')
+          #AIDJ_history += f" Do not use hackneyed phrases like 'So, sit back, relax, and enjoy..' and others like that."
+          AIDJ_history += f'''\nCurrent time: {current_time_str};\n\nInformation about current song:\nBand/Artist: {music_item['artist']};\nSong title: {music_item['title']};\nAlbum: {music_item['album']};\nRelease year: {music_item['date']};\nLength: {int(music_item['duration'])} seconds;'''
 
-        # Romanize each sentence and join them back together
-        #romanized_text = "\n".join([unidecode(sentence) for sentence in sentences])
+          if len(music_item['lyrics']) > 0: AIDJ_history += f"\nLyrics:\n{music_item['lyrics']}"
 
-        #romanized_text = translit(text, 'ru', reversed=True)
-        AIDJ_tts_filename = f"static/tmp/AIDJ_{AIDJ_tts_index:04d}.wav"
-        AIDJ_tts_index += 1
-        AIDJ_tts.tts_to_file(llm_text, file_path=AIDJ_tts_filename, speaker_wav=cfg.tts_model_speaker_sample, language=cfg.tts_model_language)
 
-        # Icreasing the volume of TTS output
+          AIDJ_history += f"\n### RESPONSE:\n"
+
+          state = {
+            "hidden": True,
+            "head": f"LLM Prompt generated:",
+            "body": AIDJ_history
+          }
+          socketio.emit('emit_music_page_board_add_state', state) 
+
+          state = {
+            "hidden": True,
+            "head": f"System:",
+            "body": f"Running LLM..."
+          }
+          socketio.emit('emit_music_page_board_add_state', state) 
+
+          # Predict AI DJ remark before playing the song
+          llm_text = predictor.predict_from_text(AIDJ_history, temperature = cfg.llm_temperature)
+          AIDJ_history += llm_text
+
+          state = {
+            "hidden": True,
+            "head": f"System:",
+            "body": f"Generating audio based on LLM output..."
+          }
+          socketio.emit('emit_music_page_board_add_state', state) 
+          
+          # Use TTS to speak the text and save it to temporary file storage
+          AIDJ_tts_filename = f"static/tmp/AIDJ_{AIDJ_tts_index:04d}.wav"
+          AIDJ_tts_index += 1
+          AIDJ_tts.tts_to_file(llm_text, file_path=AIDJ_tts_filename, speaker_wav=cfg.tts_model_speaker_sample, language=cfg.tts_model_language)
+
+          # Icreasing the volume of TTS output
+          # Load the audio file
+          sound = AudioSegment.from_wav(AIDJ_tts_filename)
+          # Increase the volume
+          sound = sound + 3 # plus 10db
+          # Save the modified audio to the same file
+          sound.export(AIDJ_tts_filename, format="wav")
+
+          state = {
+            "hidden": False,
+            "image": "/static/AI.jpg",
+            "head": f"AI DJ:",
+            "body": f"{llm_text}",
+            "audio_element": AIDJ_tts_filename
+          }
+          socketio.emit('emit_music_page_board_add_state', state) 
+
+          
+          state = {
+            "hidden": False,
+            "image": audiofile_data['image'], #link to the cover or bit64 image?
+            "head": f"Now playing:",
+            "body": f"{music_item['artist']} - {music_item['title']} | {music_item['album']}",
+            "audio_element": music_item
+          }
+          socketio.emit('emit_music_page_board_add_state', state) 
+          AIDJ_history += f"\n### SYSTEM:\n{state['head']} {state['body']}\n"
+
+          #socketio.emit('emit_music_page_AIDJ_append_messages', AIDJ_messages) 
+
+          #ind = np.random.randint(len(music_list))
+          #socketio.emit('emit_music_page_send_next_song', _music_list()[sampled_index])  
+        except Exception as error:
+          state = {
+            "hidden": False,
+            "head": f"Error:",
+            "body": f"{music_item['artist']} - {music_item['title']} | {music_item['album']}\n{str(error)}\n\n{traceback.format_exc()}",
+          }
+          socketio.emit('emit_music_page_board_add_state', state) 
+
+    predictor.unload_model()
+    predictor = None
+    print('Predictor:', predictor)
+
+  def edit_lyrics(file_path, new_lyrics):
+    try:
         # Load the audio file
-        sound = AudioSegment.from_wav(AIDJ_tts_filename)
-        # Increase the volume
-        sound = sound + 3 # plus 10db
-        # Save the modified audio to the same file
-        sound.export(AIDJ_tts_filename, format="wav")
+        audio = ID3(file_path)
+    except ID3NoHeaderError:
+        # If there's no existing metadata, create a new one
+        audio = ID3()
 
-        state = {
-          "hidden": False,
-          "image": "/static/AI.jpg",
-          "head": f"AI DJ:",
-          "body": f"{llm_text}",
-          "audio_element": AIDJ_tts_filename
-        }
-        socketio.emit('emit_music_page_board_add_state', state) 
+    # Remove existing lyrics (if any)
+    audio.delall('USLT')
+    # Add new lyrics
+    audio.add(USLT(text=new_lyrics))
 
-        state = {
-          "hidden": False,
-          "image": None, #link to the cover or bit64 image?
-          "head": f"Now playing:",
-          "body": f"{music_item['artist']} - {music_item['title']} | {music_item['album']}",
-          "audio_element": music_item
-        }
-        socketio.emit('emit_music_page_board_add_state', state) 
+    # Save changes
+    audio.save()
 
-        #socketio.emit('emit_music_page_AIDJ_append_messages', AIDJ_messages) 
-
-        #ind = np.random.randint(len(music_list))
-        #socketio.emit('emit_music_page_send_next_song', _music_list()[sampled_index])  
+  @socketio.on('emit_music_page_update_song_info')
+  def update_song_info(data):
+    print('update_song_info', data)
+    edit_lyrics(data['file_path'], data['lyrics'])
   
 if __name__ == "__main__":
   print('start')
