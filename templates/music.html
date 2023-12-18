@@ -61,11 +61,9 @@
 
       // Request next song if the previous has ended
       audioPlayer.onended = function() {
-        //socket.emit('emit_music_page_AIDJ_get_next_song', [cur_song_hash, +1]);
+        if (cur_song_hash != null) socket.emit('emit_music_page_set_song_play_rate', [cur_song_hash, +1]);
         audioPlayer.pause();
         play_next_item_from_item_stack();
-        //bg_audio.currentTime = 0;
-        //bg_audio.play()
       };
 
       audioPlayer.addEventListener("timeupdate", function() {
@@ -120,7 +118,7 @@
         //metadata['bitrate'] = tag.bitrate #(kbps)
         function generate_field_template(field_name, field_key, type="text"){
           return `<div class="field has-addons">
-                    <p class="control">
+                    <p class="control mb-0">
                       <a class="button is-static">
                         ${field_name}:
                       </a>
@@ -135,28 +133,14 @@
           <p>File path: ${item.audio_element['file_path']} </p>
           <p>Url path: ${item.audio_element['url_path']} </p>
           <p>Hash: ${item.audio_element['hash']} </p>
-          <br>
           ${generate_field_template('Artist', 'artist')}
           ${generate_field_template('Title', 'title')}
           ${generate_field_template('Album', 'album')}
           ${generate_field_template('Year', 'date', 'number')}
           ${generate_field_template('Track number', 'track_num', 'number')}
           ${generate_field_template('Ganre', 'genre')}
-
-          <!--
-          <p>Artist:  <input id="song_edit_title" class="input ml-2" type="text" value="${item.audio_element['artist']}"></p>
-          <p>Title:  <input id="song_edit_title" class="input ml-2" type="text" value="${item.audio_element['title']}"></p>
-          <p>Album:  <input id="song_edit_album" class="input ml-2" type="text" value="${item.audio_element['album']}"></p>
-          <p>Track number: <input id="song_edit_track_num" class="input ml-2" type="number" value="${item.audio_element['track_num']}"></p>
-          <p>Ganre:  <input id="song_edit_genre" class="input ml-2" type="text" value="${item.audio_element['genre']}"></p>
-          <p>Year:   <input id="song_edit_date" class="input ml-2" type="number" value="${item.audio_element['date']}"></p>
-          -->
-          <!--<p>Importance: <input id="news_open_importance" class="input ml-2" type="number" value="????" style="vertical-align: middle; width:auto" min="0" max="10"></p>
-          <p>GPS: <input id="news_open_coords" class="input ml-2" type="text" value="????" style="vertical-align: middle; width:auto"></p>-->
-
           <p>Lyrics:</p>
-          <textarea id="song_edit_lyrics" class="textarea has-fixed-size" rows="10">${item.audio_element['lyrics']}</textarea>
-          <br>
+          <textarea id="song_edit_lyrics" class="textarea has-fixed-size" rows="15">${item.audio_element['lyrics']}</textarea>
         </div>
 
         <footer class="card-footer">
@@ -171,12 +155,19 @@
         });
 
         $('#song_edit_modal_btn_update').click(()=>{ 
+          item.audio_element['artist']    = $('#song_edit_artist').val(); 
+          item.audio_element['title']     = $('#song_edit_title').val(); 
+          item.audio_element['date']      = $('#song_edit_date').val(); 
+          item.audio_element['track_num'] = $('#song_edit_track_num').val(); 
+          item.audio_element['genre']     = $('#song_edit_genre').val(); 
+          item.audio_element['lyrics']    = $('#song_edit_lyrics').val(); 
+
           let data = {
             'hash':      item.audio_element['hash'],
             'file_path': item.audio_element['file_path'],
             'artist':    $('#song_edit_artist').val(),
             'title':     $('#song_edit_title').val(),
-            'album':     $('#song_edit_aalbum').val(),
+            'album':     $('#song_edit_album').val(),
             'date':      $('#song_edit_date').val(),
             'track_num': $('#song_edit_track_num').val(),
             'genre':     $('#song_edit_genre').val(),
@@ -184,6 +175,7 @@
           };
 
           socket.emit('emit_music_page_update_song_info', data);
+          $(`#song_edit_modal`).removeClass('is-active');
         });
       });
 
@@ -517,12 +509,11 @@
     // AUDIO CONTROL METHODS
 
     function play_next_track(){
-      //socket.emit('emit_music_page_AIDJ_get_next_song', [cur_song_hash, -1]);
+      if (cur_song_hash != null) socket.emit('emit_music_page_set_song_play_rate', [cur_song_hash, -1]);
+
       audioPlayer.pause();
       bg_audio.pause();
       play_next_item_from_item_stack();
-      //bg_audio.currentTime = 0;
-      //bg_audio.play()
     }
 
     function play_previous_track(){

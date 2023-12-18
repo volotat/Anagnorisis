@@ -10,7 +10,28 @@ While developing the aim is to keep everything working under the 8GB of VRAM, ho
 | News page screenshot                                                | Music page screenshot                                               |
 
 ## Installation
-// TODO
+The project has only been tested on Ubuntu 22.04, there is no guarantee that it will work on any other platform. It is just a personal project, so there are no plans to add any support for other OS for now.  
+
+Recreate the Environment with following commands:  
+```
+python3 -m venv .env  # recreate the virtual environment  
+source .env/bin/activate  # activate the virtual environment  
+pip install -r requirements.txt  # install the required packages  
+```  
+
+Initialize your database with this command:  
+```
+flask --app flaskr init-db
+```  
+This should create a new 'instance/project.db' file, that will store your preferences, that will be used later to fine-tune the model.  
+
+Then run the project with command:  
+```
+bash run.sh
+```
+
+The project should be up and running on http://127.0.0.1:5001/  
+To change your media folder go to 'config,yaml' file and change 'music_page.media_directory' param to path of your music folder.  
 
 ## News
 // TODO

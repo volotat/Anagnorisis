@@ -32,3 +32,12 @@ fine_tuning_page:
   max_token_length: 768
   num_train_epochs: 1
   openassistant_percent: 20
+  project_files:
+    - README.md
+    - app.py
+    - llm_engine.py
+    - config.yaml
+    - src/
+    - templates/
+    - wiki/
+    - providers/

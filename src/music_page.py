@@ -196,7 +196,7 @@ def init_socket_events(socketio, predictor, app=None, cfg=None):
     #music_list = get_music_list_metadata()
     socketio.emit('emit_music_page_send_music_list', _music_list())  
 
-  '''@socketio.on('emit_music_page_get_next_song')
+  @socketio.on('emit_music_page_set_song_play_rate')
   def request_new_song(data):
     cur_song_hash = None
     song_score_change = None
@@ -214,32 +214,6 @@ def init_socket_events(socketio, predictor, app=None, cfg=None):
       
       #song.skip_score += skip_score_change
       src.db_models.db.session.commit()
-
-    if len(_music_list())>0:
-      # Convert the list to a NumPy array to work with numerical values
-      not_none_scores = np.array([music['user_rating'] for music in _music_list() if music['user_rating'] is not None])
-      print('Not none ratings:', list(not_none_scores))
-      # Calculate the median of the existing values
-      median_value = np.median(not_none_scores)
-      print('Median song rating:', median_value)
-
-      # Replace None values with the calculated median
-      scores = np.array([median_value * 0.3 if music['user_rating'] is None else music['user_rating'] for music in _music_list()])
-      scores = np.minimum(0.1, scores) # we make a minimum small value to the rating so songs with 0 rating have some small chance to be played
-      scores = (scores / 10) ** 2 # normalize scores and make songs with high rating much more likely to occur
-
-      #skip_score = np.array([music['skip_score'] for music in _music_list()])
-      full_play_count = np.array([music['full_play_count'] for music in _music_list()])
-      skip_count = np.array([music['skip_count'] for music in _music_list()])
-    
-      skip_score = sigmoid((10 + full_play_count - skip_count) / 10) # meaningful rage for skip_score [-30, 30] that result in a value ~ [0, 1]
-      scores = scores * skip_score
-
-      # Generate a random index based on the weights
-      sampled_index = np.random.choice(len(scores), p=scores/np.sum(scores))
-
-      #ind = np.random.randint(len(music_list))
-      socketio.emit('emit_music_page_send_next_song', _music_list()[sampled_index])  '''
 
   @socketio.on('emit_music_page_set_song_rating')
   def set_song_rating(data):
@@ -300,6 +274,21 @@ def init_socket_events(socketio, predictor, app=None, cfg=None):
 
     return _music_list()[sampled_index]
 
+  def seconds_to_hms(seconds):
+    hours, remainder = divmod(seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+
+    # Format the string
+    time_string = ""
+    if hours > 0:
+        time_string += f"{int(hours)} {'hour' if int(hours) == 1 else 'hours'} "
+    if minutes > 0:
+        time_string += f"{int(minutes)} {'minute' if int(minutes) == 1 else 'minutes'} "
+    if seconds > 0:
+        time_string += f"{int(seconds)} {'second' if int(seconds) == 1 else 'seconds'}"
+
+    return time_string.strip()
+  
   @socketio.on('emit_music_page_AIDJ_get_next_song')
   def request_new_song(data):
     nonlocal predictor, AIDJ_history, AIDJ_tts, AIDJ_tts_index
@@ -316,22 +305,20 @@ def init_socket_events(socketio, predictor, app=None, cfg=None):
 
     if len(_music_list())>0:
       for i in range(30):
-        if i==0:
-          music_item = next((x for x in _music_list() if x['hash'] == '19ae1ef83252736272c22edf16be95f09fb59f560097c9eb705fac95d6853a93'), None)
-        else:
-          music_item = select_random_music()
+        #if i==0:
+        #  music_item = next((x for x in _music_list() if x['hash'] == '3166336a479d2e50a397269c31991cd1998dc61027c72fdcdbaa1afd92bbbb4d'), None)
+        #else:
+        music_item = select_random_music()
           
         try: 
           audiofile_data = get_audiofile_data(music_item['file_path'], music_item['url_path'])
           # Add information from meta data of audio file
           music_item['lyrics'] = audiofile_data['lyrics']
           
-          user_rating_str = 'Not rated yet' if music_item['user_rating'] is None else '★' * music_item['user_rating'] + '☆' * (10 - music_item['user_rating'])
-
           state = {
             "hidden": True,
             "head": f"Next song selected:",
-            "body": f"{music_item['artist']} - {music_item['title']} | {music_item['album']}\n{user_rating_str}"
+            "body": f"{music_item['artist']} - {music_item['title']} | {music_item['album']}"
           }
           socketio.emit('emit_music_page_board_add_state', state) 
 
@@ -347,7 +334,8 @@ def init_socket_events(socketio, predictor, app=None, cfg=None):
             AIDJ_history += f"### HUMAN:\n{prompt}"
 
           #AIDJ_history += f" Do not use hackneyed phrases like 'So, sit back, relax, and enjoy..' and others like that."
-          AIDJ_history += f'''\nCurrent time: {current_time_str};\n\nInformation about current song:\nBand/Artist: {music_item['artist']};\nSong title: {music_item['title']};\nAlbum: {music_item['album']};\nRelease year: {music_item['date']};\nLength: {int(music_item['duration'])} seconds;'''
+          user_rating = 'Not rated yet' if music_item['user_rating'] is None else str(music_item['user_rating']) + '/10'
+          AIDJ_history += f'''\nCurrent time: {current_time_str};\n\nInformation about current song:\nBand/Artist: {music_item['artist']};\nSong title: {music_item['title']};\nAlbum: {music_item['album']};\nRelease year: {music_item['date']};\nLength: {seconds_to_hms(music_item['duration'])};\nFull play count: {int(music_item['full_play_count'])};\nSkip count: {int(music_item['skip_count'])};\nUser rating: {user_rating};'''
 
           if len(music_item['lyrics']) > 0: AIDJ_history += f"\nLyrics:\n{music_item['lyrics']}"
 
@@ -401,16 +389,21 @@ def init_socket_events(socketio, predictor, app=None, cfg=None):
           }
           socketio.emit('emit_music_page_board_add_state', state) 
 
-          
+          user_rating_str = 'Not rated yet' if music_item['user_rating'] is None else '★' * music_item['user_rating'] + '☆' * (10 - music_item['user_rating'])
+          skip_multiplier = sigmoid((10 + music_item['full_play_count'] - music_item['skip_count']) / 10)
+
+          song_info = f"\n{music_item['artist']} - {music_item['title']} | {music_item['album']}"
+          song_info += f"\nSong rating: {user_rating_str}"
+          song_info += f"\nFull plays: {music_item['full_play_count']}\nSkips: {music_item['skip_count']}\nSkip multiplier: {skip_multiplier:0.4f}"
           state = {
             "hidden": False,
             "image": audiofile_data['image'], #link to the cover or bit64 image?
             "head": f"Now playing:",
-            "body": f"{music_item['artist']} - {music_item['title']} | {music_item['album']}",
+            "body": song_info,
             "audio_element": music_item
           }
           socketio.emit('emit_music_page_board_add_state', state) 
-          AIDJ_history += f"\n### SYSTEM:\n{state['head']} {state['body']}\n"
+          AIDJ_history += f"\n### SYSTEM:\n{state['head']} {music_item['artist']} - {music_item['title']} | {music_item['album']}\n"
 
           #socketio.emit('emit_music_page_AIDJ_append_messages', AIDJ_messages) 
 
@@ -454,7 +447,3 @@ if __name__ == "__main__":
   hash_1 = calculate_audiodata_hash('src/music_1.mp3')
   hash_2 = calculate_audiodata_hash('src/music_2.mp3')
   print(hash_1, hash_2, hash_1 == hash_2)
-        
-
-        
-        
