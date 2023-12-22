@@ -12,6 +12,10 @@ Add music control to the common page header.
 Display music structure in a way as it is stored in the folders.
 Add a way to change rest of metadata of the song.
 Add volume control.
+Remove audio elements from base.html and add them to music.html
+When updating the page, it should load current radio session list and allow user to click at any song to play it.
+Add button that allows to start or continue radio session.
+Make music list inside its own window to not affect the top of the page.
 
 ### Fine-tuning 
 Make the progress bar active when the model is fine-tuned.  
@@ -39,9 +43,11 @@ Replace all "georgesung/llama2_7b_chat_uncensored" instances with info from conf
 ## Versions History
 
 ### Version 0.0.4 (?)
-Added installation info to the README.md file.
-Fixed some bugs that cause full_play_count and skip_count not being updated. 
-
+Added installation info to the README.md file.  
+Fixed some bugs that cause full_play_count and skip_count not being updated.  
+Fixed bug that caused page to scroll up when closing song edit modal window.  
+Fixed a dramatic mistake in fine-tunning, where text based data were sampled line by line instead of document based sampling as it was intended.  
+Added "Self-aware" mode to the fine-tunning, that adds main code of the project to the LLM training data.  
 
 ### Version 0.0.3 (16.11.2023)
 Radio mode converted to a state based approach to see everything that is happening at the backend in a real time and stack prepared announcements and songs in a buffer.  

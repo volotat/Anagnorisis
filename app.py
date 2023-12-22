@@ -66,7 +66,7 @@ def init_app():
 
   #### FINE-TUNING PAGE FUNCTIONALITY
   import src.fine_tune_page
-  src.fine_tune_page.init_socket_events(socketio, predictor)
+  src.fine_tune_page.init_socket_events(socketio, predictor, cfg=cfg.fine_tuning_page)
 
   @app.route('/fine-tune')
   def page_fine_tune():

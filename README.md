@@ -33,6 +33,15 @@ bash run.sh
 The project should be up and running on http://127.0.0.1:5001/  
 To change your media folder go to 'config,yaml' file and change 'music_page.media_directory' param to path of your music folder.  
 
+
+## General
+Here is the main pipeline of working with the project:  
+1. You rate some data such as news, songs, movies or anything else on the scale from 0 to 10 and all of this is stored in the project database.  
+2. When you acquire some amount of such rated data points you go to the 'fine-tuning' page and start the fine-tuning of the model so it could rate the data AS IF it was rated by you.  
+3. New model is used to sort new data by rates from the model and if you do not agree with the scores the model gave, you simply change it and store in the database.  
+
+You repeat these steps again and again, getting each time model that better and better aligns to your preferences.  
+
 ## News
 // TODO
 
@@ -63,7 +72,7 @@ News dataset is an automatically generated one, that makes the model understand 
 
 Memory data is different from all other types of data in a way that while fine-tuning the evaluation data is just a subset of training data. In contrast for all other types, training and evaluation data are always different. 
 
-You can also enable 'self-aware' mode at the fine-tuning stage. This will add all source files of the project into a 'datasets/memory' folder. This mode is mostly intended for the development of the project. (Not implemented yet!)
+You can also enable "self-aware" mode at the fine-tuning stage. This will add all source files of the project into the model's training data. This mode is mostly intended for the development of the project. 
 
 ## Wiki
 

@@ -136,9 +136,11 @@ def init_socket_events(socketio, predictor, app=None, cfg=None):
   media_directory = cfg.media_directory
   music_list = []
   music_ratings = None
+  play_history = ""
   AIDJ_history = ""
   AIDJ_tts = TTS(cfg.tts_model_path) #'tts_models/en/ljspeech/vits'
   AIDJ_tts_index = 0
+  
 
   def _music_list():
     nonlocal music_list
@@ -291,7 +293,7 @@ def init_socket_events(socketio, predictor, app=None, cfg=None):
   
   @socketio.on('emit_music_page_AIDJ_get_next_song')
   def request_new_song(data):
-    nonlocal predictor, AIDJ_history, AIDJ_tts, AIDJ_tts_index
+    nonlocal predictor, AIDJ_history, AIDJ_tts, AIDJ_tts_index, play_history
     if predictor is None: 
       state = {
         "hidden": False,
@@ -335,7 +337,8 @@ def init_socket_events(socketio, predictor, app=None, cfg=None):
 
           #AIDJ_history += f" Do not use hackneyed phrases like 'So, sit back, relax, and enjoy..' and others like that."
           user_rating = 'Not rated yet' if music_item['user_rating'] is None else str(music_item['user_rating']) + '/10'
-          AIDJ_history += f'''\nCurrent time: {current_time_str};\n\nInformation about current song:\nBand/Artist: {music_item['artist']};\nSong title: {music_item['title']};\nAlbum: {music_item['album']};\nRelease year: {music_item['date']};\nLength: {seconds_to_hms(music_item['duration'])};\nFull play count: {int(music_item['full_play_count'])};\nSkip count: {int(music_item['skip_count'])};\nUser rating: {user_rating};'''
+          AIDJ_history += f'''\nCurrent time: {current_time_str};\n\nInformation about current song:\nBand/Artist: {music_item['artist']};\nSong title: {music_item['title']};\nAlbum: {music_item['album']};\nRelease year: {music_item['date']};\nLength: {seconds_to_hms(music_item['duration'])};'''
+          AIDJ_history += f'''\nFull play count: {int(music_item['full_play_count'])};\nSkip count: {int(music_item['skip_count'])};\nUser rating: {user_rating};'''
 
           if len(music_item['lyrics']) > 0: AIDJ_history += f"\nLyrics:\n{music_item['lyrics']}"
 
@@ -362,32 +365,40 @@ def init_socket_events(socketio, predictor, app=None, cfg=None):
 
           state = {
             "hidden": True,
-            "head": f"System:",
-            "body": f"Generating audio based on LLM output..."
+            "head": f"LLM output:",
+            "body": llm_text
           }
           socketio.emit('emit_music_page_board_add_state', state) 
-          
-          # Use TTS to speak the text and save it to temporary file storage
-          AIDJ_tts_filename = f"static/tmp/AIDJ_{AIDJ_tts_index:04d}.wav"
-          AIDJ_tts_index += 1
-          AIDJ_tts.tts_to_file(llm_text, file_path=AIDJ_tts_filename, speaker_wav=cfg.tts_model_speaker_sample, language=cfg.tts_model_language)
 
-          # Icreasing the volume of TTS output
-          # Load the audio file
-          sound = AudioSegment.from_wav(AIDJ_tts_filename)
-          # Increase the volume
-          sound = sound + 3 # plus 10db
-          # Save the modified audio to the same file
-          sound.export(AIDJ_tts_filename, format="wav")
+          if len(llm_text.strip()) > 0:
+            state = {
+              "hidden": True,
+              "head": f"System:",
+              "body": f"Generating audio based on LLM output..."
+            }
+            socketio.emit('emit_music_page_board_add_state', state) 
+            
+            # Use TTS to speak the text and save it to temporary file storage
+            AIDJ_tts_filename = f"static/tmp/AIDJ_{AIDJ_tts_index:04d}.wav"
+            AIDJ_tts_index += 1
+            AIDJ_tts.tts_to_file(llm_text, file_path=AIDJ_tts_filename, speaker_wav=cfg.tts_model_speaker_sample, language=cfg.tts_model_language)
 
-          state = {
-            "hidden": False,
-            "image": "/static/AI.jpg",
-            "head": f"AI DJ:",
-            "body": f"{llm_text}",
-            "audio_element": AIDJ_tts_filename
-          }
-          socketio.emit('emit_music_page_board_add_state', state) 
+            # Icreasing the volume of TTS output
+            # Load the audio file
+            sound = AudioSegment.from_wav(AIDJ_tts_filename)
+            # Increase the volume
+            sound = sound + 3 # plus 10db
+            # Save the modified audio to the same file
+            sound.export(AIDJ_tts_filename, format="wav")
+
+            state = {
+              "hidden": False,
+              "image": "/static/AI.jpg",
+              "head": f"AI DJ:",
+              "body": f"{llm_text}",
+              "audio_element": AIDJ_tts_filename
+            }
+            socketio.emit('emit_music_page_board_add_state', state) 
 
           user_rating_str = 'Not rated yet' if music_item['user_rating'] is None else '★' * music_item['user_rating'] + '☆' * (10 - music_item['user_rating'])
           skip_multiplier = sigmoid((10 + music_item['full_play_count'] - music_item['skip_count']) / 10)
@@ -403,7 +414,9 @@ def init_socket_events(socketio, predictor, app=None, cfg=None):
             "audio_element": music_item
           }
           socketio.emit('emit_music_page_board_add_state', state) 
-          AIDJ_history += f"\n### SYSTEM:\n{state['head']} {music_item['artist']} - {music_item['title']} | {music_item['album']}\n"
+
+          #play_history += f"\n{music_item['artist']} - {music_item['title']} | {music_item['album']}"
+          #AIDJ_history += f"\n### SYSTEM:\nPlay history: {play_history}\n"
 
           #socketio.emit('emit_music_page_AIDJ_append_messages', AIDJ_messages) 
 

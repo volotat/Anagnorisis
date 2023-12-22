@@ -49,55 +49,108 @@ def create_fixed_size_dataset(dataset, tokens_window_size, tokenizer, stride = N
   fixed_size_dataset = datasets.Dataset.from_dict({"text": [example["text"] for example in fixed_size_examples]})
   return fixed_size_dataset
 
-class EmitLogDataCallback(transformers.TrainerCallback):
-  def __init__(self, emit_display_loss_data, train_loss_hist, eval_loss_hist) -> None:
-    super().__init__()
+def create_fixed_size_dataset_from_data_folder(data_folder, tokens_window_size, tokenizer):
+  data = []
 
-    self._emit_display_loss_data = emit_display_loss_data
-    self._train_loss_hist = train_loss_hist
-    self._eval_loss_hist = eval_loss_hist
-      
+  for filename in os.listdir(data_folder):
+      if filename.endswith(('.txt', '.py', '.yaml', '.md', '.html', '.js')):
+          file_path = os.path.join(data_folder, filename)
+          with open(file_path, 'r') as file:
+              text_content = file.read()
+          data.append({'path': file_path, 'text': text_content})
 
-  def on_log(self, args, state, control, logs=None, **kwargs):
-    if 'loss' in logs:
-      self._train_loss_hist.append(logs['loss'])
-    if 'eval_loss' in logs:
-      self._eval_loss_hist.append(logs['eval_loss'])
+  # Construct the dataset
+  train_dataset = datasets.Dataset.from_dict({'path': [item['path'] for item in data], 'text': [item['text'] for item in data]})
 
-    self._emit_display_loss_data()
+  #train_dataset = datasets.load_dataset("text", data_dir="datasets/ai_dj", split="train", sample_by="document", with_file_name=True)
+  train_dataset = create_fixed_size_dataset_with_filedata(train_dataset, tokens_window_size, tokenizer)
+  return train_dataset
 
-    percent = np.floor(state.global_step / state.max_steps * 100)
+# Define the sliding window function
+def create_fixed_size_dataset_with_filedata(dataset, tokens_window_size, tokenizer, stride = None):
+  tokens_window_size = tokens_window_size - 32 # keep some tokens for meta information about the file
 
-def init_socket_events(socketio, predictor):
-  train_loss_hist = []
-  eval_loss_hist = []
+  if stride is None: stride = tokens_window_size // 2
+  # Create a list to store the fixed-size examples
+  fixed_size_examples = []
 
-  def emit_display_loss_data():
-    data = {
-      'train_loss_hist': train_loss_hist,
-      'eval_loss_hist': eval_loss_hist
-    }
-    socketio.emit("emit_display_loss_data", data)  
-  
-  def emit_display_progress():
-    data = {
-      'train_loss_hist': train_loss_hist,
-      'eval_loss_hist': eval_loss_hist
-    }
-    socketio.emit("emit_display_loss_data", data)  
+  # Iterate through the original dataset
+  for example in dataset:
+      # Tokenize the input text using the model's tokenizer
+      input_text = example["text"]
+      filename = example["path"]
+      #print('filename', filename, 'input_text', input_text)
+      input_tokens = tokenizer.tokenize(input_text)
 
-  @socketio.on("connect")
-  def handle_connect():
-    emit_display_loss_data()
+      # Apply sliding window to create fixed-size examples
+      for start in range(0, len(input_tokens), stride):
+          end = start + tokens_window_size
+          fixed_size_input_tokens = input_tokens[start:end]
+          
+          # Convert tokens back to text
+          fixed_size_input = tokenizer.convert_tokens_to_string(fixed_size_input_tokens)
+          fixed_size_input = f'File: {filename} | Start token index: {start}\n{fixed_size_input}'
+          # Create a new example with the fixed-size input
+          new_example = {"text": fixed_size_input}  # You may need to include other fields if your dataset has them
+          #print('\n\n')
+          #print(new_example)
+          #print('token size:', len(tokenizer.tokenize(fixed_size_input)))
+          fixed_size_examples.append(new_example)
+
+  # Create a new dataset from the fixed-size examples
+  fixed_size_dataset = datasets.Dataset.from_dict({"text": [example["text"] for example in fixed_size_examples]})
+  return fixed_size_dataset
+
+
+def init_socket_events(socketio, predictor,cfg=None):
+  #train_loss_hist = []
+  #eval_loss_hist = []
+
+  class EmitLogDataCallback(transformers.TrainerCallback):
+    nonlocal socketio
+
+    def __init__(self) -> None:
+      super().__init__()
+
+      self.train_loss_hist = []
+      self.eval_loss_hist = []
+        
+
+    def on_log(self, args, state, control, logs=None, **kwargs):
+      if 'loss' in logs:
+        self.train_loss_hist.append(logs['loss'])
+      if 'eval_loss' in logs:
+        self.eval_loss_hist.append(logs['eval_loss'])
+
+      percent = np.floor(state.global_step / state.max_steps * 100)
+
+      data = {
+        'train_loss_hist': self.train_loss_hist,
+        'eval_loss_hist': self.eval_loss_hist,
+        'percent': percent
+      }
+      socketio.emit("emit_display_loss_data", data) 
+
+  #def emit_display_loss_data():
+  #  data = {
+  #    'train_loss_hist': train_loss_hist,
+  #    'eval_loss_hist': eval_loss_hist,
+  #    'percent': percent
+  #  }
+  #  socketio.emit("emit_display_loss_data", data)  
+
+  #@socketio.on("connect")
+  #def handle_connect():
+  #  emit_display_loss_data()
 
   @socketio.on("emit_start_fine_tuning")
   def handle_emit_start_fine_tuning():
-    nonlocal predictor, train_loss_hist, eval_loss_hist
+    nonlocal predictor
     if predictor is None: predictor = llm_engine.TextPredictor(socketio)
 
-    MAX_TOKEN_SIZE = 768
-    num_train_epochs = 1
-    openassistant_percent = 20
+    MAX_TOKEN_SIZE = cfg.max_token_length
+    num_train_epochs = cfg.num_train_epochs
+    openassistant_percent = cfg.openassistant_percent
 
 
     ### Unload previous Peft model
@@ -160,7 +213,7 @@ def init_socket_events(socketio, predictor):
       with open(f"datasets/news/{folder}/{news_data['hash']}.txt", "w") as text_file:
         text_file.write(prompt)
         
-    ### Load dataset
+    ### Load datasets
     openassistant_train_dataset = datasets.load_dataset('json', data_files='datasets/openassistant_best_replies_train.jsonl', split=f'train[:{openassistant_percent}%]')
     openassistant_eval_dataset = datasets.load_dataset('json', data_files='datasets/openassistant_best_replies_eval.jsonl', split=f'train[:{openassistant_percent}%]')
 
@@ -169,31 +222,41 @@ def init_socket_events(socketio, predictor):
 
     print(f"OpenAssistant train size: {len(openassistant_train_dataset)}, OpenAssistant eval size: {len(openassistant_eval_dataset)}")
 
-    aidj_train_dataset = datasets.load_dataset("text", data_dir="datasets/ai_dj", split="train")
-    aidj_eval_dataset = datasets.load_dataset("text", data_dir="datasets/ai_dj", split="train[:10%]")
+    aidj_train_dataset = datasets.load_dataset("text", data_dir="datasets/ai_dj", split="train", sample_by="document")
+    aidj_eval_dataset = datasets.load_dataset("text", data_dir="datasets/ai_dj", split="train[:10%]", sample_by="document")
 
     aidj_train_dataset = create_fixed_size_dataset(aidj_train_dataset, MAX_TOKEN_SIZE, tokenizer)
     aidj_eval_dataset = create_fixed_size_dataset(aidj_eval_dataset, MAX_TOKEN_SIZE, tokenizer)
 
     print(f"AIDJ train size: {len(aidj_train_dataset)}, AIDJ eval size: {len(aidj_eval_dataset)}")
 
-    memory_train_dataset = datasets.load_dataset("text", data_dir="datasets/memory", split="train")
-    memory_eval_dataset = datasets.load_dataset("text", data_dir="datasets/memory", split="train[:10%]")
+    memory_train_dataset = datasets.load_dataset("text", data_dir="datasets/memory", split="train", sample_by="document")
+    memory_eval_dataset = datasets.load_dataset("text", data_dir="datasets/memory", split="train[:10%]", sample_by="document")
 
     memory_train_dataset = create_fixed_size_dataset(memory_train_dataset, MAX_TOKEN_SIZE, tokenizer)
     memory_eval_dataset = create_fixed_size_dataset(memory_eval_dataset, MAX_TOKEN_SIZE, tokenizer)
 
     print(f"Memory train size: {len(memory_train_dataset)}, Memory eval size: {len(memory_eval_dataset)}")
 
-    news_train_dataset = datasets.load_dataset("text", data_dir="datasets/news/train", split="train")
-    news_eval_dataset = datasets.load_dataset("text", data_dir="datasets/news/eval", split="train")
+    news_train_dataset = datasets.load_dataset("text", data_dir="datasets/news/train", split="train", sample_by="document")
+    news_eval_dataset = datasets.load_dataset("text", data_dir="datasets/news/eval", split="train", sample_by="document")
 
     news_train_dataset = create_fixed_size_dataset(news_train_dataset, MAX_TOKEN_SIZE, tokenizer)
     news_eval_dataset = create_fixed_size_dataset(news_eval_dataset, MAX_TOKEN_SIZE, tokenizer)
 
     print(f"News train size: {len(news_train_dataset)}, News eval size: {len(news_eval_dataset)}")
 
-    dataset_train = datasets.concatenate_datasets([aidj_train_dataset, memory_train_dataset, news_train_dataset, openassistant_train_dataset]).shuffle()
+    ### Load project code as data
+    project_main_folder_dataset       = create_fixed_size_dataset_from_data_folder('../Anagnorisis/', MAX_TOKEN_SIZE, tokenizer)
+    project_src_folder_dataset        = create_fixed_size_dataset_from_data_folder('../Anagnorisis/src', MAX_TOKEN_SIZE, tokenizer)
+    project_templates_folder_dataset  = create_fixed_size_dataset_from_data_folder('../Anagnorisis/templates', MAX_TOKEN_SIZE, tokenizer)
+    project_wiki_folder_dataset       = create_fixed_size_dataset_from_data_folder('../Anagnorisis/wiki', MAX_TOKEN_SIZE, tokenizer)
+    project_providers_folder_dataset  = create_fixed_size_dataset_from_data_folder('../Anagnorisis/providers', MAX_TOKEN_SIZE, tokenizer)
+
+    project_dataset = datasets.concatenate_datasets([project_main_folder_dataset, project_src_folder_dataset, project_templates_folder_dataset, project_wiki_folder_dataset, project_providers_folder_dataset])
+
+    # Combine all datasets
+    dataset_train = datasets.concatenate_datasets([aidj_train_dataset, memory_train_dataset, news_train_dataset, openassistant_train_dataset, project_dataset]).shuffle()
     dataset_eval = datasets.concatenate_datasets([aidj_eval_dataset, memory_eval_dataset, news_eval_dataset, openassistant_eval_dataset]).shuffle()
 
     #dataset_train = trl.trainer.ConstantLengthDataset(tokenizer, dataset_train) 
@@ -222,7 +285,7 @@ def init_socket_events(socketio, predictor):
 
     ### Load trainer
     output_dir = "./models/training_checkpoints"
-    per_device_train_batch_size = 2
+    per_device_train_batch_size = 4
     gradient_accumulation_steps = 8
     optim = "paged_adamw_32bit"
     save_steps = 10
@@ -266,7 +329,7 @@ def init_socket_events(socketio, predictor):
         #max_seq_length=max_seq_length,
         tokenizer=tokenizer,
         args=training_arguments,
-        callbacks=[EmitLogDataCallback(emit_display_loss_data, train_loss_hist, eval_loss_hist),]
+        callbacks=[EmitLogDataCallback(),]
         #packing=True
     )
 

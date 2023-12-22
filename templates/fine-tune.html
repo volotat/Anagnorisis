@@ -40,7 +40,7 @@
     </form>
 
     <div class="box">
-      <progress class="progress" value="15" max="100">15%</progress>
+      <progress id="fine_tuning_progress" class="progress" value="0" max="100">0%</progress>
       <canvas id="chart_loss"></canvas>
     </div>
     
@@ -110,11 +110,13 @@
         return new Chart(ctx, config);
       })();
 
-      function update_chart(train_loss_hist, eval_loss_hist) {
+      function update_chart(train_loss_hist, eval_loss_hist, percent) {
         chart_loss.data.labels = Array.from(train_loss_hist.keys());
         chart_loss.data.datasets[0].data = train_loss_hist
         chart_loss.data.datasets[1].data = eval_loss_hist
         chart_loss.update();
+
+        $("#fine_tuning_progress").val(percent)
       }
 
       
@@ -126,7 +128,7 @@
         })
 
         socket.on('emit_display_loss_data', function(data){
-          update_chart(data['train_loss_hist'], data['eval_loss_hist'])
+          update_chart(data['train_loss_hist'], data['eval_loss_hist'], data['percent'])
         })
         
         $('#startBtn').on('click', function(){

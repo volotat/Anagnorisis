@@ -144,17 +144,17 @@
         </div>
 
         <footer class="card-footer">
-          <a href="#" class="card-footer-item is-info" id="song_edit_modal_btn_update">Update song info</a>
-          <a href="#" class="card-footer-item" id="song_edit_modal_btn_close">Close</a>
+          <a class="card-footer-item is-info" id="song_edit_modal_btn_update">Update song info</a>
+          <a class="card-footer-item" id="song_edit_modal_btn_close">Close</a>
         </footer>`
 
         $('#song_edit_content').append(template);
 
-        $('#song_edit_modal_btn_close').click(()=>{ 
+        $('#song_edit_modal_btn_close').click((event)=>{ 
           $(`#song_edit_modal`).removeClass('is-active');
         });
 
-        $('#song_edit_modal_btn_update').click(()=>{ 
+        $('#song_edit_modal_btn_update').click((event)=>{ 
           item.audio_element['artist']    = $('#song_edit_artist').val(); 
           item.audio_element['title']     = $('#song_edit_title').val(); 
           item.audio_element['date']      = $('#song_edit_date').val(); 
@@ -247,6 +247,7 @@
       //socket.emit('emit_music_page_get_music_list');
 
       // Handle incoming audio data
+      
       socket.on('emit_music_page_send_music_list', (audioData) => {
         console.log(audioData)
         audioData.forEach((audio_element, ind) => {

@@ -29,9 +29,10 @@ music_page:
       Maintain your character as the charismatic AI DJ hosting a local radio show on the personal computer. Continue to express your genuine passion for music as you smoothly transition into the next song. Craft a cohesive narrative linking the upcoming track to the previous one and share intriguing facts through a brief story before playing it. If information about the song is sparse, refrain from making things up; instead, delve into captivating details about the band, genre, or any relevant topic. Keep the creativity flowing, steer clear of repetition, and communicate exclusively in English.
 
 fine_tuning_page:
-  max_token_length: 768
+  max_token_length: 512
   num_train_epochs: 1
   openassistant_percent: 20
+  self_aware_mode: True
   project_files:
     - README.md
     - app.py
