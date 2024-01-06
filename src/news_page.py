@@ -114,6 +114,7 @@ def analyze_the_news(predictor, news_data):
 import providers.custom.meduza_news
 import providers.rss.astrapress
 import providers.rss.n1info
+import providers.rss.theguardian
 
 def get_news(socketio, predictor):
   print('get_news started')
@@ -137,6 +138,14 @@ def get_news(socketio, predictor):
 
   print("Getting news out of RSS: N1 (Serbia) provider...")
   news_list = providers.rss.n1info.get()[:20]
+  for news_data in tqdm(news_list):
+    news_data = analyze_the_news(predictor, news_data)
+    full_news_list.append(news_data)
+    full_news_list = list(filter(lambda item: item is not None, full_news_list))
+    socketio.emit("emit_news_page_news_list", full_news_list)
+
+  print("Getting news out of RSS: The Guardian provider...")
+  news_list = providers.rss.theguardian.get()[:100]
   for news_data in tqdm(news_list):
     news_data = analyze_the_news(predictor, news_data)
     full_news_list.append(news_data)

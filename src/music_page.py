@@ -431,8 +431,8 @@ def init_socket_events(socketio, predictor, app=None, cfg=None):
           socketio.emit('emit_music_page_board_add_state', state) 
 
     predictor.unload_model()
-    predictor = None
-    print('Predictor:', predictor)
+    #predictor = None
+    #print('Predictor:', predictor)
 
   def edit_lyrics(file_path, new_lyrics):
     try:

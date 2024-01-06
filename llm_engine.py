@@ -34,10 +34,20 @@ class StoppingCriteriaSub(StoppingCriteria):
 
     return False
 
-class TextPredictor():
+class TextPredictor:
+  _instance = None
+
+  def __new__(self, *args, **kwargs):
+    if not self._instance:
+      self._instance = super().__new__(self)
+      self.load_model(self)
+      
+    return self._instance
+    
   def __init__(self, socketio) -> None:
     self.socketio = socketio
 
+  def load_model(self):
     #model = "meta-llama/Llama-2-7b-chat-hf"
     #model_name = "4bit/Llama-2-7b-chat-hf"
     model_name = "georgesung/llama2_7b_chat_uncensored"
@@ -79,6 +89,13 @@ class TextPredictor():
     stop_words_ids = [torch.tensor([2277, 29937]), torch.tensor([835]), ] #   "\n### ", "###"  [tokenizer(stop_word, return_tensors='pt')['input_ids'].squeeze()[1:] for stop_word in stop_words]
     #print('stop_words_ids', stop_words_ids)
     self.stopping_criteria = StoppingCriteriaList([StoppingCriteriaSub(stops=stop_words_ids)])
+
+  def unload_model(self):
+    del self.tokenizer
+    del self.base_model
+    del self.model
+    gc.collect()
+    torch.cuda.empty_cache()
 
   # Generate responses
   def generate(self, prompt, temperature):
@@ -133,10 +150,3 @@ class TextPredictor():
       save_cache()
 
     return result
-  
-  def unload_model(self):
-    del self.tokenizer
-    del self.base_model
-    del self.model
-    gc.collect()
-    torch.cuda.empty_cache()
