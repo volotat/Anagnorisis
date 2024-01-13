@@ -170,11 +170,13 @@ def init_socket_events(socketio, predictor):
   def refresh_news():
     nonlocal predictor, news_list
     socketio.emit("emit_news_page_start_loading")
-    if predictor is None:
-      predictor = llm_engine.TextPredictor(socketio)
+    #if predictor is None:
+    #  predictor = llm_engine.TextPredictor(socketio)
     news_list = src.news_page.get_news(socketio, predictor)
     socketio.emit("emit_news_page_news_list", news_list)
     socketio.emit("emit_news_page_stop_loading")
+
+    predictor.unload_model()
 
   @socketio.on("emit_news_page_add_news_to_db")
   def add_news_to_db(news_data):

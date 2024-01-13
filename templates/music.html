@@ -2,6 +2,7 @@
 {% block content %}
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jsmediatags/3.9.5/jsmediatags.min.js" integrity="sha512-YsR46MmyChktsyMMou+Bs74oCa/CDdwft7rJ5wlnmDzMj1mzqncsfJamEEf99Nk7IB0JpTMo5hS8rxB49FUktQ==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
   <script type="text/javascript" src="static/js/music_page/main.js"></script>
+  <script type="text/javascript" src="static/js/music_page/library.js"></script>
 
   <!-- PAGE MAIN CONTENT -->
   <div class="block py-6 max-width" >
@@ -24,7 +25,8 @@
 
     <div  style="max-height: calc(100vh - 350px); overflow-y: auto; text-align: justify;">
       <div id="tab_content_library" class="container p-3 tab-content" style="display: none;">
-        <div class="is-flex mx-4 mb-4">
+        <progress id="fine_tuning_progress" class="progress mb-2" value="0" max="100">0%</progress>
+        <div class="is-flex mb-6">
           <div class="buttons my-0 is-flex-grow-1">
             <button class="button is-link is-fullwidth m-0" id="update_music_library">Update music library</button>
           </div>
@@ -32,6 +34,19 @@
             <i class="fas fa-2x fa-circle-check" id="update_music_library_status"></i>
           </span>
         </div>
+        
+        <nav class="breadcrumb" aria-label="breadcrumbs">
+          <ul>
+            <li><a href="#">Bulma</a></li>
+            <li><a href="#">Documentation</a></li>
+            <li><a href="#">Components</a></li>
+            <li class="is-active"><a href="#" aria-current="page">Breadcrumb</a></li>
+          </ul>
+        </nav>
+        <div id="library_files_container"  class="columns is-mobile is-multiline is-centered is-variable is-1">
+        </div>
+        
+        <!--
         <table class="table is-hoverable is-bordered" id="music_list_table">
           <thead>
             <tr>
@@ -46,29 +61,15 @@
               <th>Date</th>
               <th style="width:6em">Bitrate</th>
               <th style="width:10em">User rating</th>
-              <!--<th style="width:6em">Skip multiplier</th>-->
               <th style="width:6em">Full play count</th>
               <th style="width:6em">Skip count</th>
             </tr>
           </thead>
-          <!--<tfoot>
-            <tr>
-              <th><abbr title="Position">Pos</abbr></th>
-              <th>Team</th>
-              <th><abbr title="Played">Pld</abbr></th>
-              <th><abbr title="Won">W</abbr></th>
-              <th><abbr title="Drawn">D</abbr></th>
-              <th><abbr title="Lost">L</abbr></th>
-              <th><abbr title="Goals for">GF</abbr></th>
-              <th><abbr title="Goals against">GA</abbr></th>
-              <th><abbr title="Goal difference">GD</abbr></th>
-              <th><abbr title="Points">Pts</abbr></th>
-              <th>Qualification or relegation</th>
-            </tr>
-          </tfoot>-->
+          
           <tbody>
           </tbody>
         </table>
+        -->
       </div>
 
       <div id="tab_content_AI_DJ" class="container p-3 tab-content"></div>

@@ -40,7 +40,10 @@ class TextPredictor:
   def __new__(self, *args, **kwargs):
     if not self._instance:
       self._instance = super().__new__(self)
-      self.load_model(self)
+      self.tokenizer = None
+      self.base_model = None
+      self.model = None
+      #self.load_model(self)
       
     return self._instance
     
@@ -48,6 +51,8 @@ class TextPredictor:
     self.socketio = socketio
 
   def load_model(self):
+    self.socketio.emit("emit_llm_engine_start_loading") 
+
     #model = "meta-llama/Llama-2-7b-chat-hf"
     #model_name = "4bit/Llama-2-7b-chat-hf"
     model_name = "georgesung/llama2_7b_chat_uncensored"
@@ -90,15 +95,20 @@ class TextPredictor:
     #print('stop_words_ids', stop_words_ids)
     self.stopping_criteria = StoppingCriteriaList([StoppingCriteriaSub(stops=stop_words_ids)])
 
+    self.socketio.emit("emit_llm_engine_end_loading")
+
   def unload_model(self):
-    del self.tokenizer
-    del self.base_model
-    del self.model
+    self.tokenizer = None
+    self.base_model = None
+    self.model = None
     gc.collect()
     torch.cuda.empty_cache()
 
   # Generate responses
   def generate(self, prompt, temperature):
+    if self.tokenizer is None or self.model is None:
+      self.load_model()
+
     self.socketio.emit("emit_llm_engine_start_processing") 
 
     inputs = self.tokenizer(prompt, return_tensors="pt").to("cuda")

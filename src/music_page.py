@@ -138,7 +138,7 @@ def init_socket_events(socketio, predictor, app=None, cfg=None):
   music_ratings = None
   play_history = ""
   AIDJ_history = ""
-  AIDJ_tts = TTS(cfg.tts_model_path) #'tts_models/en/ljspeech/vits'
+  AIDJ_tts = None # TTS(cfg.tts_model_path)
   AIDJ_tts_index = 0
   
 
@@ -162,8 +162,7 @@ def init_socket_events(socketio, predictor, app=None, cfg=None):
     music_files = []
     for root, dirs, files in os.walk(media_directory):
       for file in files:
-        #MP3, OGG, OPUS, MP4, M4A, FLAC, WMA, Wave and AIFF
-        if file.lower().endswith((".mp3", ".flac")):
+        if file.lower().endswith(tuple(cfg.media_formats)):
           full_path = os.path.join(root, file)
           music_files.append(full_path)
 
@@ -294,14 +293,17 @@ def init_socket_events(socketio, predictor, app=None, cfg=None):
   @socketio.on('emit_music_page_AIDJ_get_next_song')
   def request_new_song(data):
     nonlocal predictor, AIDJ_history, AIDJ_tts, AIDJ_tts_index, play_history
-    if predictor is None: 
-      state = {
-        "hidden": False,
-        "head": f"System:",
-        "body": f"Loading LLM to system memory..."
-      }
-      socketio.emit('emit_music_page_board_add_state', state) 
-      predictor = llm_engine.TextPredictor(socketio)
+    if AIDJ_tts is None:
+      AIDJ_tts = TTS(cfg.tts_model_path)
+
+    #if predictor is None: 
+    #  state = {
+    #    "hidden": False,
+    #    "head": f"System:",
+    #    "body": f"Loading LLM to system memory..."
+    #  }
+    #  socketio.emit('emit_music_page_board_add_state', state) 
+    #  predictor = llm_engine.TextPredictor(socketio)
 
     _music_list() # Find a better way to initialize the list if it is not yet exist
 
@@ -405,7 +407,8 @@ def init_socket_events(socketio, predictor, app=None, cfg=None):
 
           song_info = f"\n{music_item['artist']} - {music_item['title']} | {music_item['album']}"
           song_info += f"\nSong rating: {user_rating_str}"
-          song_info += f"\nFull plays: {music_item['full_play_count']}\nSkips: {music_item['skip_count']}\nSkip multiplier: {skip_multiplier:0.4f}"
+          lyrics_stat = "Yes" if len(music_item['lyrics']) > 0 else "No"
+          song_info += f"\nFull plays: {music_item['full_play_count']}\nSkips: {music_item['skip_count']}\nSkip multiplier: {skip_multiplier:0.4f}\nLyrics: {lyrics_stat}"
           state = {
             "hidden": False,
             "image": audiofile_data['image'], #link to the cover or bit64 image?
@@ -454,6 +457,35 @@ def init_socket_events(socketio, predictor, app=None, cfg=None):
   def update_song_info(data):
     print('update_song_info', data)
     edit_lyrics(data['file_path'], data['lyrics'])
+
+
+  @socketio.on('emit_music_page_get_files')
+  def get_files(path):
+    nonlocal media_directory
+    files_data = []
+    for file_path in os.listdir(os.path.join(media_directory, path)):
+      print(file_path)
+
+      full_path = os.path.join(media_directory, path, file_path)
+      basename = os.path.basename(file_path)
+
+      file_type = "undefined"
+      if os.path.isdir(full_path): file_type = "folder"
+      if os.path.isfile(full_path): file_type = "file"
+
+      if file_type == "folder" or basename.lower().endswith(tuple(cfg.media_formats)):
+        data = {
+          "type": file_type,
+          "full_path": full_path,
+          "file_path": os.path.join(path, file_path),
+          "base_name": basename
+        }
+        files_data.append(data)
+      
+      #if file_path.lower().endswith(tuple(cfg.media_formats)):
+        
+
+    socketio.emit('emit_music_page_show_files', files_data) 
   
 if __name__ == "__main__":
   print('start')

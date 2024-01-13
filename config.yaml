@@ -6,6 +6,9 @@ main:
 
 music_page:
   media_directory: "/media/alex/Expansion/Music"
+  media_formats: #MP3, OGG, OPUS, MP4, M4A, FLAC, WMA, Wave and AIFF
+    - ".mp3"
+    - ".flac" 
   llm_temperature: 1.3
   tts_model_path: "tts_models/multilingual/multi-dataset/xtts_v2"  #'tts_models/en/ljspeech/vits'
   tts_model_speaker_sample: "static/female.wav"

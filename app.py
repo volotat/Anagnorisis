@@ -9,6 +9,8 @@ from datetime import datetime
 import sys
 
 import markdown
+from markdown.extensions.codehilite import CodeHiliteExtension
+
 from omegaconf import OmegaConf
 
 def init_app():
@@ -24,11 +26,13 @@ def init_app():
 
   import src.db_models
   src.db_models.db.init_app(app)
+  
 
   migrate = Migrate(app, src.db_models.db)
   migrate.init_app(app, src.db_models.db)
 
-  predictor = None 
+  predictor = llm_engine.TextPredictor(socketio) 
+  markdown_extensions=['tables']
 
   #### MAIN PAGE FUNCTIONALITY
   @app.route('/')
@@ -36,9 +40,28 @@ def init_app():
     # Read the Markdown file and convert it to HTML
     with open('README.md', 'r') as file:
       markdown_text = file.read()
-      html = markdown.markdown(markdown_text)
+      html = markdown.markdown(markdown_text, extensions=markdown_extensions)
 
-    return render_template('main.html', content=html, cfg=cfg)
+    return render_template('wiki.html', content=html, cfg=cfg)
+  
+  #### WIKI PAGE FUNCTIONALITY
+  #import src.wiki_page
+  import os
+  
+  @app.route('/wiki/<page_name>')
+  def page_wiki(page_name):
+    # Assume your Markdown files are in a folder named 'wiki'
+    file_path = os.path.join('wiki', f'{page_name}')
+
+    if os.path.exists(file_path):
+      with open(file_path, 'r') as file:
+        markdown_text = file.read()
+        html = markdown.markdown(markdown_text, extensions=markdown_extensions)
+    else:
+      # Handle the case where the file doesn't exist
+      html = '<p>Page not found</p>'
+
+    return render_template('wiki.html', content=html, cfg=cfg)
 
   #### CHAT PAGE FUNCTIONALITY
   import src.chat_page
@@ -71,7 +94,7 @@ def init_app():
   @app.route('/fine-tune')
   def page_fine_tune():
     return render_template('fine-tune.html', cfg=cfg)
-
+  
   #### RUNNING THE APPLICATION
   socketio.run(app, host=cfg.main.host, port=cfg.main.port)
 

@@ -21,10 +21,22 @@
 
     $("document").ready(function(){
       socket.on('emit_llm_engine_start_processing', function(){
+        $('#llm_processing_progress_bar').removeClass("is-warning")
+        $('#llm_processing_progress_bar').addClass("is-success")
         $('#llm_processing_progress_bar').removeAttr("value");
       });
 
       socket.on('emit_llm_engine_end_processing', function(){
+        $('#llm_processing_progress_bar').attr("value", 0);
+      });
+
+      socket.on('emit_llm_engine_start_loading', function(){
+        $('#llm_processing_progress_bar').removeClass("is-success")
+        $('#llm_processing_progress_bar').addClass("is-warning")
+        $('#llm_processing_progress_bar').removeAttr("value");
+      });
+
+      socket.on('emit_llm_engine_end_loading', function(){
         $('#llm_processing_progress_bar').attr("value", 0);
       });
     })
@@ -48,7 +60,7 @@
     <div class="navbar-menu">
       <div class="navbar-brand">
         <a class="navbar-item" href="/">
-          <img src="static/ana_icon.svg" width="80" height="100%">
+          <img src="/static/ana_icon.svg" width="80" height="100%">
         </a>
     
         <a role="button" class="navbar-burger" aria-label="menu" aria-expanded="false" data-target="navbarBasicExample">
@@ -140,9 +152,9 @@
         I'm in a box.
       </div>-->
 
-      <a class="navbar-item" href="/wiki">
+      <!--<a class="navbar-item" href="/wiki">
         Wiki
-      </a>
+      </a>-->
     </div>
   </nav>
   <progress id="llm_processing_progress_bar" class="progress is-small is-primary is-expanded mb-0" max="100" style="height:.20rem" value="0"></progress>

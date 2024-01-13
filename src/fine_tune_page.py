@@ -146,7 +146,7 @@ def init_socket_events(socketio, predictor,cfg=None):
   @socketio.on("emit_start_fine_tuning")
   def handle_emit_start_fine_tuning():
     nonlocal predictor
-    if predictor is None: predictor = llm_engine.TextPredictor(socketio)
+    #if predictor is None: predictor = llm_engine.TextPredictor(socketio)
 
     MAX_TOKEN_SIZE = cfg.max_token_length
     num_train_epochs = cfg.num_train_epochs

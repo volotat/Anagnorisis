@@ -4,7 +4,7 @@ Anagnorisis - is a local recommendation system based on Llama 2 that is fine-tun
 The project uses [llama2_7b_chat_uncensored](https://huggingface.co/georgesung/llama2_7b_chat_uncensored) as a base model as it provides cheap and reliable way to get expected results before any fine-tuning. It uses [Flask]() libraries for backend, [Huggingface]() libraries for all ML related stuff and [Bulma]() as frontend CSS framework. This is the main technological stack, however there are more libraries used for specific purposes.
 
 While developing the aim is to keep everything working under the 8GB of VRAM, however this limit might be changed in the future. Please be aware that proper functionality with less amount of VRAM is not guaranteed. The project is at its very early stage so expect to have many bugs and difficulties running it on your PC.
-
+   
 | [![Screenshot 1](static/screenshot_1.png)](static/screenshot_1.png) | [![Screenshot 2](static/screenshot_2.png)](static/screenshot_2.png) |
 |:-------------------------------------------------------------------:|:-------------------------------------------------------------------:|
 | News page screenshot                                                | Music page screenshot                                               |
@@ -13,22 +13,23 @@ While developing the aim is to keep everything working under the 8GB of VRAM, ho
 The project has only been tested on Ubuntu 22.04, there is no guarantee that it will work on any other platform. It is just a personal project, so there are no plans to add any support for other OS for now.  
 
 Recreate the Environment with following commands:  
-```
-python3 -m venv .env  # recreate the virtual environment  
-source .env/bin/activate  # activate the virtual environment  
-pip install -r requirements.txt  # install the required packages  
-```  
+
+    python3 -m venv .env  # recreate the virtual environmen
+    source .env/bin/activate  # activate the virtual environment
+    pip install -r requirements.txt  # install the required packages
+
 
 Initialize your database with this command:  
-```
-flask --app flaskr init-db
-```  
+
+    flask --app flaskr init-db
+
+
 This should create a new 'instance/project.db' file, that will store your preferences, that will be used later to fine-tune the model.  
 
 Then run the project with command:  
-```
-bash run.sh
-```
+
+    bash run.sh
+
 
 The project should be up and running on http://127.0.0.1:5001/  
 To change your media folder go to 'config,yaml' file and change 'music_page.media_directory' param to path of your music folder.  
