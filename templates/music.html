@@ -2,22 +2,46 @@
 {% block content %}
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jsmediatags/3.9.5/jsmediatags.min.js" integrity="sha512-YsR46MmyChktsyMMou+Bs74oCa/CDdwft7rJ5wlnmDzMj1mzqncsfJamEEf99Nk7IB0JpTMo5hS8rxB49FUktQ==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
   <script type="text/javascript" src="static/js/music_page/main.js"></script>
+  <script type="text/javascript" src="static/js/music_page/radio.js"></script>
   <script type="text/javascript" src="static/js/music_page/library.js"></script>
 
   <!-- PAGE MAIN CONTENT -->
+  <audio controls id="bg_audio" autoplay class="is-hidden"></audio>
+  <audio controls id="my_audio" autoplay class="is-hidden"></audio>
+  <audio controls id="AIDJ_speaker" autoplay class="is-hidden"></audio>
+  <!--
+  <div class="tags has-addons">
+    <span class="tag is-medium">
+      <figure class="image is-48x48">
+        <img src="https://bulma.io/images/placeholders/48x48.png">
+      </figure>
+    </span>
+    <span class="tag is-medium">Artist - Song</span>
+    <a class="tag button is-medium">
+      <i class="fas fa-backward-fast"></i>
+    </a>
+    <a class="tag button is-medium"> 
+      <i class="fas fa-solid fa-play"></i>
+    </a>
+    <a class="tag button is-medium">
+      <i class="fas fa-forward-fast"></i>
+    </a>
+  </div>
+  -->
+
   <div class="block py-6 max-width" >
     <div class="tabs is-centered">
       <ul>
-        <li id="tab_button_library" class="tab-button" onclick="showTab('library')">
+        <li id="tab_button_library" class="tab-button">
           <a>
             <span class="icon is-small"><i class="fas fa-image" aria-hidden="true"></i></span>
             <span>Library</span>
           </a>
         </li>
-        <li id="tab_button_AI_DJ" class="tab-button is-active" onclick="showTab('AI_DJ')">
+        <li id="tab_button_radio" class="tab-button is-active">
           <a>
             <span class="icon is-small"><i class="fas fa-music" aria-hidden="true"></i></span>
-            <span>AI DJ</span>
+            <span>Radio</span>
           </a>
         </li>
       </ul>
@@ -25,7 +49,7 @@
 
     <div  style="max-height: calc(100vh - 350px); overflow-y: auto; text-align: justify;">
       <div id="tab_content_library" class="container p-3 tab-content" style="display: none;">
-        <progress id="fine_tuning_progress" class="progress mb-2" value="0" max="100">0%</progress>
+        <progress id="library_update_progress" class="progress mb-2" value="0" max="100">0%</progress>
         <div class="is-flex mb-6">
           <div class="buttons my-0 is-flex-grow-1">
             <button class="button is-link is-fullwidth m-0" id="update_music_library">Update music library</button>
@@ -36,8 +60,8 @@
         </div>
         
         <nav class="breadcrumb" aria-label="breadcrumbs">
-          <ul>
-            <li><a href="#">Bulma</a></li>
+          <ul id="library_files_breadcrumb">
+            <li><a href="#">Exmaple</a></li>
             <li><a href="#">Documentation</a></li>
             <li><a href="#">Components</a></li>
             <li class="is-active"><a href="#" aria-current="page">Breadcrumb</a></li>

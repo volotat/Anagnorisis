@@ -8,16 +8,14 @@ Think over how to add the current time to the prompt and take it into account wh
 Predict tags of the news and allow to filter the news by this tags.
  
 ### Music 
-Add progress bar when music library updating.  
-Add icon change on play button when song is paused.    
-Add music control to the common page header.  
-Display music structure in a way as it is stored in the folders.
+Add progress bar when music library updating.    
 Add a way to change rest of metadata of the song.
 Add volume control.
-Remove audio elements from base.html and add them to music.html
-When updating the page, it should load current radio session list and allow user to click at any song to play it.
+Allow user to click at any song to play it.
 Add button that allows to start or continue radio session.
-Make music list inside its own window to not affect the top of the page.
+Add message if there is new unindexed media files. 
+Add "What would you like to listen today?" text field and start session button.
+Add a way to activate or deactivate AIDJ.
 
 ### Fine-tuning 
 Make the progress bar active when the model is fine-tuned.  
@@ -44,14 +42,21 @@ Replace all "georgesung/llama2_7b_chat_uncensored" instances with info from conf
 Find some way of adding some sort of "extensions" where we can see data from some arbitrary service such as twitter, youtube, reddit and so on and rates this data locally.  
 Create an extension that provides recent Arxiv papers (https://arxiv.org/list/cs.LG/recent).  
 Make a queue for LLM engine processing.  
+Remove all dependencies on CDN services.
 
 ## Versions History
 
-### Version 0.0.5 (?)
+### Version 0.0.5 (14.01.2024)
 Added LLM loading indication.  
 Added tables markdown extension for proper wiki rendering.  
 TTS initialization changed to on demand approach for faster start up time.  
 Added wiki pages rendering. The 'wiki' button has been removed, as everything is acceptable through the main page. 
+Audio elements removed from base.html and add them to music.html.
+Added message about TTS initialization when AIDJ been activated.
+Added music library navigation system.
+Added icon change on play button when song is paused. 
+Radio related code has been moved to separate js file, also some code cleanup. 
+Now radio history is not lost when music page has been reloaded.
 
 ### Version 0.0.4 (06.01.2024)
 Added installation info to the README.md file.  

@@ -17,16 +17,46 @@
   $(document).ready(function() {
     // Request files from the main media folder
     socket.emit('emit_music_page_get_files', '');
-
+    
+    $('#library_files_breadcrumb').empty();
+    $('#library_files_breadcrumb').append(
+      `<li class="is-active"><a href="#" aria-current="page">media</a></li>`
+    );
+    
     // Display files from the folder
-    socket.on('emit_music_page_show_files', (files_data) => {
+    socket.on('emit_music_page_show_files', (data) => {
+      console.log(data)
+
+      // Update breadcrumb
+      $('#library_files_breadcrumb').empty();
+
+      let indx = makeid(16);
+      $('#library_files_breadcrumb').append(
+        `<li><a id="${indx}">media</a></li>`
+      );
+      $(`#${indx}`).click(()=>{ 
+        socket.emit('emit_music_page_get_files', '');
+      });
+
+      data["folder_path"].split('/').forEach((element, ind, array) => {
+        let indx = makeid(16);
+        let path = array.slice( 0, ind + 1 ).join( '/' );
+        $('#library_files_breadcrumb').append(
+          `<li><a id="${indx}">${element}</a></li>`
+        );
+
+        $(`#${indx}`).click(()=>{ 
+          socket.emit('emit_music_page_get_files', path);
+        });
+      })
+
+      // Show current files 
       $('#library_files_container').empty();
 
-      console.log(files_data)
-      files_data.forEach((element, ind) => {
-        let indx = makeid(8);
+      data["files_data"].forEach((element, ind) => {
+        let indx = makeid(16);
         $('#library_files_container').append(
-          `<div id="file_${indx}" class="column is-2 is-clickable is-centered">
+          `<div id="${indx}" class="column is-2 is-clickable is-centered">
             <div class="box">
               <i class="fa-solid fa-${element["type"]} fa-8x"></i>
               <br><br>
@@ -35,7 +65,7 @@
           </div>`
         );
 
-        $(`#file_${indx}`).click(()=>{ 
+        $(`#${indx}`).click(()=>{ 
           socket.emit('emit_music_page_get_files', element["file_path"]);
         });
       });
