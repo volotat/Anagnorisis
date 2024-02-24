@@ -46,6 +46,13 @@ Remove all dependencies on CDN services.
 
 ## Versions History
 
+### Version 0.0.6 (25.02.2024)
+Regex format for predicted GPS coordinates of the news has been fixed to allow negative numbers.  
+Some code refactoring related to music page.  
+Some preparations and test for extension-based architecture.  
+Added some primitive control of the news sources with config.yaml.  
+Added radio configuration form with an option to switch off AI DJ.  
+
 ### Version 0.0.5 (14.01.2024)
 Added LLM loading indication.  
 Added tables markdown extension for proper wiki rendering.  

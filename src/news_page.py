@@ -81,7 +81,7 @@ def analyze_the_news(predictor, news_data):
       #print("Importance not found!")
 
     # Find predicted GPS coordinates of the given news
-    pattern = r'GPS: ([\d\.]+), ([\d\.]+)'
+    pattern = r'GPS: ([-\d\.]+), ([-\d\.]+)'
     match = re.search(pattern, new_text)
 
     if match:
@@ -116,41 +116,45 @@ import providers.rss.astrapress
 import providers.rss.n1info
 import providers.rss.theguardian
 
-def get_news(socketio, predictor):
+def get_news(socketio, predictor, cfg):
   print('get_news started')
   full_news_list = []
 
-  print("Getting news out of 'Medusa' provider...")
-  news_list = providers.custom.meduza_news.get(20)
-  for news_data in tqdm(news_list):
-    news_data = analyze_the_news(predictor, news_data)
-    full_news_list.append(news_data)
-    full_news_list = list(filter(lambda item: item is not None, full_news_list))
-    socketio.emit("emit_news_page_news_list", full_news_list)
+  if "meduza_news" in cfg.sources:
+    print("Getting news out of 'Medusa' provider...")
+    news_list = providers.custom.meduza_news.get(20)
+    for news_data in tqdm(news_list):
+      news_data = analyze_the_news(predictor, news_data)
+      full_news_list.append(news_data)
+      full_news_list = list(filter(lambda item: item is not None, full_news_list))
+      socketio.emit("emit_news_page_news_list", full_news_list)
 
-  print("Getting news out of RSS:'TG/Astrapress' provider...")
-  news_list = providers.rss.astrapress.get()[:20]
-  for news_data in tqdm(news_list):
-    news_data = analyze_the_news(predictor, news_data)
-    full_news_list.append(news_data)
-    full_news_list = list(filter(lambda item: item is not None, full_news_list))
-    socketio.emit("emit_news_page_news_list", full_news_list)
+  if "astrapress" in cfg.sources:
+    print("Getting news out of RSS:'TG/Astrapress' provider...")
+    news_list = providers.rss.astrapress.get()[:20]
+    for news_data in tqdm(news_list):
+      news_data = analyze_the_news(predictor, news_data)
+      full_news_list.append(news_data)
+      full_news_list = list(filter(lambda item: item is not None, full_news_list))
+      socketio.emit("emit_news_page_news_list", full_news_list)
 
-  print("Getting news out of RSS: N1 (Serbia) provider...")
-  news_list = providers.rss.n1info.get()[:20]
-  for news_data in tqdm(news_list):
-    news_data = analyze_the_news(predictor, news_data)
-    full_news_list.append(news_data)
-    full_news_list = list(filter(lambda item: item is not None, full_news_list))
-    socketio.emit("emit_news_page_news_list", full_news_list)
+  if "n1info" in cfg.sources:
+    print("Getting news out of RSS: N1 (Serbia) provider...")
+    news_list = providers.rss.n1info.get()[:20]
+    for news_data in tqdm(news_list):
+      news_data = analyze_the_news(predictor, news_data)
+      full_news_list.append(news_data)
+      full_news_list = list(filter(lambda item: item is not None, full_news_list))
+      socketio.emit("emit_news_page_news_list", full_news_list)
 
-  print("Getting news out of RSS: The Guardian provider...")
-  news_list = providers.rss.theguardian.get()[:100]
-  for news_data in tqdm(news_list):
-    news_data = analyze_the_news(predictor, news_data)
-    full_news_list.append(news_data)
-    full_news_list = list(filter(lambda item: item is not None, full_news_list))
-    socketio.emit("emit_news_page_news_list", full_news_list)
+  if "theguardian" in cfg.sources:
+    print("Getting news out of RSS: The Guardian provider...")
+    news_list = providers.rss.theguardian.get()[:100]
+    for news_data in tqdm(news_list):
+      news_data = analyze_the_news(predictor, news_data)
+      full_news_list.append(news_data)
+      full_news_list = list(filter(lambda item: item is not None, full_news_list))
+      socketio.emit("emit_news_page_news_list", full_news_list)
   
   full_news_list = list(filter(lambda item: item is not None, full_news_list))
   return full_news_list
@@ -158,7 +162,7 @@ def get_news(socketio, predictor):
 
 from flask import request
 
-def init_socket_events(socketio, predictor):
+def init_socket_events(socketio, predictor, cfg=None):
   news_list = []
 
   @socketio.on("emit_news_page_get_news")
@@ -172,7 +176,7 @@ def init_socket_events(socketio, predictor):
     socketio.emit("emit_news_page_start_loading")
     #if predictor is None:
     #  predictor = llm_engine.TextPredictor(socketio)
-    news_list = src.news_page.get_news(socketio, predictor)
+    news_list = src.news_page.get_news(socketio, predictor, cfg=cfg)
     socketio.emit("emit_news_page_news_list", news_list)
     socketio.emit("emit_news_page_stop_loading")
 

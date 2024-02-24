@@ -167,3 +167,4 @@ models/
 cache/
 static/tmp/
 static/discarded/
+experiments/

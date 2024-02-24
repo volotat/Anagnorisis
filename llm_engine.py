@@ -137,6 +137,7 @@ class TextPredictor:
     #word_token_pairs = [[word, token_id] for word, token_id in zip(output_tokens, generation_outputs[0].tolist())]
     #print('GEN OUT:', word_token_pairs)
 
+    #print(generation_outputs)
     outputs = self.tokenizer.batch_decode(generation_outputs, skip_special_tokens=True)  
 
     self.socketio.emit("emit_llm_engine_end_processing")

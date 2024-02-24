@@ -75,6 +75,7 @@ function createStarString(N) {
       show_song_rating(cur_song_score)
     }, 500);
   }
+  window.show_song_rating = show_song_rating;
 
   function play_next_item_from_item_stack(){
     if (item_index >= item_stack.length){
@@ -142,7 +143,7 @@ function createStarString(N) {
                         </figure>`
     }
   
-    $("#tab_content_AI_DJ").append(
+    $("#tab_content_radio").append(
       `<div id="state_${state_index}" class="card" ${state['hidden'] ? 'style="opacity: 30%; {{"" if cfg.music_page.show_hidden_messages else "display:none" }}"': ''}>
         <div class="card-content media">
           ${image_template}
@@ -205,6 +206,7 @@ function createStarString(N) {
   
     socket.emit('emit_music_page_set_song_rating', {"hash": cur_song_hash, "score": score});
   }
+  window.set_song_rating = set_song_rating;
   
   // AUDIO CONTROL METHODS
   
@@ -429,11 +431,39 @@ function createStarString(N) {
       //navigator.mediaSession.setActionHandler('skipad', function() {  });
     }
 
+    //// ADD RADIO REGULATORS
+    $("#tab_content_radio").append(
+      `<div class="block">
+        <div class="field">
+          <label class="label">What music do you want to listen today?</label>
+          <div class="control">
+            <input class="input" id="radio_session_prompt" type="text" placeholder="Enter music genre, artist, song or anything else you have in mind">
+          </div>
+        </div>
+
+        <div class="field">
+          <input id="radio_session_use_AIDJ" type="checkbox" name="switchRoundedDefault" class="switch is-rounded" checked="checked">
+          <label for="radio_session_use_AIDJ">Activate AI DJ</label>
+        </div>
+
+        <div class="field">
+          <div class="control">
+            <button class="button is-primary is-fullwidth" id="radio_session_start">Start Radio Session</button>
+          </div>
+        </div>
+      </div>`)
+
+    $("#radio_session_start").click(()=>{
+      socket.emit('emit_music_page_radio_session_start', {
+        "prompt": $("#radio_session_prompt").val(),
+        "use_AIDJ": $("#radio_session_use_AIDJ").is(":checked")
+      });
+    });
+
     // Request the current state of radio history
     socket.emit('emit_music_page_get_radio_history')
   })
 
-  
   //// RESPONDS TO SOCKET EVENTS
   socket.on('emit_music_page_show_radio_history', (radio_states) => {
     radio_states.forEach((state, ind) => {

@@ -155,8 +155,9 @@ def init_socket_events(socketio, predictor, app=None, cfg=None):
     nonlocal media_directory
     return send_from_directory(media_directory, filename)
 
-  @socketio.on('emit_music_page_refresh_music_library')
-  def refresh_music_library():
+  @socketio.on('emit_music_page_update_music_library')
+  def update_music_library():
+    print('Updating music library...')
     nonlocal media_directory
   
     music_files = []
@@ -169,19 +170,26 @@ def init_socket_events(socketio, predictor, app=None, cfg=None):
     #music_list = []
     for full_path in tqdm(music_files):   
       try: 
-        url_path = 'media/' + full_path.replace(media_directory, '')
+        url_path = os.path.join('media/', full_path.replace(media_directory, ''))
         audiofile_data = get_audiofile_data(full_path, url_path)
 
         # Check if a row with the same primary key (hash) exists
         existing_music = src.db_models.MusicLibrary.query.get(audiofile_data['hash'])
 
+        # Get only relevant music data
+        new_music_data = {}
+        for key, value in audiofile_data.items():
+          # check if music object has attribute:
+          if hasattr(src.db_models.MusicLibrary, key):
+            new_music_data[key] = value
+
         if existing_music:
           # Update the existing row with the new data
-          for key, value in audiofile_data.items():
+          for key, value in new_music_data.items():
             setattr(existing_music, key, value)
         else:
           # Create a new row
-          new_music = src.db_models.MusicLibrary(**audiofile_data)
+          new_music = src.db_models.MusicLibrary(**new_music_data)
           src.db_models.db.session.add(new_music)
 
         # Commit the changes to the database
@@ -352,10 +360,14 @@ def init_socket_events(socketio, predictor, app=None, cfg=None):
     nonlocal radio_state_history
     socketio.emit('emit_music_page_show_radio_history', radio_state_history)
 
-  @socketio.on('emit_music_page_get_next_song')
-  def request_new_song(data):
+  @socketio.on('emit_music_page_radio_session_start')
+  def radio_session_start(data):
     nonlocal predictor, AIDJ_history, AIDJ_tts, AIDJ_tts_index, play_history, radio_state_history
-    if AIDJ_tts is None:
+
+    prompt = data["prompt"]
+    use_AIDJ = data["use_AIDJ"]
+
+    if AIDJ_tts is None and use_AIDJ:
       add_radio_state({
         "hidden": False,
         "head": f"System:",
@@ -392,76 +404,77 @@ def init_socket_events(socketio, predictor, app=None, cfg=None):
             "body": f"{music_item['artist']} - {music_item['title']} | {music_item['album']}"
           })
 
-          current_time = datetime.datetime.now()
-          current_time_str = current_time.strftime("%A, %B %d, %Y, %H:%M")
+          if use_AIDJ:
+            current_time = datetime.datetime.now()
+            current_time_str = current_time.strftime("%A, %B %d, %Y, %H:%M")
 
-          AIDJ_history = AIDJ_history[-1000:]
+            AIDJ_history = AIDJ_history[-1000:]
 
-          if AIDJ_history == "":
-            AIDJ_history += f"### HUMAN:\n{cfg.aidj_first_prompt}"
-          else:
-            prompt = np.random.choice(cfg.aidj_consecutive_prompts)
-            AIDJ_history += f"### HUMAN:\n{prompt}"
+            if AIDJ_history == "":
+              AIDJ_history += f"### HUMAN:\n{cfg.aidj_first_prompt}"
+            else:
+              prompt = np.random.choice(cfg.aidj_consecutive_prompts)
+              AIDJ_history += f"### HUMAN:\n{prompt}"
 
-          #AIDJ_history += f" Do not use hackneyed phrases like 'So, sit back, relax, and enjoy..' and others like that."
-          user_rating = 'Not rated yet' if music_item['user_rating'] is None else str(music_item['user_rating']) + '/10'
-          AIDJ_history += f'''\nCurrent time: {current_time_str};\n\nInformation about current song:\nBand/Artist: {music_item['artist']};\nSong title: {music_item['title']};\nAlbum: {music_item['album']};\nRelease year: {music_item['date']};\nLength: {seconds_to_hms(music_item['duration'])};'''
-          AIDJ_history += f'''\nFull play count: {int(music_item['full_play_count'])};\nSkip count: {int(music_item['skip_count'])};\nUser rating: {user_rating};'''
+            #AIDJ_history += f" Do not use hackneyed phrases like 'So, sit back, relax, and enjoy..' and others like that."
+            user_rating = 'Not rated yet' if music_item['user_rating'] is None else str(music_item['user_rating']) + '/10'
+            AIDJ_history += f'''\nCurrent time: {current_time_str};\n\nInformation about current song:\nBand/Artist: {music_item['artist']};\nSong title: {music_item['title']};\nAlbum: {music_item['album']};\nRelease year: {music_item['date']};\nLength: {seconds_to_hms(music_item['duration'])};'''
+            AIDJ_history += f'''\nFull play count: {int(music_item['full_play_count'])};\nSkip count: {int(music_item['skip_count'])};\nUser rating: {user_rating};'''
 
-          if len(music_item['lyrics']) > 0: AIDJ_history += f"\nLyrics:\n{music_item['lyrics']}"
+            if len(music_item['lyrics']) > 0: AIDJ_history += f"\nLyrics:\n{music_item['lyrics']}"
 
 
-          AIDJ_history += f"\n### RESPONSE:\n"
+            AIDJ_history += f"\n### RESPONSE:\n"
 
-          add_radio_state({
-            "hidden": True,
-            "head": f"LLM Prompt generated:",
-            "body": AIDJ_history
-          })
+            add_radio_state({
+              "hidden": True,
+              "head": f"LLM Prompt generated:",
+              "body": AIDJ_history
+            })
 
-          add_radio_state({
-            "hidden": True,
-            "head": f"System:",
-            "body": f"Running LLM..."
-          })
-
-          # Predict AI DJ remark before playing the song
-          llm_text = predictor.predict_from_text(AIDJ_history, temperature = cfg.llm_temperature)
-          AIDJ_history += llm_text
-
-          add_radio_state({
-            "hidden": True,
-            "head": f"LLM output:",
-            "body": llm_text
-          })
-
-          if len(llm_text.strip()) > 0:
             add_radio_state({
               "hidden": True,
               "head": f"System:",
-              "body": f"Generating audio based on LLM output..."
+              "body": f"Running LLM..."
             })
-            
-            # Use TTS to speak the text and save it to temporary file storage
-            AIDJ_tts_filename = f"static/tmp/AIDJ_{AIDJ_tts_index:04d}.wav"
-            AIDJ_tts_index += 1
-            AIDJ_tts.tts_to_file(llm_text, file_path=AIDJ_tts_filename, speaker_wav=cfg.tts_model_speaker_sample, language=cfg.tts_model_language)
 
-            # Icreasing the volume of TTS output
-            # Load the audio file
-            sound = AudioSegment.from_wav(AIDJ_tts_filename)
-            # Increase the volume
-            sound = sound + 3 # plus 10db
-            # Save the modified audio to the same file
-            sound.export(AIDJ_tts_filename, format="wav")
+            # Predict AI DJ remark before playing the song
+            llm_text = predictor.predict_from_text(AIDJ_history, temperature = cfg.llm_temperature)
+            AIDJ_history += llm_text
 
             add_radio_state({
-              "hidden": False,
-              "image": "/static/AI.jpg",
-              "head": f"AI DJ:",
-              "body": f"{llm_text}",
-              "audio_element": AIDJ_tts_filename
+              "hidden": True,
+              "head": f"LLM output:",
+              "body": llm_text
             })
+
+            if len(llm_text.strip()) > 0:
+              add_radio_state({
+                "hidden": True,
+                "head": f"System:",
+                "body": f"Generating audio based on LLM output..."
+              })
+              
+              # Use TTS to speak the text and save it to temporary file storage
+              AIDJ_tts_filename = f"static/tmp/AIDJ_{AIDJ_tts_index:04d}.wav"
+              AIDJ_tts_index += 1
+              AIDJ_tts.tts_to_file(llm_text, file_path=AIDJ_tts_filename, speaker_wav=cfg.tts_model_speaker_sample, language=cfg.tts_model_language)
+
+              # Icreasing the volume of TTS output
+              # Load the audio file
+              sound = AudioSegment.from_wav(AIDJ_tts_filename)
+              # Increase the volume
+              sound = sound + 3 # plus 10db
+              # Save the modified audio to the same file
+              sound.export(AIDJ_tts_filename, format="wav")
+
+              add_radio_state({
+                "hidden": False,
+                "image": "/static/AI.jpg",
+                "head": f"AI DJ:",
+                "body": f"{llm_text}",
+                "audio_element": AIDJ_tts_filename
+              })
 
           user_rating_str = 'Not rated yet' if music_item['user_rating'] is None else '★' * music_item['user_rating'] + '☆' * (10 - music_item['user_rating'])
           skip_multiplier = sigmoid((10 + music_item['full_play_count'] - music_item['skip_count']) / 10)

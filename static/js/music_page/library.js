@@ -1,17 +1,18 @@
+// THIS METHODS SHOULD BE IMPORTED FROM utils.js
+//Random string generator
+function makeid(length) {
+  var text = "";
+  var possible = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+
+  for (var i = 0; i < length; i++)
+    text += possible.charAt(Math.floor(Math.random() * possible.length));
+
+  return text;
+}
+
 // Create a closed scope to avoid any variable collisions  
 (function() {
   //// BEFORE PAGE LOADED
-
-  //Random string generator
-  function makeid(length) {
-    var text = "";
-    var possible = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-
-    for (var i = 0; i < length; i++)
-      text += possible.charAt(Math.floor(Math.random() * possible.length));
-
-    return text;
-  }
 
   //// AFTER PAGE LOADED
   $(document).ready(function() {
@@ -70,6 +71,11 @@
         });
       });
     })
+
+    // Start update of the music library
+    $(`#update_music_library`).click(()=>{ 
+      socket.emit('emit_music_page_update_music_library');
+    });
   })
 })();
 

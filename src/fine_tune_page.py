@@ -154,8 +154,11 @@ def init_socket_events(socketio, predictor,cfg=None):
 
 
     ### Unload previous Peft model
-    del predictor.model
+    #predictor.load_model()
+    if predictor.model: del predictor.model
     torch.cuda.empty_cache()
+    torch.cuda.empty_cache()
+    torch.clear_autocast_cache()
 
     ### Load model
     #model_name = "TinyPixel/Llama-2-7B-bf16-sharded"
@@ -168,15 +171,14 @@ def init_socket_events(socketio, predictor,cfg=None):
     )
 
     '''del predictor.base_model
-    torch.cuda.empty_cache()
-    torch.clear_autocast_cache()
     
+    '''
     predictor.base_model = AutoModelForCausalLM.from_pretrained(
         model_name,
         quantization_config=bnb_config,
         trust_remote_code=True,
         device_map = "auto"
-    )'''
+    )
 
     model = predictor.base_model
     model.config.use_cache = False
@@ -184,8 +186,8 @@ def init_socket_events(socketio, predictor,cfg=None):
     #model = model.to_bettertransformer()
 
     # Load tokenizer
-    tokenizer = predictor.tokenizer
-    #tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
+    #tokenizer = predictor.tokenizer
+    tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
     tokenizer.pad_token = tokenizer.eos_token
     tokenizer.padding_side = 'right'
 
@@ -356,7 +358,7 @@ def init_socket_events(socketio, predictor,cfg=None):
       #  # For example, saving checkpoints, logging relevant information, etc.
       #  trainer.resume_from_checkpoint()
       except RuntimeError as error:
-        resume_from_checkpoint = True
+        #resume_from_checkpoint = True
         
         if "CUDA out of memory" in str(error):
           print(f"Retry {retry + 1}/{max_retries} due to CUDA out of memory error.")

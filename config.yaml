@@ -4,6 +4,11 @@ main:
   flask_secret_key: "secret!123"
   llm_base_model: "georgesung/llama2_7b_chat_uncensored"
 
+news_page:
+  sources:
+    - "meduza_news"
+    - "astrapress"
+
 music_page:
   media_directory: "/media/alex/Expansion/Music"
   media_formats: #MP3, OGG, OPUS, MP4, M4A, FLAC, WMA, Wave and AIFF

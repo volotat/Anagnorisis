@@ -73,7 +73,7 @@ def init_app():
 
   #### NEWS PAGE FUNCTIONALITY
   import src.news_page
-  src.news_page.init_socket_events(socketio, predictor)
+  src.news_page.init_socket_events(socketio, predictor, cfg=cfg.news_page)
 
   @app.route('/news')
   def page_news():
