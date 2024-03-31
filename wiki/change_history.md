@@ -5,17 +5,14 @@
 ### News 
 Create some ideas for theme based news maps. 
 Think over how to add the current time to the prompt and take it into account when adding news to the database. This should add to the LLM the concept of the relevance of a particular event.
-Predict tags of the news and allow to filter the news by this tags.
+Predict tags of the news and allow to filter the news by these tags.
  
 ### Music 
 Add progress bar when music library updating.    
-Add a way to change rest of metadata of the song.
+Add a way to change the rest of the metadata of the song.
 Add volume control.
-Allow user to click at any song to play it.
-Add button that allows to start or continue radio session.
-Add message if there is new unindexed media files. 
-Add "What would you like to listen today?" text field and start session button.
-Add a way to activate or deactivate AIDJ.
+Add a message if there are new unindexed media files. 
+Move the "edit" button to the song list element.
 
 ### Fine-tuning 
 Make the progress bar active when the model is fine-tuned.  
@@ -37,28 +34,36 @@ Add an ability to send text to the front-end token by token.
 Add an ability to load out models from the GPU by pressing the button.  
 Move to single page architecture or find any other way to store the current state of the media player. Possibly using vue.js.  
 Add some sort of a control panel that is active on all pages (may be hidden) and shows current GPU memory load by the system and console output.  
-Add some way of displaying active page at the head menu.  
+Add some way of displaying an active page at the head menu.  
 Replace all "georgesung/llama2_7b_chat_uncensored" instances with info from config.yaml.  
 Find some way of adding some sort of "extensions" where we can see data from some arbitrary service such as twitter, youtube, reddit and so on and rates this data locally.  
 Create an extension that provides recent Arxiv papers (https://arxiv.org/list/cs.LG/recent).  
 Make a queue for LLM engine processing.  
 Remove all dependencies on CDN services.
+Move models to separate folder to avoid unexpected updates from huggingface.
 
 ## Versions History
 
+### Version 0.0.7 (01.04.2024)
+For song information also added information about the probability with which the song has been selected. Mostly for debugging purposes.   
+Added last_played data for songs to the DB and in the song preview.  
+Now the new song selection probability also depends on when the last time it was played.  
+Now it's possible to change the song by pressing on its cart in the radio mode.  
+Now the current state of the song is constantly saved. This allows you to continue listening after the page has been reloaded. 
+
 ### Version 0.0.6 (25.02.2024)
 Regex format for predicted GPS coordinates of the news has been fixed to allow negative numbers.  
-Some code refactoring related to music page.  
-Some preparations and test for extension-based architecture.  
+Some code refactoring related to the music page.  
+Some preparations and tests for extension-based architecture.  
 Added some primitive control of the news sources with config.yaml.  
 Added radio configuration form with an option to switch off AI DJ.  
 
 ### Version 0.0.5 (14.01.2024)
 Added LLM loading indication.  
 Added tables markdown extension for proper wiki rendering.  
-TTS initialization changed to on demand approach for faster start up time.  
+TTS initialization changed to an on demand approach for faster start-up time.  
 Added wiki pages rendering. The 'wiki' button has been removed, as everything is acceptable through the main page. 
-Audio elements removed from base.html and add them to music.html.
+Audio elements removed from base.html and added to music.html.
 Added message about TTS initialization when AIDJ been activated.
 Added music library navigation system.
 Added icon change on play button when song is paused. 

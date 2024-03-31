@@ -98,7 +98,9 @@ def init_app():
   #### RUNNING THE APPLICATION
   socketio.run(app, host=cfg.main.host, port=cfg.main.port)
 
+  return app
+
 #### Starting the application
 if __name__ == '__main__':
-  init_app()
+  app =init_app()
   

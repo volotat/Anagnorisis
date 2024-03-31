@@ -29,6 +29,7 @@ class MusicLibrary(db.Model):
   skip_score = db.Column(db.Integer, nullable=True, default=20, server_default='20')
   full_play_count = db.Column(db.Integer, nullable=True, default=0, server_default='0')
   skip_count = db.Column(db.Integer, nullable=True, default=0, server_default='0')
+  last_played = db.Column(db.DateTime, nullable=True)
 
   def as_dict(self):
     return {column.name: getattr(self, column.name) for column in self.__table__.columns}

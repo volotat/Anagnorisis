@@ -8,6 +8,7 @@ import os
 import hashlib
 
 import datetime
+from dateutil.relativedelta import relativedelta
 
 from tqdm import tqdm
 import numpy as np
@@ -131,6 +132,32 @@ def get_music_list_metadata():
 def sigmoid(x):
   return 1 / (1 + np.exp(-x))
 
+
+
+def time_difference(timestamp1, timestamp2):
+    # Convert timestamps to datetime
+    dt1 = datetime.datetime.fromtimestamp(timestamp1)
+    dt2 = datetime.datetime.fromtimestamp(timestamp2)
+
+    # Calculate difference
+    diff = relativedelta(dt2, dt1)
+
+    # Prepare readable form
+    readable_form = []
+    if diff.years > 0:
+        readable_form.append(f"{diff.years} years")
+    if diff.months > 0:
+        readable_form.append(f"{diff.months} months")
+    if diff.days > 0:
+        readable_form.append(f"{diff.days} days")
+    if diff.hours > 0:
+        readable_form.append(f"{diff.hours} hours")
+    if diff.minutes > 0:
+        readable_form.append(f"{diff.minutes} minutes")
+
+    # Return difference in a readable form
+    return " ".join(readable_form) + " ago"
+
 def init_socket_events(socketio, predictor, app=None, cfg=None):
   # Determine the absolute path to the media file
   media_directory = cfg.media_directory
@@ -148,6 +175,9 @@ def init_socket_events(socketio, predictor, app=None, cfg=None):
     
     music_list = src.db_models.MusicLibrary.query.all()
     music_list = [music.as_dict() for music in music_list]
+
+    for music in music_list:
+      music["last_played"] = music["last_played"].timestamp() if music["last_played"] is not None else None
 
   # necessary to allow web application access to music files
   @app.route('/media/<path:filename>')
@@ -238,6 +268,12 @@ def init_socket_events(socketio, predictor, app=None, cfg=None):
     music = next((item for item in _music_list() if item['hash'] == song_hash), None)
     music['user_rating'] = song_score
 
+  @socketio.on('emit_music_page_song_start_playing')
+  def song_start_playing(song_hash):
+    song = src.db_models.MusicLibrary.query.get(song_hash)
+    song.last_played = datetime.datetime.now()
+    src.db_models.db.session.commit()
+
   @socketio.on('emit_music_page_set_song_skip_score')
   def set_song_skip_score(data): 
     cur_song_hash = None
@@ -268,20 +304,33 @@ def init_socket_events(socketio, predictor, app=None, cfg=None):
     # Replace None values with the calculated median
     
     scores = np.array([median_value * 0.3 if music['user_rating'] is None else music['user_rating'] for music in _music_list()])
-    scores = np.minimum(0.1, scores) # we make a minimum small value to the rating so songs with 0 rating have some small chance to be played
+    scores = np.maximum(0.1, scores) # we make a maximum small value to the rating so songs with 0 rating have some small chance to be played
     scores = (scores / 10) ** 2 # normalize scores and make songs with high rating much more likely to occur
+
 
     #skip_score = np.array([music['skip_score'] for music in _music_list()])
     full_play_count = np.array([music['full_play_count'] for music in _music_list()])
     skip_count = np.array([music['skip_count'] for music in _music_list()])
+
+    #### Make select probability depended on when the song was last played
+    ######################################################################
+    
+    sorted_last_played = sorted(_music_list(), key=lambda x: 0 if x['last_played'] is None else x['last_played']) # sort by last played date ignoring Nones
+    # Note that oldest elements are come first in this list, we need to reverse it to get the newest elements first to decrease their probability multiplier 
+    sorted_last_played = sorted_last_played[::-1]
+    sorted_last_played_indices = [sorted_last_played.index(music) for music in _music_list()]
+    last_played_score = np.array(sorted_last_played_indices) / len(sorted_last_played_indices) # normalize the score to adjust select probabilities with it
   
     skip_score = sigmoid((10 + full_play_count - skip_count) / 10) # meaningful rage for skip_score [-30, 30] that result in a value ~ [0, 1]
-    scores = scores * skip_score
+    scores = scores * skip_score * last_played_score
 
-    # Generate a random index based on the weights
-    sampled_index = np.random.choice(len(scores), p=scores/np.sum(scores))
+    #### Generate a random index based on the calculated weights
+    ############################################################
 
-    return _music_list()[sampled_index]
+    probs = scores / np.sum(scores)
+    sampled_index = np.random.choice(len(scores), p=probs)
+
+    return _music_list()[sampled_index], probs[sampled_index]
 
   def seconds_to_hms(seconds):
     hours, remainder = divmod(seconds, 3600)
@@ -391,7 +440,7 @@ def init_socket_events(socketio, predictor, app=None, cfg=None):
         #if i==0:
         #  music_item = next((x for x in _music_list() if x['hash'] == '3166336a479d2e50a397269c31991cd1998dc61027c72fdcdbaa1afd92bbbb4d'), None)
         #else:
-        music_item = select_random_music()
+        music_item, select_prob = select_random_music()
           
         try: 
           audiofile_data = get_audiofile_data(music_item['file_path'], music_item['url_path'])
@@ -482,7 +531,18 @@ def init_socket_events(socketio, predictor, app=None, cfg=None):
           song_info = f"\n{music_item['artist']} - {music_item['title']} | {music_item['album']}"
           song_info += f"\nSong rating: {user_rating_str}"
           lyrics_stat = "Yes" if len(music_item['lyrics']) > 0 else "No"
-          song_info += f"\nFull plays: {music_item['full_play_count']}\nSkips: {music_item['skip_count']}\nSkip multiplier: {skip_multiplier:0.4f}\nLyrics: {lyrics_stat}"
+          song_info += f"\nFull plays: {music_item['full_play_count']}"
+          # convert datetime to string
+          if music_item['last_played'] is not None:
+            last_played = time_difference(music_item['last_played'], datetime.datetime.now().timestamp())
+          else:
+            last_played = "Never"
+          song_info += f"\nSkips: {music_item['skip_count']}"
+          song_info += f"\nSkip multiplier: {skip_multiplier:0.4f}"
+          song_info += f"\nLast played: {last_played}"
+          song_info += f"\nSelect probability: {select_prob:0.6f}"
+          song_info += f"\nLyrics: {lyrics_stat}"
+
           add_radio_state({
             "hidden": False,
             "image": audiofile_data['image'], #link to the cover or bit64 image?
@@ -499,6 +559,8 @@ def init_socket_events(socketio, predictor, app=None, cfg=None):
           })
 
     predictor.unload_model()
+
+    socketio.emit('emit_music_page_radio_session_end')
   
 if __name__ == "__main__":
   print('start')

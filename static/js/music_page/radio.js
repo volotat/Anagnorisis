@@ -77,7 +77,9 @@ function createStarString(N) {
   }
   window.show_song_rating = show_song_rating;
 
-  function play_next_item_from_item_stack(){
+  function play_next_item_from_item_stack(index){
+    if (index != null) item_index = index;
+
     if (item_index >= item_stack.length){
       console.log('Not yet generated. Waiting...')
       setTimeout(play_next_item_from_item_stack, 500);
@@ -118,7 +120,6 @@ function createStarString(N) {
   
       let file_path = item.audio_element['url_path'];
       $("#song_label").text(`${item.audio_element['artist']} - ${item.audio_element['title']} | ${item.audio_element['album']}`)
-      //show_song_cover(file_path); //should be 
       $('#song_cover_image').attr("src", item.image); //when it will be passed to frontend as base64
       audioPlayer.setAttribute('src', file_path);
       audioPlayer.currentTime = 0;
@@ -144,7 +145,7 @@ function createStarString(N) {
     }
   
     $("#tab_content_radio").append(
-      `<div id="state_${state_index}" class="card" ${state['hidden'] ? 'style="opacity: 30%; {{"" if cfg.music_page.show_hidden_messages else "display:none" }}"': ''}>
+      `<div id="state_${state_index}" class="card is-clickable" ${state['hidden'] ? 'style="opacity: 30%; {{"" if cfg.music_page.show_hidden_messages else "display:none" }}"': ''}>
         <div class="card-content media">
           ${image_template}
           <div class="media-content">
@@ -160,42 +161,33 @@ function createStarString(N) {
       </div>`)
   
     if ('audio_element' in state) {
+      let item_index = item_stack.length;
       item_stack.push({
         "state_index": state_index,
         "audio_element": state['audio_element'],
         "image": state['image']
       })
   
-      if (item_stack.length == 1)
+      $(`#state_${state_index}`).click(()=>{
+        play_next_item_from_item_stack(item_index)
+      })
+
+      let cur_song_play_time = localStorage.getItem("music_page_song_play_time");
+      let cur_song_hash = localStorage.getItem("music_page_song_hash");
+      //let cur_item_index = localStorage.getItem("music_page_song_index");
+
+      if (cur_song_hash == state['audio_element']['hash']) {
+        $("#block_start_radio_session").hide();
+        play_next_item_from_item_stack(item_index);
+        audioPlayer.currentTime = cur_song_play_time;      
+      } 
+      
+      if (!cur_song_hash && item_stack.length == 1) {
         play_next_item_from_item_stack()
+      }
     }
   
     state_index += 1
-  }
-
-  function show_song_cover(url) {
-    let host = "{{ cfg.main.host }}";
-    let port = "{{ cfg.main.port }}";
-    window.jsmediatags.read(`http://${host}:${port}/` + url, {
-      onSuccess: function(tag) {
-        var image = tag.tags.picture;
-        if (image) {
-          var base64String = "";
-          for (var i = 0; i < image.data.length; i++) {
-              base64String += String.fromCharCode(image.data[i]);
-          }
-          var base64 = "data:" + image.format + ";base64," +
-                  window.btoa(base64String);
-          document.getElementById('song_cover_image').setAttribute('src',base64);
-        } else {
-          document.getElementById('song_cover_image').setAttribute('src',DEFAULT_COVER_IMAGE);
-        }
-      },
-      onError: function(error) {
-        console.log(error);
-        document.getElementById('song_cover_image').setAttribute('src',DEFAULT_COVER_IMAGE);
-      }
-    });
   }
 
   function set_song_rating(score){
@@ -234,6 +226,7 @@ function createStarString(N) {
       //bg_audio.currentTime = 0;
       //bg_audio.play()
     } else {
+      socket.emit('emit_music_page_song_start_playing', cur_song_hash);
       //bg_audio.pause()
       bg_audio.play();
       audioPlayer.play();
@@ -285,6 +278,10 @@ function createStarString(N) {
         $("#song_progress").val((currentTime +.25)/duration*100)
       else
         $("#song_progress").val(0)
+
+      localStorage.setItem("music_page_song_play_time", currentTime);
+      localStorage.setItem("music_page_song_hash", cur_song_hash);
+      //localStorage.setItem("music_page_song_index", item_index);
     });
 
     // Add a click event listener to the progress bar
@@ -433,9 +430,9 @@ function createStarString(N) {
 
     //// ADD RADIO REGULATORS
     $("#tab_content_radio").append(
-      `<div class="block">
+      `<div class="block" id="block_start_radio_session">
         <div class="field">
-          <label class="label">What music do you want to listen today?</label>
+          <label class="label">What music would you like to listen today?</label>
           <div class="control">
             <input class="input" id="radio_session_prompt" type="text" placeholder="Enter music genre, artist, song or anything else you have in mind">
           </div>
@@ -454,10 +451,14 @@ function createStarString(N) {
       </div>`)
 
     $("#radio_session_start").click(()=>{
+      localStorage.removeItem("music_page_song_play_time");
+      localStorage.removeItem("music_page_song_hash");
+
       socket.emit('emit_music_page_radio_session_start', {
         "prompt": $("#radio_session_prompt").val(),
         "use_AIDJ": $("#radio_session_use_AIDJ").is(":checked")
       });
+      $("#block_start_radio_session").hide();
     });
 
     // Request the current state of radio history
@@ -499,4 +500,25 @@ function createStarString(N) {
       play_song(file_path, hash, audio_element)
     }
   })
+
+  // Add a button to request more songs if the session has ended
+  socket.on('emit_music_page_radio_session_end', (state) => {
+    //// ADD RADIO REGULATORS
+    $("#tab_content_radio").append(
+      `<div class="block" id="block_continue_radio_session">
+        <div class="field">
+          <div class="control">
+            <button class="button is-primary is-fullwidth" id="radio_session_continue">Continue Radio Session</button>
+          </div>
+        </div>
+      </div>`)
+
+    $("#radio_session_continue").click(()=>{
+      socket.emit('emit_music_page_radio_session_start', {
+        "prompt": $("#radio_session_prompt").val(),
+        "use_AIDJ": $("#radio_session_use_AIDJ").is(":checked")
+      });
+      $("#block_continue_radio_session").remove();
+    });
+  });
 })();

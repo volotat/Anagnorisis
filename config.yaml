@@ -4,6 +4,10 @@ main:
   flask_secret_key: "secret!123"
   llm_base_model: "georgesung/llama2_7b_chat_uncensored"
 
+models:
+  llm_base_model: "georgesung/llama2_7b_chat_uncensored"
+  audio_embedder: "m-a-p/MERT-v1-95M"
+
 news_page:
   sources:
     - "meduza_news"
