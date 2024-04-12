@@ -226,7 +226,8 @@ function createStarString(N) {
       //bg_audio.currentTime = 0;
       //bg_audio.play()
     } else {
-      socket.emit('emit_music_page_song_start_playing', cur_song_hash);
+      if (cur_song_hash != null)
+        socket.emit('emit_music_page_song_start_playing', cur_song_hash);
       //bg_audio.pause()
       bg_audio.play();
       audioPlayer.play();
@@ -504,6 +505,8 @@ function createStarString(N) {
   // Add a button to request more songs if the session has ended
   socket.on('emit_music_page_radio_session_end', (state) => {
     //// ADD RADIO REGULATORS
+    $("#block_continue_radio_session").remove();
+
     $("#tab_content_radio").append(
       `<div class="block" id="block_continue_radio_session">
         <div class="field">
@@ -517,8 +520,8 @@ function createStarString(N) {
       socket.emit('emit_music_page_radio_session_start', {
         "prompt": $("#radio_session_prompt").val(),
         "use_AIDJ": $("#radio_session_use_AIDJ").is(":checked")
-      });
-      $("#block_continue_radio_session").remove();
+      }); 
+      $("#block_continue_radio_session").remove();  
     });
   });
 })();

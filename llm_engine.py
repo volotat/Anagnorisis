@@ -55,10 +55,10 @@ class TextPredictor:
 
     #model = "meta-llama/Llama-2-7b-chat-hf"
     #model_name = "4bit/Llama-2-7b-chat-hf"
-    model_name = "georgesung/llama2_7b_chat_uncensored"
+    model_name = "./models/llama2_7b_chat_uncensored"
     #model_name = "models/your_llama2"
 
-    self.tokenizer = AutoTokenizer.from_pretrained(model_name, local_files_only=False)
+    self.tokenizer = AutoTokenizer.from_pretrained(model_name, local_files_only=True)
 
 
     bnb_config = BitsAndBytesConfig(
@@ -74,7 +74,7 @@ class TextPredictor:
         device_map="auto",
         trust_remote_code=True,
         load_in_4bit=True,
-        local_files_only=False,
+        local_files_only=True,
         #config="models/your_llama2/adapter_config.json"
     )
 

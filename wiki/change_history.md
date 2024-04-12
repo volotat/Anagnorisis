@@ -42,7 +42,17 @@ Make a queue for LLM engine processing.
 Remove all dependencies on CDN services.
 Move models to separate folder to avoid unexpected updates from huggingface.
 
+## Important fixes before 0.1.0 release
+Make it possible to rate songs with AI through its embeddings + llama
+Make it possible to initialize music library from folder via UI
+Make it possible to use any rss as a news source and add them through UI
+Fix an issue, when music is not readable after indexing (wrong path is written to DB)
+Create a working docker environment to easily run the project.
+
 ## Versions History
+
+### Version 0.0.8 (?)
+Did some research on embedding integration to Llama2 with QLoRa. While the approach itself is working, unfortunately, it showed quite a low performance compared to even the simplest NN. Research data and scripts are stored in 'research/audio_embeddings'.
 
 ### Version 0.0.7 (01.04.2024)
 For song information also added information about the probability with which the song has been selected. Mostly for debugging purposes.   

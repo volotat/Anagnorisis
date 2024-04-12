@@ -35,6 +35,19 @@ The project should be up and running on http://127.0.0.1:5001/
 To change your media folder go to 'config,yaml' file and change 'music_page.media_directory' param to path of your music folder.  
 
 
+## Downloading the models
+First of all make sure you have git-lfs installed (https://git-lfs.com).  
+Then go to 'models' folder with  
+```cd models```
+
+And run following commands:
+
+**Base LLM: georgesung/llama2_7b_chat_uncensored**  
+```git clone https://huggingface.co/georgesung/llama2_7b_chat_uncensored```
+
+**Music embedder: m-a-p/MERT-v1-95M**  
+```git clone https://huggingface.co/m-a-p/MERT-v1-95M```
+
 ## General
 Here is the main pipeline of working with the project:  
 1. You rate some data such as news, songs, movies or anything else on the scale from 0 to 10 and all of this is stored in the project database.  
