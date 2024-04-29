@@ -21,6 +21,7 @@ from TTS.api import TTS
 from unidecode import unidecode
 import scipy.io.wavfile
 import io
+import src.scoring_models
 
 from mutagen.id3 import ID3, ID3NoHeaderError, USLT
 
@@ -167,6 +168,10 @@ def init_socket_events(socketio, predictor, app=None, cfg=None):
   AIDJ_history = ""
   AIDJ_tts = None # TTS(cfg.tts_model_path)
   AIDJ_tts_index = 0
+
+  audio_embedder = src.scoring_models.AudioEmbedder("./models/MERT-v1-95M")
+  audio_evaluator = src.scoring_models.Evaluator(embedding_dim=audio_embedder.embedding_dim)
+  audio_evaluator.load('./models/audio_evaluator.pt')
   
 
   def _music_list():
@@ -200,7 +205,7 @@ def init_socket_events(socketio, predictor, app=None, cfg=None):
     #music_list = []
     for full_path in tqdm(music_files):   
       try: 
-        url_path = os.path.join('media/', full_path.replace(media_directory, ''))
+        url_path = os.path.join('media', full_path.replace(media_directory, ''))
         audiofile_data = get_audiofile_data(full_path, url_path)
 
         # Check if a row with the same primary key (hash) exists
@@ -212,6 +217,11 @@ def init_socket_events(socketio, predictor, app=None, cfg=None):
           # check if music object has attribute:
           if hasattr(src.db_models.MusicLibrary, key):
             new_music_data[key] = value
+
+        # Rate music with model
+        if full_path.endswith('.mp3'):
+          embedding = audio_embedder.embed_audio(full_path)
+          new_music_data['model_rating'] = audio_evaluator.predict([embedding])
 
         if existing_music:
           # Update the existing row with the new data
@@ -301,9 +311,21 @@ def init_socket_events(socketio, predictor, app=None, cfg=None):
     median_value = np.median(not_none_scores)
     print('Median song rating:', median_value)
 
-    # Replace None values with the calculated median
     
-    scores = np.array([median_value * 0.3 if music['user_rating'] is None else music['user_rating'] for music in _music_list()])
+    # Get all the user_rating values from the music list as current scores
+    scores = []
+    for music in _music_list():
+      if music['user_rating'] is not None:
+        # Use the user-based rating if it exists
+        scores.append(music['user_rating'])
+      elif music['model_rating'] is not None:
+        # Replace None values with the model-based rating if there exists one
+        scores.append(music['model_rating'])
+      else:
+        # Replace None values with the calculated median
+        scores.append(median_value * 0.3)
+
+    scores = np.array(scores)
     scores = np.maximum(0.1, scores) # we make a maximum small value to the rating so songs with 0 rating have some small chance to be played
     scores = (scores / 10) ** 2 # normalize scores and make songs with high rating much more likely to occur
 
@@ -467,8 +489,9 @@ def init_socket_events(socketio, predictor, app=None, cfg=None):
 
             #AIDJ_history += f" Do not use hackneyed phrases like 'So, sit back, relax, and enjoy..' and others like that."
             user_rating = 'Not rated yet' if music_item['user_rating'] is None else str(music_item['user_rating']) + '/10'
+            model_rating = 'Not rated yet' if music_item['model_rating'] is None else str(music_item['model_rating']) + '/10'
             AIDJ_history += f'''\nCurrent time: {current_time_str};\n\nInformation about current song:\nBand/Artist: {music_item['artist']};\nSong title: {music_item['title']};\nAlbum: {music_item['album']};\nRelease year: {music_item['date']};\nLength: {seconds_to_hms(music_item['duration'])};'''
-            AIDJ_history += f'''\nFull play count: {int(music_item['full_play_count'])};\nSkip count: {int(music_item['skip_count'])};\nUser rating: {user_rating};'''
+            AIDJ_history += f'''\nFull play count: {int(music_item['full_play_count'])};\nSkip count: {int(music_item['skip_count'])};\nUser rating: {user_rating};\nModel rating: {model_rating};'''
 
             if len(music_item['lyrics']) > 0: AIDJ_history += f"\nLyrics:\n{music_item['lyrics']}"
 
@@ -526,10 +549,12 @@ def init_socket_events(socketio, predictor, app=None, cfg=None):
               })
 
           user_rating_str = 'Not rated yet' if music_item['user_rating'] is None else '★' * music_item['user_rating'] + '☆' * (10 - music_item['user_rating'])
+          model_rating_str = 'Not rated yet' if music_item['model_rating'] is None else '★' * music_item['model_rating'] + '☆' * (10 - music_item['model_rating'])
           skip_multiplier = sigmoid((10 + music_item['full_play_count'] - music_item['skip_count']) / 10)
 
           song_info = f"\n{music_item['artist']} - {music_item['title']} | {music_item['album']}"
-          song_info += f"\nSong rating: {user_rating_str}"
+          song_info += f"\nUser rating: {user_rating_str}"
+          song_info += f"\nModel rating: {model_rating_str}"
           lyrics_stat = "Yes" if len(music_item['lyrics']) > 0 else "No"
           song_info += f"\nFull plays: {music_item['full_play_count']}"
           # convert datetime to string

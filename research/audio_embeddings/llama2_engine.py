@@ -197,10 +197,10 @@ class TextPredictor:
         warmup_ratio=warmup_ratio,
         #group_by_length=True,
         lr_scheduler_type=lr_scheduler_type,
-        evaluation_strategy="steps",
-        load_best_model_at_end = True,
+        evaluation_strategy="steps" if dataset_eval is not None else "no",
+        load_best_model_at_end = True if dataset_eval is not None else False,
         save_total_limit = 1,
-        report_to = "none"
+        report_to = "none",
     )
 
     # pass everything to the model

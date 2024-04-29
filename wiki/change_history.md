@@ -51,8 +51,13 @@ Create a working docker environment to easily run the project.
 
 ## Versions History
 
-### Version 0.0.8 (?)
-Did some research on embedding integration to Llama2 with QLoRa. While the approach itself is working, unfortunately, it showed quite a low performance compared to even the simplest NN. Research data and scripts are stored in 'research/audio_embeddings'.
+### Version 0.0.8 (30.04.2024)
+Did some research on embedding integration to Llama2 with QLoRa. While the approach itself is working, unfortunately, it showed quite a low performance compared to even the simplest NN. Research data and scripts are stored in 'research/audio_embeddings'.  
+Made simple network that predict ratings from audio embeddings, right now it only works with *.mp3 files and treat each rating as a separate class on the training and evaluation stage. In the future the final score will be a weighted sum of the classes and the training loss function might be changed to support that.  
+Added button for starting training of the evaluator network at the fine-tuning page.
+Now when the music library is updating the model based evaluation of the music rating is also updated with the current evaluation model.  
+When music is selected, model-based rating is used in case there is no user rating for a particular song.  
+Fronted now shows model-based ratings in case there are no user rating in light blue color.  
 
 ### Version 0.0.7 (01.04.2024)
 For song information also added information about the probability with which the song has been selected. Mostly for debugging purposes.   

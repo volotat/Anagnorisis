@@ -58,22 +58,32 @@ function createStarString(N) {
   }
 
   let show_song_rating_timeout = null;
-  function show_song_rating(score, on_hover = false){
-    //console.log(score)
-    if (!on_hover) cur_song_score = score;
+  function show_song_rating(score, on_hover = false, is_user_rating = true, create_timeout = true){
+    //console.log(is_user_rating)
+    //console.trace()
+
+    let color_class = is_user_rating ? 'has-text-link' : 'has-text-info';
+
+    if (!on_hover)
+      cur_song_score = score;
+    else
+      color_class = 'has-text-success';
+    
 
     $('#song_rating').text('')
     let symbol = on_hover ? '•' : '◦';
-    $('#song_rating').append(`<span class="is-clickable" onmouseover="show_song_rating(0, true)" onmouseup="set_song_rating(0)">${symbol}</span>`)
+    $('#song_rating').append(`<span class="is-clickable ${color_class}" onmouseover="show_song_rating(0, true, ${is_user_rating.toString()})" onmouseup="set_song_rating(0)">${symbol}</span>`)
     for (let i = 1; i <= 10; i++) {
       let symbol = score >= i ? '★' : '☆';
-      $('#song_rating').append(`<span class="is-clickable" onmouseover="show_song_rating(${i}, true)" onmouseup="set_song_rating(${i})">${symbol}</span>`)
+      $('#song_rating').append(`<span class="is-clickable ${color_class}" onmouseover="show_song_rating(${i}, true, ${is_user_rating.toString()})" onmouseup="set_song_rating(${i})">${symbol}</span>`)
     }
 
-    delete(show_song_rating_timeout)
-    show_song_rating_timeout = setTimeout(() => {
-      show_song_rating(cur_song_score)
-    }, 500);
+    if (create_timeout) {
+      clearTimeout(show_song_rating_timeout)
+      show_song_rating_timeout = setTimeout(() => {
+        show_song_rating(cur_song_score, false, is_user_rating, false)
+      }, 500);
+    }
   }
   window.show_song_rating = show_song_rating;
 
@@ -115,10 +125,11 @@ function createStarString(N) {
     } else { // In case it is a song
       cur_song_hash = item.audio_element['hash'];
   
-      let user_rating = parseInt(item.audio_element['user_rating']) || 0;
-      show_song_rating(user_rating)
+      let rating = parseInt(item.audio_element['user_rating']) || parseInt(item.audio_element['model_rating']) || 0;
+      console.log('!!!!!', item.audio_element['user_rating'])
+      show_song_rating(rating, false, item.audio_element['user_rating'] != null);
   
-      let file_path = item.audio_element['url_path'];
+      let file_path = 'media/'+item.audio_element['url_path'];
       $("#song_label").text(`${item.audio_element['artist']} - ${item.audio_element['title']} | ${item.audio_element['album']}`)
       $('#song_cover_image').attr("src", item.image); //when it will be passed to frontend as base64
       audioPlayer.setAttribute('src', file_path);

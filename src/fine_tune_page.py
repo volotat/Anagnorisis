@@ -20,6 +20,10 @@ import llm_engine
 
 from flask import request
 
+from sklearn.model_selection import train_test_split
+from src.scoring_models import AudioEmbedder, Evaluator
+from tqdm import tqdm
+
 # Define the sliding window function
 def create_fixed_size_dataset(dataset, tokens_window_size, tokenizer, stride = None):
   if stride is None: stride = tokens_window_size // 2
@@ -384,3 +388,59 @@ def init_socket_events(socketio, predictor,cfg=None):
 
     ### Reload Peft model
     predictor.model = PeftModel.from_pretrained(predictor.base_model, 'models/your_llama2')
+
+  @socketio.on("emit_start_audio_evaluator_training")
+  def handle_emit_start_audio_evaluator_training():
+    # Create dataset from DB, select only music with user rating
+    music_library_entries = src.db_models.MusicLibrary.query.filter(src.db_models.MusicLibrary.user_rating != None).all()
+
+    # filter all non-mp3 files
+    music_library_entries = [entry for entry in music_library_entries if entry.file_path.endswith('.mp3')]
+
+    music_files = [entry.file_path for entry in music_library_entries]
+    music_scores = [entry.user_rating for entry in music_library_entries]
+
+    # get embeddings for that music
+    embedder = AudioEmbedder(audio_embedder_model_path = "./models/MERT-v1-95M")
+
+    print('Embedding music files...')
+    embeddings = []
+    for file_path in tqdm(music_files):
+      embedding = embedder.embed_audio(file_path)
+      #print(embedding.shape)
+      embeddings.append(embedding)
+
+    # Split to train and eval sets
+    print('Training the model...')
+    X_train, X_test, y_train, y_test = train_test_split(embeddings, music_scores, test_size=0.1, random_state=42)
+
+    print("X_train:", len(X_train), "X_test:", len(X_test))
+
+    # Create the model
+    evaluator = Evaluator(embedding_dim=embedder.embedding_dim, rate_classes=11)
+
+    # Train the model
+    best_train_accuracy = 0
+    best_test_accuracy = 0
+    best_epoch = 0
+
+    # Initialize the progress bar
+    pbar = tqdm(range(200))
+
+    for epoch in pbar:
+      # Train the model
+      train_accuracy, test_accuracy = evaluator.train(X_train, y_train, X_test, y_test)
+
+      # Update the progress bar description
+      pbar.set_description(f'Epoch: {epoch+1}, Train Accuracy: {train_accuracy:.2f}, Test Accuracy: {test_accuracy:.2f}')
+
+      # Check if this epoch's accuracy is the best
+      if test_accuracy > best_test_accuracy:
+        best_train_accuracy = train_accuracy
+        best_test_accuracy = test_accuracy
+        best_epoch = epoch + 1
+
+        # Save the model
+        evaluator.save('./models/audio_evaluator.pt')
+
+    print(f'Best Epoch: {best_epoch}, Train Accuracy: {best_train_accuracy}, Test Accuracy: {best_test_accuracy}')

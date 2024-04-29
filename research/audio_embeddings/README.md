@@ -6,17 +6,17 @@ Some research into the best representation of audio embeddings (and embeddings i
 3. train_svm.py - Trains SVM on full and reduced embeddings and compares the results.
 ```
 SVM results:
-Train Accuracy on full embeddings: 0.7355408388520971%, Test Accuracy on full embeddings: 0.7255075022065314%
-Train Accuracy on reduced embeddings: 0.7355408388520971%, Test Accuracy on reduced embeddings: 0.7255075022065314%
+Full embeddings Train Accuracy: 0.74%, Test Accuracy: 0.72%;
+Reduced embeddings Train Accuracy: 0.87%, Test Accuracy: 0.76%
 ```
 4. train_simple_NN.py - Trains simple NN on full and reduced embeddings and compares the results.
 ```
 NN results:
-Best Epoch on full embeddings: 84, Train Accuracy: 99.75717439293598%, Test Accuracy: 84.11297440423654%
-Best Epoch on reduced embeddings: 90, Train Accuracy: 99.93377483443709%, Test Accuracy: 83.23036187113857%
+Full embeddings Train Accuracy: 100.00%, Test Accuracy: 84.20%;
+Reduced embeddings Train Accuracy: 100.00%, Test Accuracy: 76.61%;
 ```
 5. train_llama_2_qlora.py - Trains QLoRA for llama 2 model for text-based embedding classification. This time only on reduced embeddings.
 ```
-Reduced embeddings Train Accuracy: 22.57%
-Reduced embeddings Test Accuracy: 38.27%
+Llama2 + QLoRA results:
+Reduced embeddings Train Accuracy: 46.56%, Test Accuracy: 38.27%;
 ```

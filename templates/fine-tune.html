@@ -37,6 +37,10 @@
       <div class="column is-full">
         <button class="button is-primary is-fullwidth" id="startBtn">Start Fine-tuning</button>
       </div>
+
+      <div class="column is-full">
+        <button class="button is-primary is-fullwidth" id="startMusic">Fine-tune music evaluator</button>
+      </div>
     </form>
 
     <div class="box">
@@ -133,6 +137,10 @@
         
         $('#startBtn').on('click', function(){
           socket.emit("emit_start_fine_tuning")
+        })
+
+        $('#startMusic').on('click', function(){
+          socket.emit("emit_start_audio_evaluator_training")
         })
       });
     </script>    
