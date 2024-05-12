@@ -1,0 +1,124 @@
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsmediatags/3.9.5/jsmediatags.min.js" integrity="sha512-YsR46MmyChktsyMMou+Bs74oCa/CDdwft7rJ5wlnmDzMj1mzqncsfJamEEf99Nk7IB0JpTMo5hS8rxB49FUktQ==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script type="text/javascript" src="pages/music/js/main.js"></script>
+<script type="text/javascript" src="pages/music/js/radio.js"></script>
+<script type="text/javascript" src="pages/music/js/library.js"></script>
+
+<!-- PAGE MAIN CONTENT -->
+<audio controls id="bg_audio" autoplay class="is-hidden"></audio>
+<audio controls id="my_audio" autoplay class="is-hidden"></audio>
+<audio controls id="AIDJ_speaker" autoplay class="is-hidden"></audio>
+
+<!-- ? -->
+<div class="block py-6 max-width" >
+  <div class="tabs is-centered">
+    <ul>
+      <li id="tab_button_library" class="tab-button">
+        <a>
+          <span class="icon is-small"><i class="fas fa-image" aria-hidden="true"></i></span>
+          <span>Library</span>
+        </a>
+      </li>
+      <li id="tab_button_radio" class="tab-button is-active">
+        <a>
+          <span class="icon is-small"><i class="fas fa-music" aria-hidden="true"></i></span>
+          <span>Radio</span>
+        </a>
+      </li>
+    </ul>
+  </div>
+
+  <div  style="max-height: calc(100vh - 350px); overflow-y: auto; text-align: justify;">
+    <div id="tab_content_library" class="container p-3 tab-content" style="display: none;">
+      <div class="field">
+        <label class="label">Path to local music library</label>
+      </div>
+      <div class="field has-addons mb-6">
+        <div class="control is-flex-grow-1">
+          <input class="input" type="text" id="path_to_music_folder" placeholder="Path to music folder">
+        </div>
+        <div class="control">
+          <button class="button is-info" id="update_path_to_music_folder">
+            Save Path
+          </button>
+        </div>
+      </div>
+      
+      <progress id="music_library_update_progress" class="progress mb-2" value="0" max="100">0%</progress>
+      <div class="is-flex mb-6">
+        <div class="buttons my-0 is-flex-grow-1">
+          <button class="button is-info is-fullwidth m-0" id="update_music_library">Update music library</button>
+        </div>
+        <span class="icon is-large">
+          <i class="fas fa-2x fa-circle-check" id="music_library_update_status"></i>
+        </span>
+      </div>
+      
+      
+      <nav class="breadcrumb" aria-label="breadcrumbs">
+        <ul id="library_files_breadcrumb">
+          <li><a href="#">Exmaple</a></li>
+          <li><a href="#">Documentation</a></li>
+          <li><a href="#">Components</a></li>
+          <li class="is-active"><a href="#" aria-current="page">Breadcrumb</a></li>
+        </ul>
+      </nav>
+      <div id="library_files_container"  class="columns is-mobile is-multiline is-centered is-variable is-1">
+      </div>
+    </div>
+
+    <div id="tab_content_radio" class="container p-3 tab-content"></div>
+  </div>
+  
+  <div class="modal" id="song_edit_modal">
+    <div class="modal-background"></div>
+    <div class="card mx-4 my-4" id="song_edit_content" style="width:800px">
+    </div>
+  </div>
+</div>
+
+<!-- SONG CONTROL PANEL -->
+<nav class="navbar level is-mobile is-fixed-bottom m-0 p-4 is-light">
+  <div class="level-left has-text-centered">
+    <div class="tags tags has-addons are-large">
+      <span class="mr-4">
+        <figure class="image is-128x128">
+          <img src="https://bulma.io/images/placeholders/128x128.png" id="song_cover_image">
+        </figure>
+      </span>
+      <a class="tag button is-size-4" id="prev_btn">
+        <i class="fas fa-backward-fast"></i>
+      </a>
+      <a class="tag button is-size-4" id="play_btn"> 
+        <i class="fas fa-solid fa-play"></i>
+      </a>
+      <a class="tag button is-size-4 mr-4" id="next_btn">
+        <i class="fas fa-forward-fast"></i>
+      </a>
+    </div>
+  </div>
+  <div class="level-item has-text-centered">
+    <div style="width:100%">
+      <div class="level-item">
+        <div class="field has-addons">
+          <p class="control">
+            <span class="tag is-size-5 mb-6" id="song_label">Band - Title | Album</span>
+          </p>
+          <p class="control">
+            <button class="button" id="song_edit_btn">
+              <span class="icon-text">
+                <span class="icon">
+                  <i class="fas fa-lg fa-solid fa-pen-to-square"></i>
+                </span>
+                <span>Edit</span>
+              </span>
+            </button>
+          </p>
+        </div>
+      </div>
+      
+      <progress class="progress" value="0" max="100" id="song_progress"></progress>
+    </div>
+  </div>
+  <div class="level-right has-text-centered is-size-3" id="song_rating">
+    ◦☆☆☆☆☆☆☆☆☆☆
+  </div>

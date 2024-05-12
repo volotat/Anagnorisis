@@ -7,49 +7,44 @@ Create some ideas for theme based news maps.
 Think over how to add the current time to the prompt and take it into account when adding news to the database. This should add to the LLM the concept of the relevance of a particular event.
 Predict tags of the news and allow to filter the news by these tags.
  
-### Music 
-Add progress bar when music library updating.    
+### Music   
 Add a way to change the rest of the metadata of the song.
 Add volume control.
 Add a message if there are new unindexed media files. 
 Move the "edit" button to the song list element.
+Add "Chain Mode" where each song is selected as the most similar to a previous song.
+Add a way to restart radio session.
 
-### Fine-tuning 
-Make the progress bar active when the model is fine-tuned.  
-Add a way to set "Number of training epochs”, "Maximum token size" and "OpenAssistant dataset percent used" before starting fine-tuning.  
+### Fine-tuning  
 Disable the start button if fine-tuning has already started.  
-Implement "self-aware" fine tuning mode to make it possible to chat with the project about itself.
-
-### Search
-Draft some ideas of how it can automatically search for lyrics of the music and add them to the music files after the user approval.
+When refreshing the page the information about previous run should appear.
+Pressing the start button should remove all the information from the graph and restart the process.
 
 ### Wiki
-Display current wiki structure.
-Display current active wiki page similarly to how the main page is presented.
-
-### LLM engine
-Add an ability to send text to the front-end token by token.
 
 ### General
-Add an ability to load out models from the GPU by pressing the button.  
-Move to single page architecture or find any other way to store the current state of the media player. Possibly using vue.js.  
+Add an ability to unload models from the GPU by pressing the button.  
 Add some sort of a control panel that is active on all pages (may be hidden) and shows current GPU memory load by the system and console output.  
-Add some way of displaying an active page at the head menu.  
-Replace all "georgesung/llama2_7b_chat_uncensored" instances with info from config.yaml.  
-Find some way of adding some sort of "extensions" where we can see data from some arbitrary service such as twitter, youtube, reddit and so on and rates this data locally.  
-Create an extension that provides recent Arxiv papers (https://arxiv.org/list/cs.LG/recent).  
-Make a queue for LLM engine processing.  
-Remove all dependencies on CDN services.
-Move models to separate folder to avoid unexpected updates from huggingface.
+Create an extension that provides recent Arxiv papers (https://arxiv.org/list/cs.LG/recent).   
+Add a way to export current database as .csv and import it back.
 
 ## Important fixes before 0.1.0 release
-Make it possible to rate songs with AI through its embeddings + llama
+Remove all dependencies on CDN services.
 Make it possible to initialize music library from folder via UI
 Make it possible to use any rss as a news source and add them through UI
-Fix an issue, when music is not readable after indexing (wrong path is written to DB)
 Create a working docker environment to easily run the project.
 
 ## Versions History
+
+### Version 0.0.9 (13.05.2024)
+Fixed an issue, when music is not readable after indexing (wrong path was written to DB).  
+Did some more investigation on how to encode embeddings to text to then train an LLM on top of it to predict user score for a different types of data. Unfortunately, no experiments show better or even comparable results to a simple feed-forward NN train from embeddings directly. So my conclusion for now, that an idea of a singular rating model produced from a pretrained LLM might be too hard to implement, so I guess the better approach would be to use separate networks for different types of data and maybe find a better way later. For now I'm going to abandon using LLM in the project at all and use some text-embedding model instead.  
+Moved the project to extension-based architecture where each such extension might be developed completely separately from other extensions using general methods from the main code base. That is achieved by storing everything that relates to an extension - js, python and html code - in a separate folder in the main 'pages' folder.  
+Temporarily removed LLM instance, chat and news pages as a part of rebuilding the project with new architecture.  
+Now when the music library is updating the progress bar actually showing the progress of it.  
+On the music library page added a way to change the music library folder directly from the UI.  
+'Fine-Tuning' page is replaced with 'Train' pages that are now made as an extension and for now only deal with the music evaluator model.  
+Now when music is selected in the radio mode it is rescored with the current evaluator audio model in case it was updated but not used to reindex the library yet.  
 
 ### Version 0.0.8 (30.04.2024)
 Did some research on embedding integration to Llama2 with QLoRa. While the approach itself is working, unfortunately, it showed quite a low performance compared to even the simplest NN. Research data and scripts are stored in 'research/audio_embeddings'.  

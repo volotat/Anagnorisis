@@ -1,0 +1,112 @@
+<div class="block py-6" style="width:1200px; margin:0 auto; text-align: justify;">
+  <form class="box" action="#">
+    <div class="column is-full">
+      <button class="button is-primary is-fullwidth" id="startMusic">Train music evaluator</button>
+    </div>
+  </form>
+
+  <div class="box">
+    <p class="mb-3" id="fine_tuning_status">Training status</p>
+    <progress id="fine_tuning_progress" class="progress" value="0" max="100">0%</progress>
+    <canvas id="chart_loss"></canvas>
+  </div>
+  
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  
+  <script type="text/javascript">
+    const CHART_COLORS = {
+      red: 'rgb(255, 99, 132)',
+      orange: 'rgb(255, 159, 64)',
+      yellow: 'rgb(255, 205, 86)',
+      green: 'rgb(75, 192, 192)',
+      blue: 'rgb(54, 162, 235)',
+      purple: 'rgb(153, 102, 255)',
+      grey: 'rgb(201, 203, 207)'
+    };
+
+    let chart_loss = (()=>{
+      const ctx = document.getElementById('chart_loss');
+
+      const labels = [1, 2, 3, 4, 5, 6, 7];
+      const data = {
+        //labels: labels,
+        datasets: [{
+          label: 'Train accuracy',
+          data: [65, 59, 80, 81, 56, 55, 40],
+          fill: false,
+          borderColor: CHART_COLORS.red,
+          //tension: 0.1
+          yAxisID: 'y',
+        },
+        {
+          label: 'Test accuracy',
+          data: [65, 59, 80, 81, 56, 55, 40],
+          fill: false,
+          borderColor: CHART_COLORS.blue,
+          //tension: 0.1
+          yAxisID: 'y',
+        }]
+      };
+    
+      const config = {
+        type: 'line',
+        data: data,
+        options: {
+          responsive: true,
+          interaction: {
+            mode: 'index',
+            intersect: false,
+          },
+          stacked: false,
+          plugins: {
+            title: {
+              display: true,
+              text: 'Train and Test Accuracy'
+            }
+          },
+          scales: {
+            y: {
+              type: 'linear',
+              display: true,
+              position: 'left',
+            }
+          }
+        }
+      };
+
+      return new Chart(ctx, config);
+    })();
+
+    function update_chart(data) {
+      train_accuracy_hist = data['train_accuracy_hist']
+      test_accuracy_hist = data['test_accuracy_hist']
+      percent = data['percent']
+      status = data['status']
+
+      chart_loss.data.labels = Array.from(train_accuracy_hist.keys());
+      chart_loss.data.datasets[0].data = train_accuracy_hist
+      chart_loss.data.datasets[1].data = test_accuracy_hist
+      chart_loss.update();
+
+      $("#fine_tuning_progress").val(percent)
+      $("#fine_tuning_status").text(status)
+    }
+
+    
+    //update_chart(''[1,2,3,4,5], [5,5,4,4,3]) 
+
+    $("document").ready(function(){
+      socket.on('connect', function(data){
+        //socket.send("User connected!")
+      })
+
+      socket.on('emit_train_page_display_train_data', function(data){
+        update_chart(data)
+      })
+      
+      $('#startMusic').on('click', function(){
+        socket.emit("emit_train_page_start_audio_evaluator_training")
+      })
+    });
+  </script>    
+</div>

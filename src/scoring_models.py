@@ -158,17 +158,50 @@ class Evaluator():
     self.criterion = nn.CrossEntropyLoss()
     self.optimizer = torch.optim.Adam(self.model.parameters())
 
-  def calculate_accuracy(self, loader):
+  '''def calculate_accuracy(self, loader):
     correct = 0
     total = 0
+    
     with torch.no_grad():
       for data in loader:
         inputs, labels = data
         outputs = self.model(inputs)
+
         _, predicted = torch.max(outputs.data, 1)
         total += labels.size(0)
         correct += (predicted == labels).sum().item()
-    return 100 * correct / total
+    return 100 * correct / total'''
+  
+  def calculate_metric(self, loader):
+    maes = [] 
+    with torch.no_grad():
+      for data in loader:
+        inputs, labels = data
+        outputs = self.model(inputs)
+
+        # Calculate weighted average from all predictions to get the final prediction
+        predicted = torch.softmax(outputs, dim=-1) * torch.arange(0, self.rate_classes)
+        predicted = predicted.sum(dim=-1)
+
+        maes.append(torch.mean(torch.abs(predicted - labels)).item())
+    return np.mean(maes)
+  
+  def calculate_accuracy(self, loader):
+    accuracy_list = [] 
+    with torch.no_grad():
+      for data in loader:
+        inputs, labels = data
+        outputs = self.model(inputs)
+
+        # Calculate weighted average from all predictions to get the final prediction
+        predicted = torch.softmax(outputs, dim=-1) * torch.arange(0, self.rate_classes)
+        predicted = predicted.sum(dim=-1)
+
+        # Calculate MAPE (Mean absolute percentage error) while increasing scores by 1 to avoid division by zero
+        mape = torch.mean(torch.abs(predicted - labels) / (labels + 1)).item()
+        # Invert the MAPE to get the accuracy
+        accuracy_list.append(1 - mape)
+    return np.mean(accuracy_list)
 
   def train(self, X_train, y_train, X_test, y_test, batch_size=32):
     #le = LabelEncoder()
@@ -194,9 +227,15 @@ class Evaluator():
 
     for i, data in enumerate(train_loader, 0):
       inputs, labels = data
+      labels = labels.float()
       self.optimizer.zero_grad()
       outputs = self.model(inputs)
-      loss = self.criterion(outputs, labels)
+      predicted = torch.softmax(outputs, dim=-1) * torch.arange(0, self.rate_classes)
+      predicted = predicted.sum(dim=-1)
+
+      loss = F.mse_loss(predicted, labels)
+
+      #loss = self.criterion(outputs, labels)
       loss.backward()
       self.optimizer.step()
     
@@ -219,5 +258,10 @@ class Evaluator():
     with torch.no_grad():
       outputs = self.model(X)
 
-      _, predicted = torch.max(outputs, dim=1)  # Get the index of the max log-probability
-    return predicted.item()
+      # Calculate weighted average from all predictions to get the final prediction
+      predicted = torch.softmax(outputs, dim=-1) * torch.arange(0, self.rate_classes)
+      predicted = predicted.sum(dim=-1)
+
+
+      #_, predicted = torch.max(outputs, dim=1)  # Get the index of the max log-probability
+    return predicted.cpu().detach().numpy()
