@@ -230,12 +230,13 @@ class Evaluator():
       labels = labels.float()
       self.optimizer.zero_grad()
       outputs = self.model(inputs)
+      #loss = self.criterion(outputs, labels)
+
       predicted = torch.softmax(outputs, dim=-1) * torch.arange(0, self.rate_classes)
       predicted = predicted.sum(dim=-1)
-
       loss = F.mse_loss(predicted, labels)
 
-      #loss = self.criterion(outputs, labels)
+      
       loss.backward()
       self.optimizer.step()
     

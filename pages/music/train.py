@@ -43,14 +43,14 @@ def train_audio_evaluator(callback=None):
   best_train_accuracy = 0
   best_test_accuracy = 0
   best_epoch = 0
-  total_epochs = 300
+  total_epochs = 301
 
   # Initialize the progress bar
   pbar = tqdm(range(total_epochs))
 
   for epoch in pbar:
     # Train the model
-    train_accuracy, test_accuracy = evaluator.train(X_train, y_train, X_test, y_test)
+    train_accuracy, test_accuracy = evaluator.train(X_train, y_train, X_test, y_test, batch_size=64)
 
     # Update the progress bar description
     pbar.set_description(f'Epoch: {epoch+1}, Train Metric: {train_accuracy * 100:.2f}%, Test Metric: {test_accuracy * 100:.2f}%')

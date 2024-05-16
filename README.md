@@ -1,16 +1,13 @@
 # Anagnorisis
-Anagnorisis - is a local recommendation system based on Llama 2 that is fine-tuned on your data to predict importance of the news, music and movie preferences. You can feed it as much of your personal data as you like and not be afraid of it leaking as all of it is stored and processed locally on your own computer. You can also chat with the fine-tuned model directly to see how well it is remembering important information and how well it is aligned with your preferences. Or as Westworld put it, test the '[fidelity](https://www.youtube.com/watch?v=h9dPyubQ4MU)'. 
+Anagnorisis - is a local recommendation system that allows you to fine-tuned models on your data to predict your data preferences. You can feed it as much of your personal data as you like and not be afraid of it leaking as all of it is stored and processed locally on your own computer. 
 
-The project uses [llama2_7b_chat_uncensored](https://huggingface.co/georgesung/llama2_7b_chat_uncensored) as a base model as it provides cheap and reliable way to get expected results before any fine-tuning. It uses [Flask]() libraries for backend, [Huggingface]() libraries for all ML related stuff and [Bulma]() as frontend CSS framework. This is the main technological stack, however there are more libraries used for specific purposes.
+The project uses [Flask](https://flask.palletsprojects.com/) libraries for backend and [Bulma](https://bulma.io/) as frontend CSS framework. This is the main technological stack, however there are more libraries used for specific purposes.
 
-While developing the aim is to keep everything working under the 8GB of VRAM, however this limit might be changed in the future. Please be aware that proper functionality with less amount of VRAM is not guaranteed. The project is at its very early stage so expect to have many bugs and difficulties running it on your PC.
-   
-| [![Screenshot 1](static/screenshot_1.png)](static/screenshot_1.png) | [![Screenshot 2](static/screenshot_2.png)](static/screenshot_2.png) |
-|:-------------------------------------------------------------------:|:-------------------------------------------------------------------:|
-| News page screenshot                                                | Music page screenshot                                               |
+To read more about the ideas behind the project you can read this article:  
+[Anagnorisis. Part 1: A Vision for Better Information Management.](https://medium.com/@AlexeyBorsky/anagnorisis-part-1-a-vision-for-better-information-management-5658b6aaffa0)
 
 ## Installation
-The project has only been tested on Ubuntu 22.04, there is no guarantee that it will work on any other platform. It is just a personal project, so there are no plans to add any support for other OS for now.  
+Notice, that the project has only been tested on Ubuntu 22.04, there is no guarantee that it will work on any other platforms. 
 
 Recreate the Environment with following commands:  
 
@@ -40,60 +37,46 @@ First of all make sure you have git-lfs installed (https://git-lfs.com).
 Then go to 'models' folder with  
 ```cd models```
 
-And run following commands:
-
-**Base LLM: georgesung/llama2_7b_chat_uncensored**  
-```git clone https://huggingface.co/georgesung/llama2_7b_chat_uncensored```
-
 **Music embedder: m-a-p/MERT-v1-95M**  
 ```git clone https://huggingface.co/m-a-p/MERT-v1-95M```
 
 ## General
 Here is the main pipeline of working with the project:  
-1. You rate some data such as news, songs, movies or anything else on the scale from 0 to 10 and all of this is stored in the project database.  
-2. When you acquire some amount of such rated data points you go to the 'fine-tuning' page and start the fine-tuning of the model so it could rate the data AS IF it was rated by you.  
-3. New model is used to sort new data by rates from the model and if you do not agree with the scores the model gave, you simply change it and store in the database.  
+1. You rate some data such as text, audio, images, video or anything else on the scale from 0 to 10 and all of this is stored in the project database.  
+2. When you acquire some amount of such rated data points you go to the 'Train' page and start the fine-tuning of the model so it could rate the data AS IF it was rated by you.  
+3. New model is used to sort new data by rates from the model and if you do not agree with the scores the model gave, you simply change it.  
 
 You repeat these steps again and again, getting each time model that better and better aligns to your preferences.  
 
-## News
-// TODO
 
-Empirically I could say that you would need to have a minimum of one hundred rated news before the model would start to pick up your preferences. 
+## Music Page
 
-## Music
+1. Set up the path to your local music folder  
+![music page step 1](static/music_step_1.png)
 
-Right now LLM based music recommendation engine at prototyping stage, however there is very simple recommendation engine implemented based on the user's scores of the music.
+2. Go to music library tab and press "Update music library" button to index your music into the data-base.  
+![music page step 2](static/music_step_2.png)
 
-### Radio mode
+3. Enjoy your music and rate it according to your preferences. All unrated songs would be chosen randomly while already rated ones will be chosen less or more often accordingly.  
+![music page step 3](static/music_step_3.png)
 
-While playing music there is 'Radio mode' available, activating it will add your own LLM driven DJ that will speak something about your music before playing it. To make it more reliable and minimize hallucinations, provide a good amount of information about your music and your favorite bands into the memory of the system and do not forget to fine-tune it afterwards.
+4. After gathering some data go to "Train" page and press "Train music evaluator" to train your preference model. Wait till the process is complete.  
+![music page step 4](static/music_step_4.png)
 
-## Movies
+Now you can come back to enjoying your music, but this time, when the music is selected it will be rated by the model (in case it was not rated by the user already) and therefore adjust probability of it occurring in your playlist. If you want, you can also go back to library tab and update music library again, that will effectively rate every song the model can in your library, although be ready that it may take some time.  
 
-This feature at the prototyping stage.
+Notice, that only *.mp3 format could be rated by the model automatically for now.
 
-## Search
-
-This feature at the prototyping stage.
-
-## Fine-tuning
-There are several different datasets used for fine-tuning. 
-
-[Open Assistant Best Replies](https://huggingface.co/datasets/timdettmers/openassistant-guanaco) dataset from is used to keep the model capable of basic human-assistant conversation and mostly prevents the model from degrading out of assistant regime.
-
-News dataset is an automatically generated one, that makes the model understand your preferable way of rating importance of the news and improves its GPS and summary prediction capability.
-
-Memory data is different from all other types of data in a way that while fine-tuning the evaluation data is just a subset of training data. In contrast for all other types, training and evaluation data are always different. 
-
-You can also enable "self-aware" mode at the fine-tuning stage. This will add all source files of the project into the model's training data. This mode is mostly intended for the development of the project. 
+To see how the algorithm works in details, please read this wiki page: [Music](wiki/music.md)
 
 ## Wiki
 
 The project has its own wiki that is integrated into the project itself, you might access it by running the project, or simply reading it as markdown files.
 
 Here is some pages that might be interesting for you:  
-[Change history](wiki/change_history.md)
+[Change history](wiki/change_history.md)  
+[Philosophy](wiki/philosophy.md)  
+[Music](wiki/music.md)  
 
 
 ---------------	

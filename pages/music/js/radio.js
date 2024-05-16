@@ -22,7 +22,7 @@ function createStarString(N) {
 // Create a closed scope to avoid any variable collisions  
 (function() {
   //// CONSTANTS AND VARIABLES
-  let DEFAULT_COVER_IMAGE = "https://bulma.io/images/placeholders/128x128.png";
+  let DEFAULT_COVER_IMAGE = "static/images/128x128.png";
 
   let state_index = 0;
   let item_stack = [];
@@ -129,7 +129,7 @@ function createStarString(N) {
       console.log('!!!!!', item.audio_element['user_rating'])
       show_song_rating(rating, false, item.audio_element['user_rating'] != null);
   
-      let file_path = 'media/'+item.audio_element['url_path'];
+      let file_path = item.audio_element['url_path'];
       $("#song_label").text(`${item.audio_element['artist']} - ${item.audio_element['title']} | ${item.audio_element['album']}`)
       $('#song_cover_image').attr("src", item.image); //when it will be passed to frontend as base64
       audioPlayer.setAttribute('src', file_path);
@@ -407,8 +407,8 @@ function createStarString(N) {
     //setting the metadata
       navigator.mediaSession.metadata = new MediaMetadata({
         title: 'Unforgettable',
-        artist: 'Nat King Cole',
-        album: 'The Ultimate Collection (Remastered)',
+        artist: 'Artist',
+        album: 'Album',
         artwork: [
           { src: 'https://dummyimage.com/96x96',   sizes: '96x96',   type: 'image/png' },
           { src: 'https://dummyimage.com/128x128', sizes: '128x128', type: 'image/png' },

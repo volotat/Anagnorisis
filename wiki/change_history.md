@@ -2,20 +2,18 @@
 
 
 ## TODO list
-### News 
-Create some ideas for theme based news maps. 
-Think over how to add the current time to the prompt and take it into account when adding news to the database. This should add to the LLM the concept of the relevance of a particular event.
-Predict tags of the news and allow to filter the news by these tags.
  
-### Music   
+### Music page
 Add a way to change the rest of the metadata of the song.
 Add volume control.
 Add a message if there are new unindexed media files. 
 Move the "edit" button to the song list element.
 Add "Chain Mode" where each song is selected as the most similar to a previous song.
 Add a way to restart radio session.
+Explore ways to optimize music library update process.
+In radio mode add "Open file destination" button to being able to move or remove bad music if found.
 
-### Fine-tuning  
+### Train page
 Disable the start button if fine-tuning has already started.  
 When refreshing the page the information about previous run should appear.
 Pressing the start button should remove all the information from the graph and restart the process.
@@ -23,18 +21,19 @@ Pressing the start button should remove all the information from the graph and r
 ### Wiki
 
 ### General
-Add an ability to unload models from the GPU by pressing the button.  
 Add some sort of a control panel that is active on all pages (may be hidden) and shows current GPU memory load by the system and console output.  
 Create an extension that provides recent Arxiv papers (https://arxiv.org/list/cs.LG/recent).   
 Add a way to export current database as .csv and import it back.
 
 ## Important fixes before 0.1.0 release
-Remove all dependencies on CDN services.
-Make it possible to initialize music library from folder via UI
-Make it possible to use any rss as a news source and add them through UI
-Create a working docker environment to easily run the project.
+Create a working docker environment to easily run the project.  
 
 ## Versions History
+
+### Version 0.0.10 (17.05.2024)
+Main Readme.md file has been updated to better represent the current status of the project.
+Wiki pages has also been updated to better reflect the project at the current state.
+Removed all CDN services dependencies.
 
 ### Version 0.0.9 (13.05.2024)
 Fixed an issue, when music is not readable after indexing (wrong path was written to DB).  

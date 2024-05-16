@@ -51,8 +51,8 @@ def init_socket_events(socketio, cfg=None, app=None):
       data = {
         'status': status,
         'percent': percent * 100,
-        'train_accuracy_hist': train_accuracy_hist,
-        'test_accuracy_hist': test_accuracy_hist
+        'train_accuracy_hist': list(train_accuracy_hist),
+        'test_accuracy_hist': list(test_accuracy_hist)
       }
       socketio.emit("emit_train_page_display_train_data", data)
 
