@@ -9,9 +9,11 @@
     <p class="mb-3" id="fine_tuning_status">Training status</p>
     <progress id="fine_tuning_progress" class="progress" value="0" max="100">0%</progress>
     <canvas id="chart_loss"></canvas>
+    <p class="mb-3">This graph shows (100% - <a href="https://en.wikipedia.org/wiki/Mean_absolute_percentage_error">MAPE</a>) metric of how well the model predicts your preferences. Baseline line shows metric of mean value of all training scores calculated relative to test scores.</p>
   </div>
   
   <script src="static/js/chart.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-annotation/1.0.2/chartjs-plugin-annotation.min.js"></script>
   
   <script type="text/javascript">
     const CHART_COLORS = {
@@ -21,7 +23,8 @@
       green: 'rgb(75, 192, 192)',
       blue: 'rgb(54, 162, 235)',
       purple: 'rgb(153, 102, 255)',
-      grey: 'rgb(201, 203, 207)'
+      grey: 'rgb(201, 203, 207)',
+      cayan: 'rgb(75, 192, 192)',
     };
 
     let chart_loss = (()=>{
@@ -37,6 +40,7 @@
           borderColor: CHART_COLORS.red,
           //tension: 0.1
           yAxisID: 'y',
+          indexAxis: 'x' // Set indexAxis here
         },
         {
           label: 'Test accuracy',
@@ -45,6 +49,7 @@
           borderColor: CHART_COLORS.blue,
           //tension: 0.1
           yAxisID: 'y',
+          indexAxis: 'x' // Set indexAxis here
         }]
       };
     
@@ -58,10 +63,32 @@
             intersect: false,
           },
           stacked: false,
+          animation: false, // disable animations
           plugins: {
             title: {
               display: true,
               text: 'Train and Test Accuracy'
+            },
+            annotation: {
+              annotations: [{
+                type: 'line',
+                mode: 'horizontal',
+                scaleID: 'y',
+                value: 10,
+                borderColor: CHART_COLORS.cayan,
+                borderWidth: 4,
+                borderDash: [5, 5], 
+                label: {
+                  enabled: true,
+                  content: 'Baseline'
+                }
+              }]
+            },
+            decimation: {
+              enabled: true,
+              algorithm: 'lttb', // Choose your decimation algorithm
+              samples: 20, // Number of data points to keep
+              threshold: 20 // Minimum data points to consider decimation
             }
           },
           scales: {
@@ -82,10 +109,12 @@
       test_accuracy_hist = data['test_accuracy_hist']
       percent = data['percent']
       status = data['status']
+      baseline_accuracy = data['baseline_accuracy']
 
       chart_loss.data.labels = Array.from(train_accuracy_hist.keys());
       chart_loss.data.datasets[0].data = train_accuracy_hist
       chart_loss.data.datasets[1].data = test_accuracy_hist
+      chart_loss.options.plugins.annotation.annotations[0].value = baseline_accuracy
       chart_loss.update();
 
       $("#fine_tuning_progress").val(percent)

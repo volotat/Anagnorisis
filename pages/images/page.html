@@ -1,0 +1,53 @@
+<script type="text/javascript" src="pages/images/js/main.js"></script>
+
+<!-- PAGE MAIN CONTENT -->
+
+<div class="container py-6">
+  <!-- Search bar, image input, and filter dropdown -->
+  <div class="field has-addons">
+    <div class="control is-expanded">
+      <input class="input is-fullwidth" id="search_input" type="text" placeholder="Write your search query or drag-and-drop an image file here." 
+             ondragover="event.preventDefault()" 
+             ondrop="handleDrop(event)">
+    </div>
+    <div class="control">
+      <div class="dropdown is-hoverable">
+        <div class="dropdown-trigger">
+          <button class="button" aria-haspopup="true" aria-controls="dropdown-menu">
+            <span>Filter by</span>
+            <span class="icon is-small">
+              <i class="fas fa-angle-down" aria-hidden="true"></i>
+            </span>
+          </button>
+        </div>
+        <div class="dropdown-menu" id="dropdown-menu" role="menu">
+          <div class="dropdown-content">
+            <a href="#" class="dropdown-item">Rating</a>
+            <a href="#" class="dropdown-item">Filename</a>
+            <a href="#" class="dropdown-item">Creation Time</a>
+            <a href="#" class="dropdown-item">Last Modified Time</a>
+            <a href="#" class="dropdown-item">Resolution</a>
+            <a href="#" class="dropdown-item">File Size</a>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="control">
+      <button class="button is-info" id="seach_button">Search</button>
+    </div>
+  </div>
+
+  <!-- Pagination -->
+  <nav class="pagination is-rounded mt-6" role="navigation" aria-label="pagination">
+    <a href="#" class="pagination-previous">Previous</a>
+    <a href="#" class="pagination-next">Next page</a>
+    <ul class="pagination-list" id="pagination_list">
+      <li>
+        <span class="pagination-ellipsis">&hellip;</span>
+      </li>
+    </ul>
+  </nav>
+  <!-- Grid with previews of images -->
+  <div id="images_preview_container">
+  </div>
+</div>

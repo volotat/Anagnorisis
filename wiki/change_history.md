@@ -3,7 +3,7 @@
 
 ## TODO list
  
-### Music page
+### Music 
 Add a way to change the rest of the metadata of the song.
 Add volume control.
 Add a message if there are new unindexed media files. 
@@ -13,10 +13,19 @@ Add a way to restart radio session.
 Explore ways to optimize music library update process.
 In radio mode add "Open file destination" button to being able to move or remove bad music if found.
 
+### Images 
+Implement text search in a particular folder using SigLIP.
+Implement similarity search using SigLIP embeddings.
+Implement quality evaluation with personal evaluator.
+Implement some sort of effective resolution estimation technique.
+
+
 ### Train page
 Disable the start button if fine-tuning has already started.  
 When refreshing the page the information about previous run should appear.
 Pressing the start button should remove all the information from the graph and restart the process.
+Add a button to stop the training process and save the best model so far.
+After training is complete or canceled reload the evaluation models.
 
 ### Wiki
 
@@ -24,16 +33,20 @@ Pressing the start button should remove all the information from the graph and r
 Add some sort of a control panel that is active on all pages (may be hidden) and shows current GPU memory load by the system and console output.  
 Create an extension that provides recent Arxiv papers (https://arxiv.org/list/cs.LG/recent).   
 Add a way to export current database as .csv and import it back.
+Implement usage of FAISS library for fast vector search.
 
 ## Important fixes before 0.1.0 release
 Create a working docker environment to easily run the project.  
 
 ## Versions History
 
+### Version 0.0.11 (12.06.2024)
+Added 'Images' page with text-based image search using [SigLIP](https://arxiv.org/abs/2303.15343) model.
+
 ### Version 0.0.10 (17.05.2024)
-Main Readme.md file has been updated to better represent the current status of the project.
-Wiki pages has also been updated to better reflect the project at the current state.
-Removed all CDN services dependencies.
+Main Readme.md file has been updated to better represent the current status of the project.  
+Wiki pages has also been updated to better reflect the project at the current state.  
+Removed all CDN services dependencies.  
 
 ### Version 0.0.9 (13.05.2024)
 Fixed an issue, when music is not readable after indexing (wrong path was written to DB).  

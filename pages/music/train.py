@@ -27,7 +27,7 @@ def train_audio_evaluator(callback=None):
 
     if callback:
       percent = (i+1) / len(music_files)
-      callback(status, percent)
+      callback(status, percent, 0)
 
   # Split to train and eval sets
   status = 'Training the model...'
@@ -36,6 +36,11 @@ def train_audio_evaluator(callback=None):
 
   print("X_train:", len(X_train), "X_test:", len(X_test))
 
+  # Calculate the mean score of all train scores
+  mean_score = np.mean(y_train)
+  # Calculate baseline accuracy
+  baseline_accuracy = 1 - np.mean(np.abs(mean_score - np.array(y_test)) / (np.array(y_test) + 1))
+
   # Create the model
   evaluator = src.scoring_models.Evaluator(embedding_dim=embedder.embedding_dim, rate_classes=11)
 
@@ -43,7 +48,7 @@ def train_audio_evaluator(callback=None):
   best_train_accuracy = 0
   best_test_accuracy = 0
   best_epoch = 0
-  total_epochs = 301
+  total_epochs = 5001
 
   # Initialize the progress bar
   pbar = tqdm(range(total_epochs))
@@ -57,7 +62,7 @@ def train_audio_evaluator(callback=None):
 
     if callback:
       percent = (epoch+1) / total_epochs
-      callback(status, percent, train_accuracy, test_accuracy)
+      callback(status, percent, baseline_accuracy, train_accuracy, test_accuracy)
 
     # Check if this epoch's accuracy is the best
     if test_accuracy > best_test_accuracy:
@@ -70,4 +75,5 @@ def train_audio_evaluator(callback=None):
 
   status = f'Best Epoch: {best_epoch}, Train Accuracy: {best_train_accuracy * 100:.2f}%, Test Accuracy: {best_test_accuracy * 100:.2f}%'
   print(status)
-  callback(status, 100)
+  if callback: 
+    callback(status, 100, baseline_accuracy)

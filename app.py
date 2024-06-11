@@ -101,6 +101,9 @@ def create_route(ext_name):
   return extension_route
 
 for extension_name in extension_names:
+  if not os.path.exists(f'pages/{extension_name}/serve.py'):
+    continue
+  
   # Import pages/music/serve.py
   exec(f'import pages.{extension_name}.serve')
 

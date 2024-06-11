@@ -89,3 +89,6 @@ music:
     making things up; instead, delve into captivating details about the band, genre,
     or any relevant topic. Keep the creativity flowing, steer clear of repetition,
     and communicate exclusively in English.
+images:
+  media_directory: '/media/alex/Expansion/IMAGES/IMAGES/'
+  media_formats: ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp']

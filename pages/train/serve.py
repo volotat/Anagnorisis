@@ -43,7 +43,7 @@ def init_socket_events(socketio, cfg=None, app=None):
     train_accuracy_hist = []
     test_accuracy_hist = []
 
-    def callback(status, percent, train_accuracy = None, test_accuracy = None):
+    def callback(status, percent, baseline_accuracy, train_accuracy = None, test_accuracy = None):
       if train_accuracy is not None and test_accuracy is not None:
         train_accuracy_hist.append(train_accuracy * 100)
         test_accuracy_hist.append(test_accuracy * 100)
@@ -51,6 +51,7 @@ def init_socket_events(socketio, cfg=None, app=None):
       data = {
         'status': status,
         'percent': percent * 100,
+        'baseline_accuracy': baseline_accuracy * 100,
         'train_accuracy_hist': list(train_accuracy_hist),
         'test_accuracy_hist': list(test_accuracy_hist)
       }
