@@ -14,11 +14,10 @@ Explore ways to optimize music library update process.
 In radio mode add "Open file destination" button to being able to move or remove bad music if found.
 
 ### Images 
-Implement text search in a particular folder using SigLIP.
-Implement similarity search using SigLIP embeddings.
-Implement quality evaluation with personal evaluator.
-Implement some sort of effective resolution estimation technique.
-
+Implement quality evaluation with personal evaluator.   
+Implement some sort of effective resolution estimation technique.   
+Add button to move image file into trash bin.  
+Improve sorting by resolution performance (one idea might be caching information of image resolution).  
 
 ### Train page
 Disable the start button if fine-tuning has already started.  
@@ -40,8 +39,15 @@ Create a working docker environment to easily run the project.
 
 ## Versions History
 
+### Version 0.0.12 (28.06.2024)
+Now when user rates a song the data of the action also stored in the DB for further analysis.  
+Added display of information about the image, such as file path, file size, resolution and so on is now displayed under each image.  
+Added button below the image that opens it inside its folder.  
+Added search by file size, images resolution and similarity of the images.  
+Implemented switching between subfolders in images.  
+
 ### Version 0.0.11 (12.06.2024)
-Added 'Images' page with text-based image search using [SigLIP](https://arxiv.org/abs/2303.15343) model.
+Added 'Images' page with text-based image search using [SigLIP](https://arxiv.org/abs/2303.15343) model.  
 
 ### Version 0.0.10 (17.05.2024)
 Main Readme.md file has been updated to better represent the current status of the project.  

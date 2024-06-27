@@ -25,6 +25,8 @@ class ImageSearch:
 
   @staticmethod
   def process_images(images, batch_size=32):
+    # TODO: Rewrite caching functionality to use less files and speed up its performance
+
     # create cache directory
     os.makedirs("./cache/embeds_images", exist_ok=True) 
 
@@ -35,34 +37,35 @@ class ImageSearch:
 
     for image_path in tqdm(images):
       # Compute the hash of the image file
-      with open(image_path, "rb") as f:
-          bytes = f.read() # read entire file as bytes
-          readable_hash = hashlib.sha256(bytes).hexdigest()
+      #with open(image_path, "rb") as f:
+      #  bytes = f.read() # read entire file as bytes
+      #  readable_hash = hashlib.sha256(bytes).hexdigest()
+      readable_hash = hashlib.md5(image_path.encode()).hexdigest()
 
       # Define the path of the cache file
       cache_file = f"./cache/embeds_images/{readable_hash}.pkl"
 
       # If the cache file exists, load the embeddings from it
       if os.path.exists(cache_file):
-          with open(cache_file, "rb") as f:
-              image_embeds = pickle.load(f)
+        with open(cache_file, "rb") as f:
+          image_embeds = pickle.load(f)
       else:
-          # Otherwise, process the image and save the embeddings to the cache file
-          image = Image.open(image_path).convert("RGB")
-          inputs_images = ImageSearch.processor(images=[image], padding="max_length", return_tensors="pt").to(ImageSearch.device)
+        # Otherwise, process the image and save the embeddings to the cache file
+        image = Image.open(image_path).convert("RGB")
+        inputs_images = ImageSearch.processor(images=[image], padding="max_length", return_tensors="pt").to(ImageSearch.device)
 
-          with torch.no_grad():
-              outputs = ImageSearch.model.get_image_features(**inputs_images)
+        with torch.no_grad():
+          outputs = ImageSearch.model.get_image_features(**inputs_images)
 
-          # get the image embeddings
-          image_embeds = outputs
+        # get the image embeddings
+        image_embeds = outputs
 
-          # normalize the image embeddings
-          image_embeds = image_embeds / image_embeds.norm(p=2, dim=-1, keepdim=True)
+        # normalize the image embeddings
+        image_embeds = image_embeds / image_embeds.norm(p=2, dim=-1, keepdim=True)
 
-          # Save the embeddings to the cache file
-          with open(cache_file, "wb") as f:
-              pickle.dump(image_embeds, f)
+        # Save the embeddings to the cache file
+        with open(cache_file, "wb") as f:
+          pickle.dump(image_embeds, f)
 
       all_image_embeds.append(image_embeds)
 

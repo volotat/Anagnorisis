@@ -278,6 +278,7 @@ def init_socket_events(socketio, app=None, cfg=None):
 
     song = db_models.MusicLibrary.query.get(song_hash)
     song.user_rating = int(song_score)
+    song.user_rating_date = datetime.datetime.now()
     db_models.db.session.commit()
 
     music = next((item for item in _music_list() if item['hash'] == song_hash), None)
