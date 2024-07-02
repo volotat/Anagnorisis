@@ -8,6 +8,8 @@ import os
 import pickle
 import hashlib
 
+images_embeds_fast_cache = {}
+
 class ImageSearch:
   device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
   model = AutoModel.from_pretrained("./models/siglip-base-patch16-224", local_files_only=True).to(device)
@@ -46,9 +48,14 @@ class ImageSearch:
       cache_file = f"./cache/embeds_images/{readable_hash}.pkl"
 
       # If the cache file exists, load the embeddings from it
-      if os.path.exists(cache_file):
+      if cache_file in images_embeds_fast_cache:
+        image_embeds = images_embeds_fast_cache[cache_file]
+      elif os.path.exists(cache_file):
         with open(cache_file, "rb") as f:
           image_embeds = pickle.load(f)
+
+        # Save the embeddings to the fast cache (RAM)
+        images_embeds_fast_cache[cache_file] = image_embeds
       else:
         # Otherwise, process the image and save the embeddings to the cache file
         image = Image.open(image_path).convert("RGB")
@@ -66,6 +73,9 @@ class ImageSearch:
         # Save the embeddings to the cache file
         with open(cache_file, "wb") as f:
           pickle.dump(image_embeds, f)
+
+        # Save the embeddings to the fast cache (RAM)
+        images_embeds_fast_cache[cache_file] = image_embeds
 
       all_image_embeds.append(image_embeds)
 

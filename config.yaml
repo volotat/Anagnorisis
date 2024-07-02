@@ -90,5 +90,5 @@ music:
     or any relevant topic. Keep the creativity flowing, steer clear of repetition,
     and communicate exclusively in English.
 images:
-  media_directory: '/media/alex/Expansion/IMAGES/IMAGES/'
+  media_directory: '/media/alex/Expansion/IMAGES/'
   media_formats: ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp']

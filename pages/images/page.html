@@ -1,10 +1,26 @@
 <script type="text/javascript" src="pages/images/js/main.js"></script>
+<link rel="stylesheet" href="/static/photoswipe/photoswipe.css">
+<script type="module">
+  // Include Lightbox 
+  import PhotoSwipeLightbox from '/static/photoswipe/photoswipe-lightbox.esm.js';
+
+  const photoGalleryLightbox = new PhotoSwipeLightbox({
+    // may select multiple "galleries"
+    gallery: '#images_grid_container',
+
+    // Elements within gallery (slides)
+    children: 'a',
+
+    // setup PhotoSwipe Core dynamic import
+    pswpModule: () => import('/static/photoswipe/photoswipe.esm.js')
+  });
+  window.photoGalleryLightbox = photoGalleryLightbox;
+  //photoGalleryLightbox.init();
+</script>
 
 <!-- PAGE MAIN CONTENT -->
-
-
 <div class="container is-fluid columns is-centered py-6">
-  <aside class="column is-narrow menu">
+  <aside class="column is-2 menu">
     <ul class="menu-list" id="folders_menu">
       ...
     </ul>
@@ -51,31 +67,36 @@
       <button class="tag is-info is-light set_search">similarity</button>
     </div>
 
-
-    <!-- Pagination on top-->
-    <nav class="pagination is-rounded mt-6" role="navigation" aria-label="pagination">
-      <a href="#" class="pagination-previous">Previous</a>
-      <a href="#" class="pagination-next">Next page</a>
-      <ul class="pagination-list" id="pagination_list">
-        <li>
-          <span class="pagination-ellipsis">&hellip;</span>
-        </li>
-      </ul>
+    <!-- Pagination and status on top-->
+    <nav class="level mt-6">
+      <nav class="pagination is-rounded level-left mb-0" role="navigation" aria-label="pagination">    
+        <ul class="pagination-list">
+          <li>
+            <span class="pagination-ellipsis">&hellip;</span>
+          </li>
+        </ul>
+      </nav>
+      <div class="level-right">
+        <p class="image-search-status">...</p>
+      </div>
     </nav>
 
     <!-- Grid with previews of images -->
     <div id="images_preview_container">
     </div>
 
-    <!-- Pagination on bottom-->
+    <!-- Pagination and status on bottom-->
     <nav class="pagination is-rounded mt-6" role="navigation" aria-label="pagination">
-      <a href="#" class="pagination-previous">Previous</a>
-      <a href="#" class="pagination-next">Next page</a>
-      <ul class="pagination-list" id="pagination_list">
-        <li>
-          <span class="pagination-ellipsis">&hellip;</span>
-        </li>
-      </ul>
+      <nav class="pagination is-rounded level-left mb-0" role="navigation" aria-label="pagination">    
+        <ul class="pagination-list">
+          <li>
+            <span class="pagination-ellipsis">&hellip;</span>
+          </li>
+        </ul>
+      </nav>
+      <div class="level-right">
+        <p class="image-search-status">...</p>
+      </div>
     </nav>
   </div>
 <div>

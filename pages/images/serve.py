@@ -13,6 +13,8 @@ import math
 from scipy.spatial import distance
 import torch
 import gc
+import send2trash
+import time
 
 def convert_size(size_bytes):
   if size_bytes == 0:
@@ -83,15 +85,19 @@ def get_folder_structure(root_folder):
 def init_socket_events(socketio, app=None, cfg=None):
   media_directory = cfg.images.media_directory
 
+  def show_search_status(status):
+    socketio.emit('emit_images_page_show_search_status', status)
+
   # necessary to allow web application access to music files
-  @app.route('/images_files/<path:filename>')
-  def serve_images_files(filename):
+  @app.route('/image_files/<path:filename>')
+  def serve_image_files(filename):
     nonlocal media_directory
     return send_from_directory(media_directory, filename)
 
   @socketio.on('emit_images_page_get_files')
   def get_files(input_data):
     nonlocal media_directory
+    start_time = time.time()
 
     path = input_data.get('path', '')
     pagination = input_data.get('pagination', 0)
@@ -109,7 +115,9 @@ def init_socket_events(socketio, app=None, cfg=None):
     # Filter the list to only include files of certain types
     all_files = [f for f in all_files if f.lower().endswith(tuple(cfg.images.media_formats))]
 
+
     # Sort image by text or image query
+    show_search_status(f"Sorting images by {text_query}")
     if text_query and len(text_query) > 0:
       # Sort images by file size
       if text_query.lower().strip() == "file size":
@@ -121,8 +129,10 @@ def init_socket_events(socketio, app=None, cfg=None):
         all_files = sorted(all_files, key=lambda x: resolutions[x][0] * resolutions[x][1])
       # Sort images by duplicates
       elif text_query.lower().strip() == "similarity":
+        show_search_status(f"Extracting embeddings")
         embeds_img = ImageSearch.process_images(all_files).cpu().detach().numpy() 
 
+        show_search_status(f"Computing distances between embeddings")
         # Assuming embeds_img is an array of image embeddings
         distances = compute_distances_batched(embeds_img)
 
@@ -135,6 +145,7 @@ def init_socket_events(socketio, app=None, cfg=None):
         # Find the smallest distance for each embedding
         min_distances = np.min(distances, axis=1)
         
+        show_search_status(f"Clustering images by similarity")
         ##################################################
         # Sort the embeddings by the smallest distance
         # if similarity is exactly zero, sort by file name
@@ -157,17 +168,23 @@ def init_socket_events(socketio, app=None, cfg=None):
         # Extract the sorted list of file paths
         all_files = [file_path for _, _, _, file_path in sorted_files]
       else:
+        show_search_status(f"Extracting embeddings")
         embeds_img = ImageSearch.process_images(all_files)
         embeds_text = ImageSearch.process_text(text_query)
         scores = ImageSearch.compare(embeds_img, embeds_text)
 
         # Create a list of indices sorted by their corresponding score
+        show_search_status(f"Sorting by relevance")
         sorted_indices = sorted(range(len(scores)), key=scores.__getitem__, reverse=True)
 
         # Use the sorted indices to sort all_files
         all_files = [all_files[i] for i in sorted_indices]
 
     #all_files = sorted(all_files, key=os.path.basename)
+
+
+    # Extracting metadata for relevant batch of images
+    show_search_status(f"Extracting metadata for relevant batch of images")
     page_files = all_files[pagination:limit]
 
     for full_path in page_files:
@@ -176,7 +193,7 @@ def init_socket_events(socketio, app=None, cfg=None):
       with open(full_path, "rb") as f:
         bytes = f.read() # read entire file as bytes
         file_size = len(bytes) # Get the file size in bytes
-        hash = hashlib.sha256(bytes).hexdigest() # Compute the hash of the file
+        hash = hashlib.md5(bytes).hexdigest() # Compute the hash of the file
 
         #Use BytesIO to create a file-like object from bytes and get resolution with Pillow
         image = Image.open(BytesIO(bytes))
@@ -208,28 +225,7 @@ def init_socket_events(socketio, app=None, cfg=None):
     print('folder_path', folder_path)
     socketio.emit('emit_images_page_show_files', {"files_data": files_data, "folder_path": folder_path, "total_files": len(all_files), "folders": folders})
 
-    '''files_data = []
-    for file_path in os.listdir(os.path.join(media_directory, path)):
-      full_path = os.path.join(media_directory, path, file_path)
-      basename = os.path.basename(file_path)
-
-      file_type = "undefined"
-      if os.path.isdir(full_path): file_type = "folder"
-      if os.path.isfile(full_path): file_type = "file"
-
-      if file_type == "folder" or basename.lower().endswith(tuple(cfg.images.media_formats)):
-        data = {
-          "type": file_type,
-          "full_path": full_path,
-          "file_path": os.path.join(path, file_path),
-          "base_name": basename
-        }
-        files_data.append(data)
-      
-      #if file_path.lower().endswith(tuple(cfg.music.media_formats)):
-        
-
-    socketio.emit('emit_images_page_show_files', {"files_data":files_data, "folder_path": path}) '''
+    show_search_status(f'{len(all_files)} images processed in {time.time() - start_time:.4f} seconds.')
 
   @socketio.on('emit_images_page_open_file_in_folder')
   def open_file_in_folder(file_path):
@@ -253,3 +249,19 @@ def init_socket_events(socketio, app=None, cfg=None):
           print("Unsupported desktop environment. Please add support for your file manager.")
     else:
       print("Error: File does not exist.")
+
+  @socketio.on('emit_images_page_send_file_to_trash')
+  def send_file_to_trash(file_path):
+    if os.path.isfile(file_path):
+      send2trash.send2trash(file_path)
+      '''if sys.platform == "win32":  # Windows
+        # Move the file to the recycle bin
+        subprocess.run(["cmd", "/c", "del", "/q", "/f", file_path], check=True)
+      elif sys.platform == "darwin":  # macOS
+        # Move the file to the trash
+        subprocess.run(["trash", file_path], check=True)
+      else:  # Linux and other Unix-like OS
+        # Move the file to the trash
+        subprocess.run(["gio", "trash", file_path], check=True)'''
+    else:
+      print("Error: File does not exist.")  

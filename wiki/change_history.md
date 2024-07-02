@@ -16,8 +16,8 @@ In radio mode add "Open file destination" button to being able to move or remove
 ### Images 
 Implement quality evaluation with personal evaluator.   
 Implement some sort of effective resolution estimation technique.   
-Add button to move image file into trash bin.  
 Improve sorting by resolution performance (one idea might be caching information of image resolution).  
+Add some way to delete multiple images at ones.
 
 ### Train page
 Disable the start button if fine-tuning has already started.  
@@ -33,17 +33,26 @@ Add some sort of a control panel that is active on all pages (may be hidden) and
 Create an extension that provides recent Arxiv papers (https://arxiv.org/list/cs.LG/recent).   
 Add a way to export current database as .csv and import it back.
 Implement usage of FAISS library for fast vector search.
+Update main readme.md file and write about 'images' page, also need to add a way to download SigLIP model.
 
 ## Important fixes before 0.1.0 release
 Create a working docker environment to easily run the project.  
 
 ## Versions History
 
+### Version 0.0.13 (02.07.2024)
+Fixed issue when switching page in images were resetting current active folder.  
+Added button that sends image file into a trash bin.  
+Added pagination at the bottom of the page in images.  
+Added search status text in images.  
+Added full size image preview with PhotoSwipe.  
+Implemented fast cache for image embeddings for faster search.  
+
 ### Version 0.0.12 (28.06.2024)
 Now when user rates a song the data of the action also stored in the DB for further analysis.  
-Added display of information about the image, such as file path, file size, resolution and so on is now displayed under each image.  
-Added button below the image that opens it inside its folder.  
-Added search by file size, images resolution and similarity of the images.  
+Added display of information about the image, such as file path, file size, resolution and so on is now displayed under each image.    
+Added button below the image that opens it inside its folder.   
+Added search by file size, images resolution and similarity of the images.   
 Implemented switching between subfolders in images.  
 
 ### Version 0.0.11 (12.06.2024)
