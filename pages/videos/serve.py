@@ -15,6 +15,7 @@ import torch
 import gc
 import send2trash
 import time
+from moviepy.editor import VideoFileClip
 
 def convert_size(size_bytes):
   if size_bytes == 0:
@@ -84,21 +85,40 @@ def get_folder_structure(root_folder):
 
 def print_emb_extracting_status(num_extracted, num_total):
   if num_extracted % 100 == 0:
-    print(f"Extracted embeddings for {num_extracted} out of {num_total} images.")
+    print(f"Extracted embeddings for {num_extracted} out of {num_total} videos.")
+
+def generate_preview(video_path, preview_path):
+  """
+  Generates a preview image for a given video file.
+
+  Args:
+  video_path (str): The path to the video file.
+  preview_path (str): The path where the preview image will be saved.
+  """
+  try:
+    # Load the video file
+    clip = VideoFileClip(video_path)
+    # Calculate the middle frame time
+    middle_time = clip.duration / 2
+    # Save the frame at the middle of the video as an image
+    clip.save_frame(preview_path, t=middle_time)
+  except Exception as e:
+    print(f"Error generating preview for {video_path}: {e}")
+
 
 def init_socket_events(socketio, app=None, cfg=None):
-  media_directory = cfg.images.media_directory
+  media_directory = cfg.videos.media_directory
 
   def show_search_status(status):
-    socketio.emit('emit_images_page_show_search_status', status)
+    socketio.emit('emit_videos_page_show_search_status', status)
 
   # necessary to allow web application access to music files
-  @app.route('/image_files/<path:filename>')
-  def serve_image_files(filename):
+  @app.route('/video_files/<path:filename>')
+  def serve_video_files(filename):
     nonlocal media_directory
     return send_from_directory(media_directory, filename)
 
-  @socketio.on('emit_images_page_get_files')
+  @socketio.on('emit_videos_page_get_files')
   def get_files(input_data):
     nonlocal media_directory
     start_time = time.time()
@@ -124,9 +144,9 @@ def init_socket_events(socketio, app=None, cfg=None):
     all_files = glob.glob(os.path.join(current_path, '**/*'), recursive=True)
 
     # Filter the list to only include files of certain types
-    all_files = [f for f in all_files if f.lower().endswith(tuple(cfg.images.media_formats))]
+    all_files = [f for f in all_files if f.lower().endswith(tuple(cfg.videos.media_formats))]
 
-
+    '''
     # Sort image by text or image query
     show_search_status(f"Sorting images by {text_query}")
     if text_query and len(text_query) > 0:
@@ -192,38 +212,43 @@ def init_socket_events(socketio, app=None, cfg=None):
         all_files = [all_files[i] for i in sorted_indices]
 
     #all_files = sorted(all_files, key=os.path.basename)
+    '''
 
-
-    # Extracting metadata for relevant batch of images
-    show_search_status(f"Extracting metadata for relevant batch of images")
+    # Extracting metadata for relevant batch of videos
+    show_search_status(f"Extracting metadata for relevant batch of videos")
     page_files = all_files[pagination:limit]
-
+    
     for full_path in page_files:
       basename = os.path.basename(full_path)
+      preview_path = os.path.join(os.path.dirname(full_path), basename + ".preview.png")
       
-      with open(full_path, "rb") as f:
-        bytes = f.read() # read entire file as bytes
-        file_size = len(bytes) # Get the file size in bytes
-        hash = hashlib.md5(bytes).hexdigest() # Compute the hash of the file
+      #with open(full_path, "rb") as f:
+      #  bytes = f.read() # read entire file as bytes
+      #  file_size = len(bytes) # Get the file size in bytes
+      #  hash = hashlib.md5(bytes).hexdigest() # Compute the hash of the file
 
         #Use BytesIO to create a file-like object from bytes and get resolution with Pillow
-        image = Image.open(BytesIO(bytes))
-        resolution = image.size  # Returns a tuple (width, height)
+        #image = Image.open(BytesIO(bytes))
+        #resolution = image.size  # Returns a tuple (width, height)
     
+      # Generate preview if it does not exist
+      if not os.path.exists(preview_path):
+        generate_preview(full_path, preview_path)
 
       data = {
         "type": "file",
         "full_path": full_path,
         "file_path": os.path.relpath(full_path, media_directory),
+        "preview_path": os.path.relpath(preview_path, media_directory),
         "base_name": basename,
-        "hash": hash,
+        "hash": "", #hash,
         "user_rating": "...",
         "model_rating": "...",
-        "file_size": convert_size(file_size),
-        "resolution": f"{resolution[0]}x{resolution[1]}",
+        "file_size": "...", #convert_size(file_size),
+        "resolution": "...", #f"{resolution[0]}x{resolution[1]}",
       }
       files_data.append(data)
-
+    
                  
     # Extract subfolders structure from the path into a dict
     folders = get_folder_structure(media_directory)
@@ -232,11 +257,11 @@ def init_socket_events(socketio, app=None, cfg=None):
     main_folder_name = os.path.basename(os.path.normpath(media_directory))
     folders = {main_folder_name: folders}
     
-    socketio.emit('emit_images_page_show_files', {"files_data": files_data, "folder_path": folder_path, "total_files": len(all_files), "folders": folders})
+    socketio.emit('emit_videos_page_show_files', {"files_data": files_data, "folder_path": folder_path, "total_files": len(all_files), "folders": folders})
 
-    show_search_status(f'{len(all_files)} images processed in {time.time() - start_time:.4f} seconds.')
+    show_search_status(f'{len(all_files)} videos processed in {time.time() - start_time:.4f} seconds.')
 
-  @socketio.on('emit_images_page_open_file_in_folder')
+  @socketio.on('emit_videos_page_open_file_in_folder')
   def open_file_in_folder(file_path):
     file_path = os.path.normpath(file_path)
     print(f'Opening file with path: "{file_path}"')
@@ -262,7 +287,7 @@ def init_socket_events(socketio, app=None, cfg=None):
     else:
       print("Error: File does not exist.")
 
-  @socketio.on('emit_images_page_send_file_to_trash')
+  @socketio.on('emit_videos_page_send_file_to_trash')
   def send_file_to_trash(file_path):
     if os.path.isfile(file_path):
       send2trash.send2trash(file_path)

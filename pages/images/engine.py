@@ -11,9 +11,18 @@ import hashlib
 images_embeds_fast_cache = {}
 
 class ImageSearch:
-  device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-  model = AutoModel.from_pretrained("./models/siglip-base-patch16-224", local_files_only=True).to(device)
-  processor = AutoProcessor.from_pretrained("./models/siglip-base-patch16-224", local_files_only=True)
+  device = None
+  model = None
+  processor = None
+
+  @staticmethod
+  def initiate():
+    if ImageSearch.model is not None:
+      return
+    
+    ImageSearch.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    ImageSearch.model = AutoModel.from_pretrained("./models/siglip-base-patch16-224", local_files_only=True).to(ImageSearch.device)
+    ImageSearch.processor = AutoProcessor.from_pretrained("./models/siglip-base-patch16-224", local_files_only=True)
 
   '''_instance = None
   def __new__(self, *args, **kwargs):
@@ -26,8 +35,9 @@ class ImageSearch:
     pass'''
 
   @staticmethod
-  def process_images(images, batch_size=32):
+  def process_images(images, batch_size=32, callback=None):
     # TODO: Rewrite caching functionality to use less files and speed up its performance
+    ImageSearch.initiate()
 
     # create cache directory
     os.makedirs("./cache/embeds_images", exist_ok=True) 
@@ -37,7 +47,7 @@ class ImageSearch:
 
     all_image_embeds = []
 
-    for image_path in tqdm(images):
+    for ind, image_path in enumerate(tqdm(images)):
       # Compute the hash of the image file
       #with open(image_path, "rb") as f:
       #  bytes = f.read() # read entire file as bytes
@@ -78,6 +88,7 @@ class ImageSearch:
         images_embeds_fast_cache[cache_file] = image_embeds
 
       all_image_embeds.append(image_embeds)
+      callback(ind+1, len(images))
 
     # Concatenate all embeddings
     all_image_embeds = torch.cat(all_image_embeds, dim=0)
@@ -86,6 +97,8 @@ class ImageSearch:
 
   @staticmethod
   def process_text(text):
+    ImageSearch.initiate()
+    
     inputs_text = ImageSearch.processor(text=text, padding="max_length", return_tensors="pt").to(ImageSearch.device)
 
     with torch.no_grad():

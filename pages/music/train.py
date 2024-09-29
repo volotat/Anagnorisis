@@ -17,7 +17,7 @@ def train_audio_evaluator(callback=None):
   # get embeddings for that music
   embedder = src.scoring_models.AudioEmbedder(audio_embedder_model_path = "./models/MERT-v1-95M")
 
-  status = "Embedding music files..."
+  status = "Step 1/2: Embedding music files..."
   print(status)
   embeddings = []
   for i, file_path in enumerate(tqdm(music_files)):
@@ -30,7 +30,7 @@ def train_audio_evaluator(callback=None):
       callback(status, percent, 0)
 
   # Split to train and eval sets
-  status = 'Training the model...'
+  status = 'Step 2/2: Training the model...'
   print(status)
   X_train, X_test, y_train, y_test = train_test_split(embeddings, music_scores, test_size=0.1, random_state=42)
 

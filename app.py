@@ -10,6 +10,7 @@ import sys
 
 import markdown
 from markdown.extensions.codehilite import CodeHiliteExtension
+from pymdownx.arithmatex import ArithmatexExtension
 
 from omegaconf import OmegaConf
 import os
@@ -53,7 +54,11 @@ for extension_name in extension_names:
 db.init_app(app)
 migrate = Migrate(app, db)
 
-markdown_extensions=['tables']
+markdown_extensions = [
+    'tables',
+    CodeHiliteExtension(),
+    ArithmatexExtension(generic=True, preview=False, smart_dollar=False),
+]
 
 #### MAIN PAGE FUNCTIONALITY
 @app.route('/')
