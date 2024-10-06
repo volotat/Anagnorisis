@@ -15,6 +15,8 @@ import torch
 import gc
 import send2trash
 import time
+import datetime
+import pages.images.db_models as db_models
 
 def convert_size(size_bytes):
   if size_bytes == 0:
@@ -86,6 +88,39 @@ def print_emb_extracting_status(num_extracted, num_total):
   if num_extracted % 100 == 0:
     print(f"Extracted embeddings for {num_extracted} out of {num_total} images.")
 
+def get_file_descriptor(file_path):
+  # This will only work on Unix-like systems
+  # TODO: Add support for Windows
+  stat_info = os.stat(file_path)
+  inode = stat_info.st_ino
+  device = stat_info.st_dev
+  return f"{inode}-{device}"
+
+
+'''
+import pywintypes
+import win32file
+
+def get_windows_file_descriptor(file_path):
+    handle = win32file.CreateFile(
+        file_path,
+        win32file.GENERIC_READ,
+        win32file.FILE_SHARE_READ | win32file.FILE_SHARE_WRITE | win32file.FILE_SHARE_DELETE,
+        None,
+        win32file.OPEN_EXISTING,
+        win32file.FILE_ATTRIBUTE_NORMAL,
+        None
+    )
+    
+    file_info = win32file.GetFileInformationByHandle(handle)
+    handle.Close()
+    
+    file_index = file_info[8]  # File index (high and low combined)
+    volume_serial = file_info[1]  # Volume serial number
+    
+    return f"{volume_serial}-{file_index}"
+'''
+
 def init_socket_events(socketio, app=None, cfg=None):
   media_directory = cfg.images.media_directory
 
@@ -141,7 +176,7 @@ def init_socket_events(socketio, app=None, cfg=None):
       # Sort images by duplicates
       elif text_query.lower().strip() == "similarity":
         show_search_status(f"Extracting embeddings")
-        embeds_img = ImageSearch.process_images(all_files).cpu().detach().numpy() 
+        embeds_img = ImageSearch.process_images(all_files, callback=print_emb_extracting_status).cpu().detach().numpy() 
 
         show_search_status(f"Computing distances between embeddings")
         # Assuming embeds_img is an array of image embeddings
@@ -178,6 +213,8 @@ def init_socket_events(socketio, app=None, cfg=None):
         sorted_files = sorted(files_with_target_distances_and_sizes, key=lambda x: (x[0], x[1], x[2]))
         # Extract the sorted list of file paths
         all_files = [file_path for _, _, _, file_path in sorted_files]
+      elif text_query.lower().strip() == "random":
+        np.random.shuffle(all_files)
       else:
         show_search_status(f"Extracting embeddings")
         embeds_img = ImageSearch.process_images(all_files, callback=print_emb_extracting_status)
@@ -210,15 +247,23 @@ def init_socket_events(socketio, app=None, cfg=None):
         image = Image.open(BytesIO(bytes))
         resolution = image.size  # Returns a tuple (width, height)
     
+      file_descriptor = get_file_descriptor(full_path)
+
+      image_db_item = db_models.ImagesLibrary.query.filter_by(hash=hash, file_descriptor=file_descriptor).first()
+      if image_db_item is not None:
+        user_rating = image_db_item.user_rating
+      else:
+        user_rating = None
 
       data = {
         "type": "file",
         "full_path": full_path,
         "file_path": os.path.relpath(full_path, media_directory),
+        "file_descriptor": file_descriptor,
         "base_name": basename,
         "hash": hash,
-        "user_rating": "...",
-        "model_rating": "...",
+        "user_rating": user_rating,
+        "model_rating": None,
         "file_size": convert_size(file_size),
         "resolution": f"{resolution[0]}x{resolution[1]}",
       }
@@ -277,3 +322,36 @@ def init_socket_events(socketio, app=None, cfg=None):
         subprocess.run(["gio", "trash", file_path], check=True)'''
     else:
       print("Error: File does not exist.")  
+
+  @socketio.on('emit_images_page_set_image_rating')
+  def set_image_rating(data):
+    image_hash = data['hash'] 
+    image_rating = data['rating']
+    image_path = data['file_path']
+    image_file_descriptor = data['file_descriptor']
+    
+    print('Set image rating:', image_hash, image_rating)
+
+    image_db_item = db_models.ImagesLibrary.query.filter_by(hash=image_hash, file_descriptor=image_file_descriptor).first()
+
+    if image_db_item is None:  
+      # Create new instance us there is no image in the database
+
+      image_data = {
+        "hash": image_hash,
+        "file_path": image_path,
+        "file_descriptor": image_file_descriptor,
+        "user_rating": int(image_rating),
+        "user_rating_date": datetime.datetime.now()
+      }
+
+      image_db_item = db_models.ImagesLibrary(**image_data)
+      db_models.db.session.add(image_db_item)
+      db_models.db.session.commit()
+    else: 
+      # Update the existing instance
+
+      image_db_item.file_path = image_path # in case the file was moved
+      image_db_item.user_rating = int(image_rating)
+      image_db_item.user_rating_date = datetime.datetime.now()
+      db_models.db.session.commit()

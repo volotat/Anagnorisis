@@ -42,6 +42,9 @@ Create a working docker environment to easily run the project.
 
 ## Versions History
 
+### Version 0.0.15 (07.10.2024)
+Added mechanism to rate images with UI and store it in DB in a more efficient way that it was done with music. The music DB should also be change later to follow the same principals.
+
 ### Version 0.0.14 (29.09.2024)
 Added current number of images processed at the embedding extracting stage, as sometimes it could take some amount of time at first extraction.  
 The GLIP model is no longer loaded into RAM before image search methods are called.  

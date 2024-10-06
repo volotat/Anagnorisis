@@ -198,6 +198,8 @@ def init_socket_events(socketio, app=None, cfg=None):
         sorted_files = sorted(files_with_target_distances_and_sizes, key=lambda x: (x[0], x[1], x[2]))
         # Extract the sorted list of file paths
         all_files = [file_path for _, _, _, file_path in sorted_files]
+      elif text_query.lower().strip() == "random":
+        np.random.shuffle(all_files)
       else:
         show_search_status(f"Extracting embeddings")
         embeds_img = ImageSearch.process_images(all_files, callback=print_emb_extracting_status)

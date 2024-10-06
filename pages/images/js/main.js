@@ -1,3 +1,111 @@
+// THIS METHODS SHOULD BE IMPORTED FROM utils.js
+
+class StarRatingComponent {
+  constructor({ initialRating = Name, callback = ()=>{} }) {
+    this.maxRating = 10;
+    this.rating = initialRating;
+    this.containers = [];
+    this.callback = callback;
+  }
+
+  issueNewHtmlComponent(params) {
+    const starRatingHTMLContainer = new StarRatingHTMLContainer(this, params);
+    this.containers.push(starRatingHTMLContainer);
+
+    return starRatingHTMLContainer.container;
+  }
+
+  updateAllContainers() {
+    this.containers.forEach(container => container.updateDisplay());
+  }
+}
+
+class StarRatingHTMLContainer {
+  constructor(starRatingObject, {containerType = 'div', size = 3, isActive = false, showPassiveAsNumber = true}) {
+    this.starRatingObject = starRatingObject;
+    this.isActive = isActive;
+    this.showPassiveAsNumber = showPassiveAsNumber;
+    this.symbolsList = [];
+    this.container = document.createElement(containerType);
+    
+    this.container.classList.add(`is-size-${size.toString()}`);
+    this.container.classList.add('is-gapless');
+    this.container.classList.add('has-text-centered');
+    this.container.classList.add('is-unselectable');
+  
+    this.updateDisplay();
+  }
+
+  generateStarDisplay() {
+    const starRatingObject = this.starRatingObject;
+
+    // Add the initial symbol based on the rating
+    const initialSymbol = document.createElement('span');
+    initialSymbol.textContent = starRatingObject.rating === null ? '◦' : '•';
+    this.container.appendChild(initialSymbol);
+    this.symbolsList.push(initialSymbol);
+  
+    // Create each star element
+    for (let i = 1; i <= starRatingObject.maxRating; i++) {
+      const star = document.createElement('span');
+      star.textContent = i <= starRatingObject.rating ? '★' : '☆';
+      star.classList.add('star');
+  
+      this.container.appendChild(star);
+      this.symbolsList.push(star);
+    }
+
+    if (this.isActive) {
+      for (let i = 0; i < this.symbolsList.length; i++) {
+        this.symbolsList[i].classList.add('is-clickable');
+
+        this.symbolsList[i].addEventListener('mouseover', () => {
+          this.updateDisplay(i); 
+        });
+
+        this.symbolsList[i].addEventListener('mouseout', () => {
+          this.updateDisplay(); 
+        });
+
+        this.symbolsList[i].addEventListener('click', () => {
+          starRatingObject.rating = i;
+          starRatingObject.callback(i);
+          starRatingObject.updateAllContainers();
+        });
+      }
+    }
+  }
+
+  updateDisplay(tmpRating = null) {
+    let rating = this.starRatingObject.rating;
+    const maxRating = this.starRatingObject.maxRating;
+
+    if (tmpRating != null) rating = tmpRating;
+
+    if (!this.isActive && this.showPassiveAsNumber) {
+      if (rating == null)
+        this.container.innerHTML = 'Not rated yet';
+      else
+        this.container.innerHTML = rating.toString() + '/' + maxRating.toString();
+
+      // Clear the symbols list in case it was previously active for some reason
+      this.symbolsList = [];
+    } else {
+      if (this.symbolsList.length == 0) {
+        this.generateStarDisplay();
+      }
+
+      this.symbolsList[0].textContent = rating === null ? '◦' : '•';
+      for (let j = 1; j <= maxRating; j++) {
+        this.symbolsList[j].textContent = j <= rating ? '★' : '☆';
+      }
+    }
+  }
+}
+
+
+
+
 // Create a closed scope to avoid any variable collisions  
 (function() {
   //// CONSTANTS AND VARIABLES
@@ -69,7 +177,7 @@
       const isActive = active_path === current_path_ ? 'is-active' : '';
       let encoded_link = `path=${encodeURIComponent(current_path_)}`;
       folderRepresentation += `<li><a class="${isActive}" href="?${encoded_link}">${folder}</a>`;
-      console.log('!!!', active_path, current_path_);
+      
       if (isSubfolder(current_path_, active_path)) {
         folderRepresentation += '<ul>';
         folderRepresentation += create_folder_representation(folder_dict, active_path, current_path_);
@@ -108,6 +216,7 @@
         imageDataDiv.className = 'cell has-background-light p-1';
 
         const imageContainer = document.createElement('div');
+        imageContainer.classList.add('pswp-gallery__item')
         // Make image container always square
         imageContainer.style.aspectRatio = 1;
         // Horizontally center the image
@@ -118,12 +227,20 @@
 
         imageDataDiv.append(imageContainer);
 
-        // <a href="https://cdn.photoswipe.com/photoswipe-demo-images/photos/2/img-2500.jpg" 
-        //   data-pswp-width="1669" 
-        //   data-pswp-height="2500" 
-        //   target="_blank">
-        //   <img src="https://cdn.photoswipe.com/photoswipe-demo-images/photos/2/img-200.jpg" alt="" />
-        // </a>
+        // Create a new star rating component
+        const callback = (rating) => {
+          console.log('New rating:', rating);
+          socket.emit('emit_images_page_set_image_rating', {
+            hash: item.hash,
+            file_path: item.file_path,
+            file_descriptor: item.file_descriptor,
+            rating: rating,
+          });
+        }
+        const starRating = new StarRatingComponent({
+          callback: callback,
+          initialRating: item.user_rating, //parseInt(Math.random() * 11),
+        });
 
         // Create an object for holding the image data
         const image = document.createElement('img');
@@ -147,20 +264,59 @@
 
           // Append the image to the beginning of div
           imageContainer.prepend(link);
+
+          
+          // Create a new div element
+          const hiddenCaptionDiv = document.createElement('div');
+          hiddenCaptionDiv.className = 'hidden-caption-content';
+
+          // Set the innerHTML of the div to include the file path or any other HTML content
+          let starRatingDiv = starRating.issueNewHtmlComponent({
+            containerType: 'div',
+            size:3, 
+            isActive: true
+          });
+          hiddenCaptionDiv.append(starRatingDiv);
+          // Append the div to the imageContainer
+          imageContainer.append(hiddenCaptionDiv);
+          
+
+          //$(imageContainer).append('<div class="hidden-caption-content">' + item.file_path + '</div>');
           image.remove();
         };
 
         // Add name of the file to the div
         const data = document.createElement('p');
         data.style.wordBreak = 'break-all'; // break long words
+
+        $(data).append('<b>Path:</b>&nbsp;' + item.file_path + '<br>');
+        $(data).append('<b>Hash:</b>&nbsp;' + item.hash + '<br>');
         
-        data.innerHTML = '<b>Path:</b> ' + item.file_path;
+
+        const StarRatingComponentObject = starRating.issueNewHtmlComponent({
+          containerType: 'span',
+          size:6, 
+          isActive: false
+        })
+        $(data).append('<br><b>User rating:</b>&nbsp;&nbsp;');
+        $(data).append(StarRatingComponentObject)
+        $(data).append('<br>');
+
+        $(data).append('<b>Model rating:</b>&nbsp;' + item.model_rating + '<br>');
+        $(data).append('<b>File size:</b>&nbsp;' + item.file_size + '<br>');
+        $(data).append('<b>Resolution:</b>&nbsp;' + item.resolution + '<br><br>');
+
+        
+        /*data.innerHTML = '<b>Path:</b> ' + item.file_path;
         data.innerHTML += '<br><b>Hash:</b> ' + item.hash;
-        data.innerHTML += '<br><b>User rating:</b> ' + item.user_rating;
+        data.innerHTML += '<br><b>User rating:</b> ' + starRating.issueNewHtmlComponent({
+          size:1, 
+          isActive: false
+        }).innerHTML; //+ item.user_rating;
         data.innerHTML += '<br><b>Model rating:</b> ' + item.model_rating;
         data.innerHTML += '<br><b>File size:</b> ' + item.file_size;
         data.innerHTML += '<br><b>Resolution:</b> ' + item.resolution;
-        data.innerHTML += '<br><br>';
+        data.innerHTML += '<br><br>';*/
 
         // Create buttons for opening and deleting the file
         btn_open = document.createElement('button');
@@ -188,7 +344,7 @@
         imageDataDiv.append(data);
 
         $('#images_grid_container').append(imageDataDiv);
-        window.photoGalleryLightbox.init();
+        //window.photoGalleryLightbox.init();
       });
 
       // update the pagination
@@ -228,7 +384,60 @@
       // Add the folder representation to the page
       $('#folders_menu').html(folderRepresentation);
 
+      // Initialize photoSwipe gallery
+      window.photoGalleryLightbox.on('uiRegister', function() {
+        window.photoGalleryLightbox.pswp.ui.registerElement({
+          name: 'custom-caption',
+          order: 9,
+          isButton: false,
+          appendTo: 'root',
+          html: 'Caption text',
+          onInit: (el, pswp) => {
+            console.log('init', el, pswp);
+            let hiddenCaption = null;
+            let hiddenCaptionOriginalParent = null;
+
+            window.photoGalleryLightbox.pswp.on('change', () => {
+              const currSlideElement = window.photoGalleryLightbox.pswp.currSlide.data.element;
+
+              if (hiddenCaptionOriginalParent) {
+                hiddenCaptionOriginalParent.append(hiddenCaption);
+                hiddenCaption.style.display = 'none';
+              }
+
+              if (currSlideElement) {
+                hiddenCaption = currSlideElement.querySelector('.hidden-caption-content');
+
+                if (hiddenCaption) {
+                  hiddenCaptionOriginalParent = hiddenCaption.parentElement;
+
+                  // get caption from element with class hidden-caption-content
+                  //captionHTML = hiddenCaption.innerHTML;
+                  el.innerHTML = '';
+                  hiddenCaption.style.display = 'block';
+                  el.append(hiddenCaption);
+                } else {
+                  // get caption from alt attribute
+                  //captionHTML = currSlideElement.querySelector('img').getAttribute('alt');
+                }
+              }
+              //el.innerHTML = captionHTML || '';
+            });
+
+            window.photoGalleryLightbox.pswp.on('destroy', () => {
+              if (hiddenCaptionOriginalParent) {
+                hiddenCaptionOriginalParent.append(hiddenCaption);
+                hiddenCaption.style.display = 'none';
+              }
+            });
+          }
+        });
+      });
+      window.photoGalleryLightbox.init();
+
     });
+
+    
 
     // Display current search status
     socket.on('emit_images_page_show_search_status', (status) => {
