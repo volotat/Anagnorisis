@@ -43,7 +43,7 @@ Create a working docker environment to easily run the project.
 
 ## Versions History
 
-### Version 0.0.16 (12.10.2024)
+### Version 0.0.16 (12.10.2024)  
 Many improvements in file reading and filtering performance on 'Images' module. These improvements will be spread to other modules later in the development.  
 Added caching mechanism for hash gathering in 'Images'.  
 Added file list caching mechanism to cache current state of each subfolder with respect to its last modification time.  
