@@ -7,7 +7,7 @@ import subprocess
 import hashlib
 import numpy as np
 from io import BytesIO
-from PIL import Image
+
 from pages.images.engine import ImageSearch
 import math
 from scipy.spatial import distance
@@ -17,6 +17,22 @@ import send2trash
 import time
 import datetime
 import pages.images.db_models as db_models
+import pickle
+
+import src.scoring_models
+
+# TODO: Move this class to into some separate files with callbacks or something like it
+class EmbeddingGatheringCallback:
+  def __init__(self, show_status_function = None):
+    self.last_shown_time = 0
+    self.show_status_function = show_status_function
+
+  def __call__(self, num_extracted, num_total):
+    current_time = time.time()
+    if current_time - self.last_shown_time >= 1:
+      self.show_status_function(f"Extracted embeddings for {num_extracted}/{num_total} images.")
+      self.last_shown_time = current_time
+
 
 def convert_size(size_bytes):
   if size_bytes == 0:
@@ -84,10 +100,7 @@ def get_folder_structure(root_folder):
       current_level[d] = {}
   return folder_dict
 
-def print_emb_extracting_status(num_extracted, num_total):
-  if num_extracted % 100 == 0:
-    print(f"Extracted embeddings for {num_extracted} out of {num_total} images.")
-
+'''
 def get_file_descriptor(file_path):
   # This will only work on Unix-like systems
   # TODO: Add support for Windows
@@ -95,7 +108,12 @@ def get_file_descriptor(file_path):
   inode = stat_info.st_ino
   device = stat_info.st_dev
   return f"{inode}-{device}"
+'''
 
+from PIL import Image
+def get_image_resolution(file_path):
+    with Image.open(file_path) as img:
+        return img.size
 
 '''
 import pywintypes
@@ -121,11 +139,171 @@ def get_windows_file_descriptor(file_path):
     return f"{volume_serial}-{file_index}"
 '''
 
+# TODO: Move hash caching into utils as it will be useful for all modules
+
+###########################################
+# File Hash Caching
+
+# Cache dictionary to store file path, last modified time, and hash value
+file_hash_cache_file_path = 'cache/images_hashes.pkl'
+file_hash_cache = {}
+
+def load_hash_cache():
+  global file_hash_cache
+
+  if os.path.exists(file_hash_cache_file_path):
+    with open(file_hash_cache_file_path, 'rb') as cache_file:
+      file_hash_cache = pickle.load(cache_file)
+    
+    # Remove entries older than three months
+    three_months_ago = datetime.datetime.now() - datetime.timedelta(days=90)
+    file_hash_cache = {k: v for k, v in file_hash_cache.items() if v[2] > three_months_ago}
+
+def save_hash_cache():
+  # Save the updated cache to the file
+  with open(file_hash_cache_file_path, 'wb') as cache_file:
+    pickle.dump(file_hash_cache, cache_file)
+
+def get_file_hash(file_path):
+  global file_hash_cache
+
+  # Load the cache from the file if it exists and file_hash_cache is empty
+  if not file_hash_cache: load_hash_cache()
+
+  # Get the last modified time of the file
+  last_modified_time = os.path.getmtime(file_path)
+  
+  # Check if the file is in the cache and if the last modified time matches
+  if file_path in file_hash_cache:
+    cached_last_modified_time, cached_hash, timestamp = file_hash_cache[file_path]
+    if cached_last_modified_time == last_modified_time:
+      return cached_hash
+  
+  # If not in cache or file has been modified, calculate the hash
+  with open(file_path, "rb") as f:
+    bytes = f.read()  # Read the entire file as bytes
+    file_hash = hashlib.md5(bytes).hexdigest()
+  
+  # Update the cache
+  file_hash_cache[file_path] = (last_modified_time, file_hash, datetime.datetime.now())
+
+  return file_hash
+
+
+###########################################
+# File List Caching
+
+file_list_cache_file_path = 'cache/images_file_list.pkl'
+file_list_cache = {}
+
+def load_file_list_cache():
+  global file_list_cache
+  if os.path.exists(file_list_cache_file_path):
+    with open(file_list_cache_file_path, 'rb') as cache_file:
+      file_list_cache = pickle.load(cache_file)
+
+    # Remove entries older than three months
+    three_months_ago = datetime.datetime.now() - datetime.timedelta(days=90)
+    file_list_cache = {k: v for k, v in file_list_cache.items() if v[2] > three_months_ago}
+
+def save_file_list_cache():
+  with open(file_list_cache_file_path, 'wb') as cache_file:
+    pickle.dump(file_list_cache, cache_file)
+
+def get_files_in_folder(folder_path, media_formats):
+    global file_list_cache
+
+    # Get the last modified time of the folder
+    folder_last_modified_time = os.path.getmtime(folder_path)
+    
+    # Check if the folder is in the cache and if the last modified time matches
+    if folder_path in file_list_cache:
+        cached_last_modified_time, cached_file_list, timestamp = file_list_cache[folder_path]
+        if cached_last_modified_time == folder_last_modified_time:
+            return cached_file_list
+    
+    # If not in cache or folder has been modified, list the files in the folder
+    file_list = [os.path.join(folder_path, f) for f in os.listdir(folder_path) if os.path.isfile(os.path.join(folder_path, f)) and f.lower().endswith(tuple(media_formats))]
+    
+    # Update the cache with the current timestamp and file list
+    file_list_cache[folder_path] = (folder_last_modified_time, file_list, datetime.datetime.now())
+    
+    return file_list
+
+def get_all_files(current_path, media_formats):
+    global file_list_cache
+
+    # Load the cache from the file if it exists and file_list_cache is empty
+    if not file_list_cache:
+        load_file_list_cache()
+
+    all_files = []
+    for root, dirs, files in os.walk(current_path):
+        all_files.extend(get_files_in_folder(root, media_formats))
+
+    # Save the updated cache to the file
+    save_file_list_cache()
+    
+    return all_files
+
+###########################################
+# Metadata Caching
+# TODO: Implement metadata caching
+# file_size, resolution, glip_embedding
+
+
 def init_socket_events(socketio, app=None, cfg=None):
   media_directory = cfg.images.media_directory
 
+  image_evaluator = src.scoring_models.Evaluator(embedding_dim=768)
+  image_evaluator.load('./models/image_evaluator.pt')
+
   def show_search_status(status):
     socketio.emit('emit_images_page_show_search_status', status)
+
+  embedding_gathering_callback = EmbeddingGatheringCallback(show_search_status)
+  
+
+  def update_model_ratings(files_list):
+    # filter out files that already have a rating in the DB
+    # TODO: make it dependent on the hash of the model, so when the model is updated, the ratings are updated too
+    file_hash_map = {file_path: get_file_hash(file_path) for file_path in files_list}
+    hash_list = list(file_hash_map.values())
+
+    rated_images_db_items = db_models.ImagesLibrary.query.filter(db_models.ImagesLibrary.hash.in_(hash_list)).all()
+    rated_images = {item.hash: item.model_rating for item in rated_images_db_items}
+
+    # Filter out files that already have a rating in the database
+    filtered_files_list = [file_path for file_path, file_hash in file_hash_map.items() if file_hash not in rated_images]
+    if len(filtered_files_list) == 0: return
+
+    # Rate all images in case they are not rated or model was updated
+    embeddings = ImageSearch.process_images(filtered_files_list, callback=embedding_gathering_callback) #.cpu().detach().numpy() 
+    model_ratings = image_evaluator.predict(embeddings)
+
+    # Update the model ratings in the database
+    show_search_status(f"Updating model ratings of images...") 
+    for ind, full_path in enumerate(filtered_files_list):
+      hash = file_hash_map[full_path]
+      file_descriptor = "" #get_file_descriptor(full_path)
+
+      image_db_item = db_models.ImagesLibrary.query.filter_by(hash=hash).first()
+      model_rating = model_ratings[ind].item()
+      if image_db_item is not None:
+        image_db_item.model_rating = model_rating
+      else:
+        # Create new instance us there is no image in the database
+        image_data = {
+          "hash": hash,
+          "file_path": os.path.relpath(full_path, media_directory),
+          "file_descriptor": file_descriptor,
+          "model_rating": model_rating
+        }
+
+        image_db_item = db_models.ImagesLibrary(**image_data)
+        db_models.db.session.add(image_db_item)
+
+    db_models.db.session.commit()
 
   # necessary to allow web application access to music files
   @app.route('/image_files/<path:filename>')
@@ -154,12 +332,26 @@ def init_socket_events(socketio, app=None, cfg=None):
     print('folder_path', folder_path)
 
     show_search_status(f"Searching for images in '{folder_path}'.")
+  
+    # Walk with cache 1.5s for 66k files
+    all_files = get_all_files(current_path, cfg.images.media_formats)
 
+    show_search_status(f"Gathering hashes for {len(all_files)} images.")
+    
+    # Initialize the last shown time
+    last_shown_time = 0
+
+    # Get the hash of each file
+    all_hashes = []
+    for ind, file_path in enumerate(all_files):
+      current_time = time.time()
+      if current_time - last_shown_time >= 1:
+        show_search_status(f"Gathering hashes for {ind+1}/{len(all_files)} images.")
+        last_shown_time = current_time
       
-    all_files = glob.glob(os.path.join(current_path, '**/*'), recursive=True)
+      all_hashes.append(get_file_hash(file_path))
 
-    # Filter the list to only include files of certain types
-    all_files = [f for f in all_files if f.lower().endswith(tuple(cfg.images.media_formats))]
+    save_hash_cache()
 
 
     # Sort image by text or image query
@@ -170,13 +362,22 @@ def init_socket_events(socketio, app=None, cfg=None):
         all_files = sorted(all_files, key=os.path.getsize)
       # Sort images by resolution
       elif text_query.lower().strip() == "resolution":
+        if len(all_files) > 10000:
+          raise Exception("Too many images to sort by proportion")
         # TODO: THIS IS VERY SLOW, NEED TO OPTIMIZE
-        resolutions = {file_path: Image.open(file_path).size for file_path in all_files}
+        resolutions = {file_path: get_image_resolution(file_path) for file_path in all_files}
         all_files = sorted(all_files, key=lambda x: resolutions[x][0] * resolutions[x][1])
+      # Sort images by proportion
+      elif text_query.lower().strip() == "proportion":
+        if len(all_files) > 10000:
+          raise Exception("Too many images to sort by proportion")
+        # TODO: THIS IS VERY SLOW, NEED TO OPTIMIZE
+        resolutions = {file_path: get_image_resolution(file_path) for file_path in all_files}
+        all_files = sorted(all_files, key=lambda x: resolutions[x][0] / resolutions[x][1])
       # Sort images by duplicates
       elif text_query.lower().strip() == "similarity":
         show_search_status(f"Extracting embeddings")
-        embeds_img = ImageSearch.process_images(all_files, callback=print_emb_extracting_status).cpu().detach().numpy() 
+        embeds_img = ImageSearch.process_images(all_files, callback=embedding_gathering_callback).cpu().detach().numpy() 
 
         show_search_status(f"Computing distances between embeddings")
         # Assuming embeds_img is an array of image embeddings
@@ -213,11 +414,34 @@ def init_socket_events(socketio, app=None, cfg=None):
         sorted_files = sorted(files_with_target_distances_and_sizes, key=lambda x: (x[0], x[1], x[2]))
         # Extract the sorted list of file paths
         all_files = [file_path for _, _, _, file_path in sorted_files]
+      # Sort images randomly
       elif text_query.lower().strip() == "random":
         np.random.shuffle(all_files)
+      # Sort images by rating
+      elif text_query.lower().strip() == "rating": 
+        # Update the model ratings of all current images
+        update_model_ratings(all_files)
+
+        # Get all ratings from the database
+        all_rated_images_db_items = db_models.ImagesLibrary.query.filter(db_models.ImagesLibrary.hash.in_(all_hashes)).all()
+        if len(all_rated_images_db_items) > 0:
+          # Create a dictionary of all ratings
+          all_ratings = {}
+          for image in all_rated_images_db_items:
+            if image.user_rating is not None:
+              all_ratings[image.hash] = image.user_rating
+            else:
+              all_ratings[image.hash] = image.model_rating
+
+          # Calculate the mean score
+          mean_score = np.mean(list(all_ratings.values()))
+
+          # Sort images by user rating
+          all_files = sorted(all_files, key=lambda x: all_ratings.get(get_file_hash(x), mean_score), reverse=True)
+      # Present images as is
       else:
         show_search_status(f"Extracting embeddings")
-        embeds_img = ImageSearch.process_images(all_files, callback=print_emb_extracting_status)
+        embeds_img = ImageSearch.process_images(all_files, callback=embedding_gathering_callback)
         embeds_text = ImageSearch.process_text(text_query)
         scores = ImageSearch.compare(embeds_img, embeds_text)
 
@@ -234,26 +458,36 @@ def init_socket_events(socketio, app=None, cfg=None):
     # Extracting metadata for relevant batch of images
     show_search_status(f"Extracting metadata for relevant batch of images")
     page_files = all_files[pagination:limit]
+    page_hashes = [get_file_hash(file_path) for file_path in page_files]
 
-    for full_path in page_files:
+    # Extract DB data for the relevant batch of images
+    image_db_items = db_models.ImagesLibrary.query.filter(db_models.ImagesLibrary.hash.in_(page_hashes)).all()
+    image_db_items_map = {item.hash: item for item in image_db_items}
+
+    # Check if there images without model rating
+    no_model_rating_images = [item.hash for item in image_db_items if item.model_rating is None]
+    print('no_model_rating_images size', len(no_model_rating_images))
+
+    if len(no_model_rating_images) > 0:
+      # Update the model ratings of all current images
+      update_model_ratings(page_files)
+
+    for ind, full_path in enumerate(page_files):
       basename = os.path.basename(full_path)
-      
-      with open(full_path, "rb") as f:
-        bytes = f.read() # read entire file as bytes
-        file_size = len(bytes) # Get the file size in bytes
-        hash = hashlib.md5(bytes).hexdigest() # Compute the hash of the file
+      file_size = os.path.getsize(full_path)
 
-        #Use BytesIO to create a file-like object from bytes and get resolution with Pillow
-        image = Image.open(BytesIO(bytes))
-        resolution = image.size  # Returns a tuple (width, height)
+      hash = page_hashes[ind]
+      resolution = get_image_resolution(full_path)  # Returns a tuple (width, height)
     
-      file_descriptor = get_file_descriptor(full_path)
+      file_descriptor = "" #get_file_descriptor(full_path)
 
-      image_db_item = db_models.ImagesLibrary.query.filter_by(hash=hash, file_descriptor=file_descriptor).first()
-      if image_db_item is not None:
+      user_rating = None
+      model_rating = None
+
+      if hash in image_db_items_map:
+        image_db_item = image_db_items_map[hash]
         user_rating = image_db_item.user_rating
-      else:
-        user_rating = None
+        model_rating = image_db_item.model_rating
 
       data = {
         "type": "file",
@@ -263,12 +497,11 @@ def init_socket_events(socketio, app=None, cfg=None):
         "base_name": basename,
         "hash": hash,
         "user_rating": user_rating,
-        "model_rating": None,
+        "model_rating": model_rating,
         "file_size": convert_size(file_size),
         "resolution": f"{resolution[0]}x{resolution[1]}",
       }
       files_data.append(data)
-
                  
     # Extract subfolders structure from the path into a dict
     folders = get_folder_structure(media_directory)

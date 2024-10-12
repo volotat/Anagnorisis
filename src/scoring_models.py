@@ -21,6 +21,7 @@ import io
 import torchaudio
 from pydub import AudioSegment
 import gc
+import os
 
 import torch.nn.functional as F
 
@@ -140,6 +141,10 @@ class Evaluator():
     self.embedding_dim = embedding_dim
     self.rate_classes = rate_classes
 
+    # Set the device
+    self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
     # Define the network
     class Net(nn.Module):
       def __init__(self):
@@ -154,7 +159,7 @@ class Evaluator():
         x = self.fc3(x)
         return x
 
-    self.model = Net()
+    self.model = Net().to(self.device)
     self.criterion = nn.CrossEntropyLoss()
     self.optimizer = torch.optim.Adam(self.model.parameters())
 
@@ -177,10 +182,11 @@ class Evaluator():
     with torch.no_grad():
       for data in loader:
         inputs, labels = data
+        inputs, labels = inputs.to(self.device), labels.to(self.device)
         outputs = self.model(inputs)
 
         # Calculate weighted average from all predictions to get the final prediction
-        predicted = torch.softmax(outputs, dim=-1) * torch.arange(0, self.rate_classes)
+        predicted = torch.softmax(outputs, dim=-1) * torch.arange(0, self.rate_classes, device=self.device)
         predicted = predicted.sum(dim=-1)
 
         maes.append(torch.mean(torch.abs(predicted - labels)).item())
@@ -191,10 +197,11 @@ class Evaluator():
     with torch.no_grad():
       for data in loader:
         inputs, labels = data
+        inputs, labels = inputs.to(self.device), labels.to(self.device)
         outputs = self.model(inputs)
 
         # Calculate weighted average from all predictions to get the final prediction
-        predicted = torch.softmax(outputs, dim=-1) * torch.arange(0, self.rate_classes)
+        predicted = torch.softmax(outputs, dim=-1) * torch.arange(0, self.rate_classes, device=self.device)
         predicted = predicted.sum(dim=-1)
 
         # Calculate MAPE (Mean absolute percentage error) while increasing scores by 1 to avoid division by zero
@@ -232,7 +239,7 @@ class Evaluator():
       outputs = self.model(inputs)
       #loss = self.criterion(outputs, labels)
 
-      predicted = torch.softmax(outputs, dim=-1) * torch.arange(0, self.rate_classes)
+      predicted = torch.softmax(outputs, dim=-1) * torch.arange(0, self.rate_classes, device=self.device)
       predicted = predicted.sum(dim=-1)
       loss = F.mse_loss(predicted, labels)
 
@@ -247,20 +254,23 @@ class Evaluator():
 
   def load(self, model_path):
     # load the model from folder
-    self.model.load_state_dict(torch.load(model_path))
+    if os.path.exists(model_path):
+      self.model.load_state_dict(torch.load(model_path))
 
   def save(self, model_path):
     # save the model to the folder
     torch.save(self.model.state_dict(), model_path)
 
   def predict(self, X):
-    X = torch.tensor(X, dtype=torch.float32)
+    if not isinstance(X, torch.Tensor):
+      X = torch.tensor(X, dtype=torch.float32).to(self.device)
+      
     self.model.eval()
     with torch.no_grad():
       outputs = self.model(X)
 
       # Calculate weighted average from all predictions to get the final prediction
-      predicted = torch.softmax(outputs, dim=-1) * torch.arange(0, self.rate_classes)
+      predicted = torch.softmax(outputs, dim=-1) * torch.arange(0, self.rate_classes, device=self.device)
       predicted = predicted.sum(dim=-1)
 
 

@@ -26,7 +26,7 @@ from tqdm import tqdm
 
 import pandas as pd
 import pages.music.train
-
+import pages.images.train
 
 
 def init_socket_events(socketio, cfg=None, app=None):
@@ -59,6 +59,26 @@ def init_socket_events(socketio, cfg=None, app=None):
 
     pages.music.train.train_audio_evaluator(callback)
     
+  @socketio.on("emit_train_page_start_image_evaluator_training")
+  def handle_emit_start_image_evaluator_training():
+    train_accuracy_hist = []
+    test_accuracy_hist = []
+
+    def callback(status, percent, baseline_accuracy, train_accuracy = None, test_accuracy = None):
+      if train_accuracy is not None and test_accuracy is not None:
+        train_accuracy_hist.append(train_accuracy * 100)
+        test_accuracy_hist.append(test_accuracy * 100)
+
+      data = {
+        'status': status,
+        'percent': percent * 100,
+        'baseline_accuracy': baseline_accuracy * 100,
+        'train_accuracy_hist': list(train_accuracy_hist),
+        'test_accuracy_hist': list(test_accuracy_hist)
+      }
+      socketio.emit("emit_train_page_display_train_data", data)
+
+    pages.images.train.train_image_evaluator(cfg, callback)
 
   @socketio.on("emit_train_page_export_audio_dataset")
   def handle_emit_export_audio_dataset():
@@ -92,4 +112,6 @@ def init_socket_events(socketio, cfg=None, app=None):
     df = pd.DataFrame(data)
     df.to_csv("audio_scores_dataset.csv", index=False)
     print("Dataset has been generated and exported as 'audio_scores_dataset.csv'!")
+
+
 

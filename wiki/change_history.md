@@ -14,11 +14,11 @@ Explore ways to optimize the music library update process.
 In radio mode add an "Open file destination" button to be able to move or remove bad music if found.  
 
 ### Images 
-Implement quality evaluation with a personal evaluator.   
 Implement some sort of effective resolution estimation technique.   
 Improve sorting by resolution performance (one idea might be caching information of image resolution).  
 Add some way to delete multiple images at once.
 Add a display of the amount of images in each folder.
+Add a way to select only some particular folder for displaying images from.  
 
 ### Train page
 Disable the start button if fine-tuning has already started.  
@@ -36,11 +36,23 @@ Add a way to export the current database as .csv and import it back.
 Implement usage of FAISS library for fast vector search.
 Update main readme.md file and write about 'images' page, also need to add a way to download SigLIP model.
 When the folder name contains '[' and ']' symbols it is not correctly read by python scripts for some reason.
+Redo music page representation to more closely resemble images page and apply its improvements file hash cashing and metadata search,
 
 ## Important fixes before 0.1.0 release
 Create a working docker environment to easily run the project.  
 
 ## Versions History
+
+### Version 0.0.16 (12.10.2024)
+Many improvements in file reading and filtering performance on 'Images' module. These improvements will be spread to other modules later in the development.  
+Added caching mechanism for hash gathering in 'Images'.  
+Added file list caching mechanism to cache current state of each subfolder with respect to its last modification time.  
+Added mechanism to train and use evaluation model for images.  
+In 'Train' module added a button to activate the image evaluation model training process.  
+Improved search by resolution and proportion performance, but limited maximum number of images for processing by 10000 as the result is not yet cached and there is no indication of the current progress.  
+Added callback for embedding gathering to better represent internal processes to the user in 'Images'.  
+Now pressing enter in the search bar leads to automatic call to search method in 'Images'.  
+Model rating in 'Images' now stored as a float in the database to allow more fine-tuned sorting by this value.  
 
 ### Version 0.0.15 (07.10.2024)
 Added mechanism to rate images with UI and store it in DB in a more efficient way that it was done with music. The music DB should also be change later to follow the same principals.

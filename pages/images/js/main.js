@@ -174,9 +174,13 @@ class StarRatingHTMLContainer {
       console.log('folder_dict', folder_dict);
       let current_path_ = current_path + folder + '/';
       console.log('current_path', current_path_);
+      console.log('active_path', active_path);
+      console.log('isSubfolder', isSubfolder(active_path, current_path_));
       const isActive = active_path === current_path_ ? 'is-active' : '';
       let encoded_link = `path=${encodeURIComponent(current_path_)}`;
-      folderRepresentation += `<li><a class="${isActive}" href="?${encoded_link}">${folder}</a>`;
+      let color = isSubfolder(active_path, current_path_) ? 'has-text-black' : 'has-text-grey-light';
+      if (active_path === current_path_) color = '';
+      folderRepresentation += `<li><a class="${isActive} ${color}" href="?${encoded_link}">${folder}</a>`;
       
       if (isSubfolder(current_path_, active_path)) {
         folderRepresentation += '<ul>';
@@ -302,7 +306,7 @@ class StarRatingHTMLContainer {
         $(data).append(StarRatingComponentObject)
         $(data).append('<br>');
 
-        $(data).append('<b>Model rating:</b>&nbsp;' + item.model_rating + '<br>');
+        $(data).append('<b>Model rating:</b>&nbsp;' + item.model_rating.toFixed(2) + '/10<br>');
         $(data).append('<b>File size:</b>&nbsp;' + item.file_size + '<br>');
         $(data).append('<b>Resolution:</b>&nbsp;' + item.resolution + '<br><br>');
 
@@ -437,14 +441,11 @@ class StarRatingHTMLContainer {
 
     });
 
-    
-
     // Display current search status
     socket.on('emit_images_page_show_search_status', (status) => {
       $('.image-search-status').html(status);
     });
-
-
+    
     // Set search query in input 
     $('#search_input').val(text_query);
 

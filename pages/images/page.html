@@ -43,6 +43,16 @@
 <!-- PAGE MAIN CONTENT -->
 <div class="container is-fluid columns is-centered py-6">
   <aside class="column is-2 menu">
+    <p class="menu-label">Path to local image library</p>
+    <div class="field has-addons">
+      <div class="control is-expanded">
+        <input class="input is-fullwidth" id="folder_input" type="text" placeholder="Write folder path here">
+      </div>
+      <div class="control">
+        <button class="button is-info" id="folder_button">Save</button>
+      </div>
+    </div>
+    
     <ul class="menu-list" id="folders_menu">
       ...
     </ul>
@@ -51,12 +61,36 @@
   <div class="column">
     <!-- Search bar, image input, and filter dropdown -->
     <div class="field has-addons">
+      <!--<p class="control">
+        <span class="select">
+          <select>
+            <option>Increasing</option>
+            <option>Decreasing</option>
+          </select>
+        </span>
+      </p>-->
+
       <div class="control is-expanded">
         <input class="input is-fullwidth" id="search_input" type="text" placeholder="Write your search query or drag-and-drop an image file here." 
               ondragover="event.preventDefault()" 
-              ondrop="handleDrop(event)">
+              ondrop="handleDrop(event)"
+              onkeydown="if (event.key === 'Enter') document.getElementById('seach_button').click()">
       </div>
-      <div class="control">
+      
+      
+
+      <!--
+      <p class="control">
+        <span class="select">
+          <select>
+            <option>Semantic</option>
+            <option>File name</option>
+            <option>Metadata</option>
+          </select>
+        </span>
+      </p>-->
+
+      <!--<div class="control">
         <div class="dropdown is-hoverable">
           <div class="dropdown-trigger">
             <button class="button" aria-haspopup="true" aria-controls="dropdown-menu">
@@ -73,7 +107,8 @@
             </div>
           </div>
         </div>
-      </div>
+      </div>-->
+
       <div class="control">
         <button class="button is-info" id="seach_button">Search</button>
       </div>
@@ -82,12 +117,13 @@
     <!-- Field with helper tags for search -->
     <div class="field is-grouped is-grouped-multiline mt-4" id="tags_container">
       <b>Special keywords:</b>
-      <button class="tag is-light set_search">recommendation</button>
-      <button class="tag is-light set_search">rating</button>
+      <!--<button class="tag is-light set_search">recommendation</button>-->
+      <button class="tag is-info is-light set_search">rating</button>
       <button class="tag is-info is-light set_search">random</button>
       <button class="tag is-info is-light set_search">file size</button>
+      <button class="tag is-info is-light set_search">proportion</button>
       <button class="tag is-info is-light set_search">resolution</button>
-      <button class="tag is-light set_search">effective resolution</button>
+      <!--<button class="tag is-light set_search">effective resolution</button>-->
       <button class="tag is-info is-light set_search">similarity</button>
     </div>
 
