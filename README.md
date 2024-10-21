@@ -54,7 +54,7 @@ Note that not all files from the repository are necessary. If you like, you can 
 ```
 
 **Image embedder: google/siglip-base-patch16-224**  
-```git clone https://huggingface.co/m-a-p/CLIP-v1-95M```
+```git clone https://huggingface.co/google/siglip-base-patch16-224```
 
 Same thing here, not all files are necessary. Here is the list of files that are essential:  
 ```
