@@ -27,7 +27,7 @@ Initialize your database with this command:
 ```
     flask --app flaskr init-db
 ```
-This should create a new 'instance/project.db' file, that will store your preferences, that will be used later to fine-tune the model.  
+This should create a new 'instance/project.db' file, that will store your preferences, that will be used later to fine-tune evaluation models.  
 
 
 Then run the project with command:
@@ -42,7 +42,29 @@ Then go to 'models' folder with
 ```cd models```
 
 **Music embedder: m-a-p/MERT-v1-95M**  
-```git clone https://huggingface.co/m-a-p/MERT-v1-95M```
+```git clone https://huggingface.co/m-a-p/MERT-v1-95M```  
+
+Note that not all files from the repository are necessary. If you like, you can download only the files that are needed by hand and place them in the 'models/m-a-p/MERT-v1-95M' folder. Here is the list of files that are necessary:  
+```
+    config.json
+    configuration_MERT.py
+    modeling_MERT.py
+    preprocessor_config.json
+    pytorch_model.bin
+```
+
+**Image embedder: google/siglip-base-patch16-224**  
+```git clone https://huggingface.co/m-a-p/CLIP-v1-95M```
+
+Same thing here, not all files are necessary. Here is the list of files that are essential:  
+```
+    config.json
+    model.safetensors
+    preprocessor_config.json
+    special_tokens_map.json
+    spiece.model
+    tokenizer_config.json
+```
 
 
 ## General
@@ -53,6 +75,10 @@ Here is the main pipeline of working with the project:
 
 You repeat these steps again and again, getting each time model that better and better aligns to your preferences.  
 
+## Image Page
+Please watch this video to see presentation of 'Images' page usage:  
+[![Watch the video](https://i3.ytimg.com/vi/tqQB6tjeiCg/hqdefault.jpg)](https://youtu.be/tqQB6tjeiCg)   
+Or you can read the guide at the [Images wiki](wiki/images.md) page.
 
 ## Music Page
 1. Set up the path to your local music folder  
@@ -82,6 +108,7 @@ Here is some pages that might be interesting for you:
 [Change history](wiki/change_history.md)  
 [Philosophy](wiki/philosophy.md)  
 [Music](wiki/music.md)  
+[Images](wiki/images.md)  
 
 ---------------	
 In memory of [Josh Greenberg](https://variety.com/2015/digital/news/grooveshark-josh-greenberg-dead-1201544107/) - one of the creators of Grooveshark. Long gone music service that had the best music recommendation system I've ever seen. 

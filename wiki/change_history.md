@@ -16,32 +16,48 @@ In radio mode add an "Open file destination" button to be able to move or remove
 ### Images 
 Implement some sort of effective resolution estimation technique.   
 Improve sorting by resolution performance (one idea might be caching information of image resolution).  
-Add some way to delete multiple images at once.
-Add a display of the amount of images in each folder.
+Add some way to delete multiple images at once.  
+Add a display of the amount of images in each folder.  
 Add a way to select only some particular folder for displaying images from.  
+Remove from DB images that no longer exist in the media folder and have no user rating. This should reduce the size of the DB as embeddings took quite a lot of space.  
 
 ### Train page
 Disable the start button if fine-tuning has already started.  
-When refreshing the page the information about the previous run should appear.
-Pressing the start button should remove all the information from the graph and restart the process.
-Add a button to stop the training process and save the best model so far.
-After training is complete or canceled reload the evaluation models.
+When refreshing the page the information about the previous run should appear.  
+Pressing the start button should remove all the information from the graph and restart the process.  
+Add a button to stop the training process and save the best model so far.  
+After training is complete or canceled reload the evaluation models.  
 
 ### Wiki
 
 ### General
 Add some sort of a control panel that is active on all pages (may be hidden) and shows current GPU memory load by the system and console output.  
-Create an extension that provides recent Arxiv papers (https://arxiv.org/list/cs.LG/recent).   
-Add a way to export the current database as .csv and import it back.
-Implement usage of FAISS library for fast vector search.
-Update main readme.md file and write about 'images' page, also need to add a way to download SigLIP model.
-When the folder name contains '[' and ']' symbols it is not correctly read by python scripts for some reason.
-Redo music page representation to more closely resemble images page and apply its improvements file hash cashing and metadata search,
+Create an extension that provides recent Arxiv papers (https://arxiv.org/list/cs.LG/recent).    
+Add a way to export the current database as .csv and import it back.  
+Implement usage of FAISS library for fast vector search.  
+Update main readme.md file and write about 'images' page, also need to add a way to download SigLIP model.  
+When the folder name contains '[' and ']' symbols it is not correctly read by python scripts for some reason.  
+Redo music page representation to more closely resemble images page and apply its improvements file hash cashing and metadata search.  
+Add automatic database backup generation from time to time to prevent loss of data in case of a failure.  
+Find a way for more optimal embeddings storage in the DB.  
+Create a roadmap for the project.  
 
-## Important fixes before 0.1.0 release
+## Important fixes before 0.2.0 release
 Create a working docker environment to easily run the project.  
 
 ## Versions History
+
+### Version 0.1.0 (21.10.2024)
+Images embeddings caching moved from file-based storage solution to the database. While it is significantly increased the size of the database, the retrieval is much faster now and there might be a way to optimize the compression of the embeddings in the future. It also allow to store embeddings of the images that was removed to still use them for the training process.  
+In 'Training' module MAPE calculation is slightly change to better represents small values that might results as negatives before and make not much sense as a percentage.  
+In 'Images' module now evaluating model hash and embedding model hash are stored in the database to better track where the values comes from and when they need to be updated.  
+Gathering image embeddings process was completely rewritten for better performance and to be able to use the new caching mechanism. Now it takes about 1 minute per 10000 images to gather embeddings for the first time.  
+Now there is no need to restart the server to update the image embeddings model. It is done automatically when the training is completed.  
+It is now possible to update 'Images' media folder from the UI.  
+Sort by rating process in 'Images' module was improved and optimized.  
+When training process is shown in the UI, decimation is now performed 'manually' as the method integrated in the 'chart.js' does not seems to work with dynamically changing graphs.  
+Image module is now fully functional.  
+New 'Images' page is added to the wiki with the description of how to use 'Images' module.  
 
 ### Version 0.0.16 (12.10.2024)  
 Many improvements in file reading and filtering performance on 'Images' module. These improvements will be spread to other modules later in the development.  

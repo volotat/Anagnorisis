@@ -22,6 +22,7 @@ import torchaudio
 from pydub import AudioSegment
 import gc
 import os
+import hashlib
 
 import torch.nn.functional as F
 
@@ -140,6 +141,8 @@ class Evaluator():
   def __init__(self, embedding_dim=128, rate_classes=11):
     self.embedding_dim = embedding_dim
     self.rate_classes = rate_classes
+    self.hash = None
+    self.mape_bias = 2
 
     # Set the device
     self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -163,20 +166,6 @@ class Evaluator():
     self.criterion = nn.CrossEntropyLoss()
     self.optimizer = torch.optim.Adam(self.model.parameters())
 
-  '''def calculate_accuracy(self, loader):
-    correct = 0
-    total = 0
-    
-    with torch.no_grad():
-      for data in loader:
-        inputs, labels = data
-        outputs = self.model(inputs)
-
-        _, predicted = torch.max(outputs.data, 1)
-        total += labels.size(0)
-        correct += (predicted == labels).sum().item()
-    return 100 * correct / total'''
-  
   def calculate_metric(self, loader):
     maes = [] 
     with torch.no_grad():
@@ -205,7 +194,7 @@ class Evaluator():
         predicted = predicted.sum(dim=-1)
 
         # Calculate MAPE (Mean absolute percentage error) while increasing scores by 1 to avoid division by zero
-        mape = torch.mean(torch.abs(predicted - labels) / (labels + 1)).item()
+        mape = torch.mean(torch.abs(predicted - labels) / (labels + self.mape_bias)).item()
         # Invert the MAPE to get the accuracy
         accuracy_list.append(1 - mape)
     return np.mean(accuracy_list)
@@ -234,6 +223,7 @@ class Evaluator():
 
     for i, data in enumerate(train_loader, 0):
       inputs, labels = data
+      inputs, labels = inputs.to(self.device), labels.to(self.device)
       labels = labels.float()
       self.optimizer.zero_grad()
       outputs = self.model(inputs)
@@ -257,6 +247,11 @@ class Evaluator():
     if os.path.exists(model_path):
       self.model.load_state_dict(torch.load(model_path))
 
+    # If not in cache or file has been modified, calculate the hash
+    with open(model_path, "rb") as f:
+      bytes = f.read()  # Read the entire file as bytes
+      self.hash = hashlib.md5(bytes).hexdigest()
+
   def save(self, model_path):
     # save the model to the folder
     torch.save(self.model.state_dict(), model_path)
@@ -276,3 +271,16 @@ class Evaluator():
 
       #_, predicted = torch.max(outputs, dim=1)  # Get the index of the max log-probability
     return predicted.cpu().detach().numpy()
+  
+  # reinitialize the model weights to random values for training from scratch
+  def reinitialize(self):
+    # Reinitialize the model weights
+    for m in self.model.modules():
+        if isinstance(m, nn.Linear):
+            m.reset_parameters()
+    
+    # Reinitialize the optimizer
+    self.optimizer = torch.optim.Adam(self.model.parameters())
+    
+    # Reinitialize the loss function (if necessary)
+    self.criterion = nn.CrossEntropyLoss()

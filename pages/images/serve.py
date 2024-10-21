@@ -8,7 +8,7 @@ import hashlib
 import numpy as np
 from io import BytesIO
 
-from pages.images.engine import ImageSearch
+from pages.images.engine import ImageSearch, ImageEvaluator, get_file_hash, save_hash_cache, get_all_files
 import math
 from scipy.spatial import distance
 import torch
@@ -18,21 +18,26 @@ import time
 import datetime
 import pages.images.db_models as db_models
 import pickle
+from omegaconf import OmegaConf
 
 import src.scoring_models
 
 # TODO: Move this class to into some separate files with callbacks or something like it
 class EmbeddingGatheringCallback:
-  def __init__(self, show_status_function = None):
+  def __init__(self, show_status_function=None):
     self.last_shown_time = 0
+    self.start_time = time.time()
     self.show_status_function = show_status_function
 
   def __call__(self, num_extracted, num_total):
     current_time = time.time()
     if current_time - self.last_shown_time >= 1:
-      self.show_status_function(f"Extracted embeddings for {num_extracted}/{num_total} images.")
-      self.last_shown_time = current_time
+      # Calculate the percentage of processed images
+      percent = (num_extracted / num_total) * 100
 
+      # Show the status
+      self.show_status_function(f"Extracted embeddings for {num_extracted}/{num_total} ({percent:.2f}%) images.")
+      self.last_shown_time = current_time
 
 def convert_size(size_bytes):
   if size_bytes == 0:
@@ -100,162 +105,17 @@ def get_folder_structure(root_folder):
       current_level[d] = {}
   return folder_dict
 
-'''
-def get_file_descriptor(file_path):
-  # This will only work on Unix-like systems
-  # TODO: Add support for Windows
-  stat_info = os.stat(file_path)
-  inode = stat_info.st_ino
-  device = stat_info.st_dev
-  return f"{inode}-{device}"
-'''
-
 from PIL import Image
 def get_image_resolution(file_path):
     with Image.open(file_path) as img:
         return img.size
 
-'''
-import pywintypes
-import win32file
-
-def get_windows_file_descriptor(file_path):
-    handle = win32file.CreateFile(
-        file_path,
-        win32file.GENERIC_READ,
-        win32file.FILE_SHARE_READ | win32file.FILE_SHARE_WRITE | win32file.FILE_SHARE_DELETE,
-        None,
-        win32file.OPEN_EXISTING,
-        win32file.FILE_ATTRIBUTE_NORMAL,
-        None
-    )
-    
-    file_info = win32file.GetFileInformationByHandle(handle)
-    handle.Close()
-    
-    file_index = file_info[8]  # File index (high and low combined)
-    volume_serial = file_info[1]  # Volume serial number
-    
-    return f"{volume_serial}-{file_index}"
-'''
-
-# TODO: Move hash caching into utils as it will be useful for all modules
-
-###########################################
-# File Hash Caching
-
-# Cache dictionary to store file path, last modified time, and hash value
-file_hash_cache_file_path = 'cache/images_hashes.pkl'
-file_hash_cache = {}
-
-def load_hash_cache():
-  global file_hash_cache
-
-  if os.path.exists(file_hash_cache_file_path):
-    with open(file_hash_cache_file_path, 'rb') as cache_file:
-      file_hash_cache = pickle.load(cache_file)
-    
-    # Remove entries older than three months
-    three_months_ago = datetime.datetime.now() - datetime.timedelta(days=90)
-    file_hash_cache = {k: v for k, v in file_hash_cache.items() if v[2] > three_months_ago}
-
-def save_hash_cache():
-  # Save the updated cache to the file
-  with open(file_hash_cache_file_path, 'wb') as cache_file:
-    pickle.dump(file_hash_cache, cache_file)
-
-def get_file_hash(file_path):
-  global file_hash_cache
-
-  # Load the cache from the file if it exists and file_hash_cache is empty
-  if not file_hash_cache: load_hash_cache()
-
-  # Get the last modified time of the file
-  last_modified_time = os.path.getmtime(file_path)
-  
-  # Check if the file is in the cache and if the last modified time matches
-  if file_path in file_hash_cache:
-    cached_last_modified_time, cached_hash, timestamp = file_hash_cache[file_path]
-    if cached_last_modified_time == last_modified_time:
-      return cached_hash
-  
-  # If not in cache or file has been modified, calculate the hash
-  with open(file_path, "rb") as f:
-    bytes = f.read()  # Read the entire file as bytes
-    file_hash = hashlib.md5(bytes).hexdigest()
-  
-  # Update the cache
-  file_hash_cache[file_path] = (last_modified_time, file_hash, datetime.datetime.now())
-
-  return file_hash
-
-
-###########################################
-# File List Caching
-
-file_list_cache_file_path = 'cache/images_file_list.pkl'
-file_list_cache = {}
-
-def load_file_list_cache():
-  global file_list_cache
-  if os.path.exists(file_list_cache_file_path):
-    with open(file_list_cache_file_path, 'rb') as cache_file:
-      file_list_cache = pickle.load(cache_file)
-
-    # Remove entries older than three months
-    three_months_ago = datetime.datetime.now() - datetime.timedelta(days=90)
-    file_list_cache = {k: v for k, v in file_list_cache.items() if v[2] > three_months_ago}
-
-def save_file_list_cache():
-  with open(file_list_cache_file_path, 'wb') as cache_file:
-    pickle.dump(file_list_cache, cache_file)
-
-def get_files_in_folder(folder_path, media_formats):
-    global file_list_cache
-
-    # Get the last modified time of the folder
-    folder_last_modified_time = os.path.getmtime(folder_path)
-    
-    # Check if the folder is in the cache and if the last modified time matches
-    if folder_path in file_list_cache:
-        cached_last_modified_time, cached_file_list, timestamp = file_list_cache[folder_path]
-        if cached_last_modified_time == folder_last_modified_time:
-            return cached_file_list
-    
-    # If not in cache or folder has been modified, list the files in the folder
-    file_list = [os.path.join(folder_path, f) for f in os.listdir(folder_path) if os.path.isfile(os.path.join(folder_path, f)) and f.lower().endswith(tuple(media_formats))]
-    
-    # Update the cache with the current timestamp and file list
-    file_list_cache[folder_path] = (folder_last_modified_time, file_list, datetime.datetime.now())
-    
-    return file_list
-
-def get_all_files(current_path, media_formats):
-    global file_list_cache
-
-    # Load the cache from the file if it exists and file_list_cache is empty
-    if not file_list_cache:
-        load_file_list_cache()
-
-    all_files = []
-    for root, dirs, files in os.walk(current_path):
-        all_files.extend(get_files_in_folder(root, media_formats))
-
-    # Save the updated cache to the file
-    save_file_list_cache()
-    
-    return all_files
-
-###########################################
-# Metadata Caching
-# TODO: Implement metadata caching
-# file_size, resolution, glip_embedding
 
 
 def init_socket_events(socketio, app=None, cfg=None):
   media_directory = cfg.images.media_directory
 
-  image_evaluator = src.scoring_models.Evaluator(embedding_dim=768)
+  image_evaluator = ImageEvaluator() #src.scoring_models.Evaluator(embedding_dim=768)
   image_evaluator.load('./models/image_evaluator.pt')
 
   def show_search_status(status):
@@ -266,46 +126,68 @@ def init_socket_events(socketio, app=None, cfg=None):
 
   def update_model_ratings(files_list):
     # filter out files that already have a rating in the DB
-    # TODO: make it dependent on the hash of the model, so when the model is updated, the ratings are updated too
-    file_hash_map = {file_path: get_file_hash(file_path) for file_path in files_list}
-    hash_list = list(file_hash_map.values())
+    files_list_hash_map = {file_path: get_file_hash(file_path) for file_path in files_list}
+    hash_list = list(files_list_hash_map.values())
 
-    rated_images_db_items = db_models.ImagesLibrary.query.filter(db_models.ImagesLibrary.hash.in_(hash_list)).all()
-    rated_images = {item.hash: item.model_rating for item in rated_images_db_items}
+    # Fetch rated images from the database in a single query
+    rated_images_db_items = db_models.ImagesLibrary.query.filter(
+      db_models.ImagesLibrary.hash.in_(hash_list),
+      db_models.ImagesLibrary.model_rating.isnot(None),
+      db_models.ImagesLibrary.model_hash.is_(image_evaluator.hash)
+    ).all()
+
+    # Create a list of hashes for rated images
+    rated_images_hashes = {item.hash for item in rated_images_db_items}
 
     # Filter out files that already have a rating in the database
-    filtered_files_list = [file_path for file_path, file_hash in file_hash_map.items() if file_hash not in rated_images]
-    if len(filtered_files_list) == 0: return
+    filtered_files_list = [file_path for file_path, file_hash in files_list_hash_map.items() if file_hash not in rated_images_hashes]
+    if not filtered_files_list: return
+    
 
     # Rate all images in case they are not rated or model was updated
-    embeddings = ImageSearch.process_images(filtered_files_list, callback=embedding_gathering_callback) #.cpu().detach().numpy() 
+    embeddings = ImageSearch.process_images(filtered_files_list, callback=embedding_gathering_callback, media_folder=media_directory) #.cpu().detach().numpy() 
     model_ratings = image_evaluator.predict(embeddings)
 
     # Update the model ratings in the database
     show_search_status(f"Updating model ratings of images...") 
+    new_items = []
+    update_items = []
+    last_shown_time = 0
     for ind, full_path in enumerate(filtered_files_list):
-      hash = file_hash_map[full_path]
-      file_descriptor = "" #get_file_descriptor(full_path)
+      print(f"Updating model ratings for {ind+1}/{len(filtered_files_list)} images.")
+
+      hash = files_list_hash_map[full_path]
+      model_rating = model_ratings[ind].item()
 
       image_db_item = db_models.ImagesLibrary.query.filter_by(hash=hash).first()
-      model_rating = model_ratings[ind].item()
-      if image_db_item is not None:
+      if image_db_item:
         image_db_item.model_rating = model_rating
+        image_db_item.model_hash = image_evaluator.hash
+        update_items.append(image_db_item)
       else:
-        # Create new instance us there is no image in the database
         image_data = {
-          "hash": hash,
-          "file_path": os.path.relpath(full_path, media_directory),
-          "file_descriptor": file_descriptor,
-          "model_rating": model_rating
+            "hash": hash,
+            "file_path": os.path.relpath(full_path, media_directory),
+            "model_rating": model_rating,
+            "model_hash": image_evaluator.hash
         }
+        new_items.append(db_models.ImagesLibrary(**image_data))
 
-        image_db_item = db_models.ImagesLibrary(**image_data)
-        db_models.db.session.add(image_db_item)
+      current_time = time.time()
+      if current_time - last_shown_time >= 1:
+        show_search_status(f"Updated model ratings for {ind+1}/{len(filtered_files_list)} images.")
+        last_shown_time = current_time   
 
+    # Bulk update and insert
+    if update_items:
+        db_models.db.session.bulk_save_objects(update_items)
+    if new_items:
+        db_models.db.session.bulk_save_objects(new_items)
+
+    # Commit the transaction
     db_models.db.session.commit()
 
-  # necessary to allow web application access to music files
+  # necessary to allow web application access to image files
   @app.route('/image_files/<path:filename>')
   def serve_image_files(filename):
     nonlocal media_directory
@@ -325,7 +207,7 @@ def init_socket_events(socketio, app=None, cfg=None):
     if path == "":
       current_path = media_directory
     else:
-      current_path = os.path.join(media_directory, '..', path)
+      current_path = os.path.abspath(os.path.join(media_directory, '..', path))
 
 
     folder_path = os.path.relpath(current_path, os.path.join(media_directory, '..')) + os.path.sep
@@ -363,7 +245,7 @@ def init_socket_events(socketio, app=None, cfg=None):
       # Sort images by resolution
       elif text_query.lower().strip() == "resolution":
         if len(all_files) > 10000:
-          raise Exception("Too many images to sort by proportion")
+          raise Exception("Too many images to sort by resolution")
         # TODO: THIS IS VERY SLOW, NEED TO OPTIMIZE
         resolutions = {file_path: get_image_resolution(file_path) for file_path in all_files}
         all_files = sorted(all_files, key=lambda x: resolutions[x][0] * resolutions[x][1])
@@ -377,7 +259,7 @@ def init_socket_events(socketio, app=None, cfg=None):
       # Sort images by duplicates
       elif text_query.lower().strip() == "similarity":
         show_search_status(f"Extracting embeddings")
-        embeds_img = ImageSearch.process_images(all_files, callback=embedding_gathering_callback).cpu().detach().numpy() 
+        embeds_img = ImageSearch.process_images(all_files, callback=embedding_gathering_callback, media_folder=media_directory).cpu().detach().numpy() 
 
         show_search_status(f"Computing distances between embeddings")
         # Assuming embeds_img is an array of image embeddings
@@ -408,7 +290,7 @@ def init_socket_events(socketio, app=None, cfg=None):
         # Step 3: Adjust the sorting logic
         # Get file sizes for all files
         file_sizes = [os.path.getsize(file_path) for file_path in all_files]
-        # Create a list of tuples (target_min_distance, file_size, file_path) for each file
+        # Create a list of tuples (target_min_distance, min_distances, file_size, file_path) for each file
         files_with_target_distances_and_sizes = list(zip(target_min_distances, min_distances, file_sizes, all_files))
         # Sort the list of tuples by target_min_distance, then by file_size
         sorted_files = sorted(files_with_target_distances_and_sizes, key=lambda x: (x[0], x[1], x[2]))
@@ -423,25 +305,26 @@ def init_socket_events(socketio, app=None, cfg=None):
         update_model_ratings(all_files)
 
         # Get all ratings from the database
-        all_rated_images_db_items = db_models.ImagesLibrary.query.filter(db_models.ImagesLibrary.hash.in_(all_hashes)).all()
-        if len(all_rated_images_db_items) > 0:
-          # Create a dictionary of all ratings
-          all_ratings = {}
-          for image in all_rated_images_db_items:
-            if image.user_rating is not None:
-              all_ratings[image.hash] = image.user_rating
-            else:
-              all_ratings[image.hash] = image.model_rating
+        items = db_models.ImagesLibrary.query.filter(db_models.ImagesLibrary.hash.in_(all_hashes)).all()
 
-          # Calculate the mean score
-          mean_score = np.mean(list(all_ratings.values()))
+        # Create a dictionary to map hashes to their ratings
+        hash_to_rating = {item.hash: item.user_rating if item.user_rating is not None else item.model_rating for item in items}
 
-          # Sort images by user rating
-          all_files = sorted(all_files, key=lambda x: all_ratings.get(get_file_hash(x), mean_score), reverse=True)
+        # Iterate over all_hashes and populate all_ratings using the dictionary
+        all_ratings = [hash_to_rating.get(hash) for hash in all_hashes]
+
+        # Calculate the mean score considering that there might be None values
+        mean_score = np.mean([rating for rating in all_ratings if rating is not None])
+
+        # Replace None values with the mean score
+        all_ratings = [rating if rating is not None else mean_score for rating in all_ratings]
+
+        # Sort the files by the ratings
+        all_files = [file_path for _, file_path in sorted(zip(all_ratings, all_files), reverse=True)]
       # Present images as is
       else:
         show_search_status(f"Extracting embeddings")
-        embeds_img = ImageSearch.process_images(all_files, callback=embedding_gathering_callback)
+        embeds_img = ImageSearch.process_images(all_files, callback=embedding_gathering_callback, media_folder=media_directory)
         embeds_text = ImageSearch.process_text(text_query)
         scores = ImageSearch.compare(embeds_img, embeds_text)
 
@@ -479,8 +362,6 @@ def init_socket_events(socketio, app=None, cfg=None):
       hash = page_hashes[ind]
       resolution = get_image_resolution(full_path)  # Returns a tuple (width, height)
     
-      file_descriptor = "" #get_file_descriptor(full_path)
-
       user_rating = None
       model_rating = None
 
@@ -493,7 +374,6 @@ def init_socket_events(socketio, app=None, cfg=None):
         "type": "file",
         "full_path": full_path,
         "file_path": os.path.relpath(full_path, media_directory),
-        "file_descriptor": file_descriptor,
         "base_name": basename,
         "hash": hash,
         "user_rating": user_rating,
@@ -561,11 +441,10 @@ def init_socket_events(socketio, app=None, cfg=None):
     image_hash = data['hash'] 
     image_rating = data['rating']
     image_path = data['file_path']
-    image_file_descriptor = data['file_descriptor']
     
     print('Set image rating:', image_hash, image_rating)
 
-    image_db_item = db_models.ImagesLibrary.query.filter_by(hash=image_hash, file_descriptor=image_file_descriptor).first()
+    image_db_item = db_models.ImagesLibrary.query.filter_by(hash=image_hash).first()
 
     if image_db_item is None:  
       # Create new instance us there is no image in the database
@@ -573,7 +452,6 @@ def init_socket_events(socketio, app=None, cfg=None):
       image_data = {
         "hash": image_hash,
         "file_path": image_path,
-        "file_descriptor": image_file_descriptor,
         "user_rating": int(image_rating),
         "user_rating_date": datetime.datetime.now()
       }
@@ -588,3 +466,23 @@ def init_socket_events(socketio, app=None, cfg=None):
       image_db_item.user_rating = int(image_rating)
       image_db_item.user_rating_date = datetime.datetime.now()
       db_models.db.session.commit()
+
+  @socketio.on('emit_images_page_get_path_to_media_folder')
+  def get_path_to_media_folder():
+    nonlocal media_directory
+    socketio.emit('emit_images_page_show_path_to_media_folder', media_directory)
+
+  @socketio.on('emit_images_page_update_path_to_media_folder')
+  def update_path_to_media_folder(new_path):
+    nonlocal media_directory
+    cfg.images.media_directory = new_path
+
+    # Update the configuration file
+    with open('config.yaml', 'w') as file:
+      OmegaConf.save(cfg, file)
+
+    media_directory = cfg.images.media_directory
+    socketio.emit('emit_images_page_show_path_to_media_folder', media_directory)
+
+    # Show files in new folder
+    #get_files({})

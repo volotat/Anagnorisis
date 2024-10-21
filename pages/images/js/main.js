@@ -194,6 +194,9 @@ class StarRatingHTMLContainer {
 
   //// AFTER PAGE LOADED
   $(document).ready(function() {
+    // Request current media folder path
+    socket.emit('emit_images_page_get_path_to_media_folder');
+
     // Request files from the main media folder
     socket.emit('emit_images_page_get_files', {
       path: path, 
@@ -237,7 +240,6 @@ class StarRatingHTMLContainer {
           socket.emit('emit_images_page_set_image_rating', {
             hash: item.hash,
             file_path: item.file_path,
-            file_descriptor: item.file_descriptor,
             rating: rating,
           });
         }
@@ -306,7 +308,12 @@ class StarRatingHTMLContainer {
         $(data).append(StarRatingComponentObject)
         $(data).append('<br>');
 
-        $(data).append('<b>Model rating:</b>&nbsp;' + item.model_rating.toFixed(2) + '/10<br>');
+        if (item.model_rating != null){
+          $(data).append('<b>Model rating:</b>&nbsp;' + item.model_rating.toFixed(2) + '/10<br>');
+        } else {
+          $(data).append('<b>Model rating:</b>&nbsp;N/A<br>');
+        }
+        
         $(data).append('<b>File size:</b>&nbsp;' + item.file_size + '<br>');
         $(data).append('<b>Resolution:</b>&nbsp;' + item.resolution + '<br><br>');
 
@@ -445,7 +452,12 @@ class StarRatingHTMLContainer {
     socket.on('emit_images_page_show_search_status', (status) => {
       $('.image-search-status').html(status);
     });
-    
+
+    // Show current media folder path
+    socket.on('emit_images_page_show_path_to_media_folder', (current_path) => {
+      $('#path_to_media_folder').val(current_path);
+    });
+
     // Set search query in input 
     $('#search_input').val(text_query);
 
@@ -460,9 +472,19 @@ class StarRatingHTMLContainer {
       window.location.href = url.toString();
     });
 
+    // Set search query in input
     $('.set_search').click(function() {
       $('#search_input').val($(this).text());
       $('#seach_button').click();
+    });
+
+    // Update path to the media folder
+    $(`#update_path_to_media_folder`).click(()=>{ 
+      socket.emit('emit_images_page_update_path_to_media_folder', $('#path_to_media_folder').val());
+      // refresh page after a second
+      setTimeout(function(){
+        location.reload();
+      }, 500);
     });
   })
 

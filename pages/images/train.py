@@ -3,51 +3,45 @@ import numpy as np
 import pages.images.db_models as db_models
 import src.scoring_models
 from sklearn.model_selection import train_test_split
-from pages.images.engine import ImageSearch
+from pages.images.engine import ImageSearch, ImageEvaluator
 import os
-
-
+import pickle
+import torch  
 
 def train_image_evaluator(cfg, callback=None):
+  # Create the model
+  evaluator = ImageEvaluator() #src.scoring_models.Evaluator(embedding_dim=768, rate_classes=11)
+  evaluator.reinitialize() # In case the model was already loaded 
+
   # Create dataset from DB, select only images with user rating
-  images_library_entries = db_models.ImagesLibrary.query.filter(db_models.ImagesLibrary.user_rating != None).all()
+  images_library_entries = db_models.ImagesLibrary.query.filter(
+    db_models.ImagesLibrary.user_rating.isnot(None),
+    db_models.ImagesLibrary.embedding.isnot(None)
+  ).all()
 
-
-  image_files = [entry.file_path for entry in images_library_entries]
+  # Get embeddings and scores
   image_scores = [entry.user_rating for entry in images_library_entries]
-
-  # get embeddings for images
-  status = "Step 1/2: Gathering embeddings for image files..."
-
-  def send_emb_extracting_status(num_extracted, num_total):
-    percent = num_extracted / num_total
-    if callback: callback(status, percent, 0)
-
-  image_files = [os.path.join(cfg.images.media_directory, file) for file in image_files]
-
-  embeddings = ImageSearch.process_images(image_files, callback=send_emb_extracting_status).to('cpu')
-
+  image_embeddings = [pickle.loads(entry.embedding) for entry in images_library_entries]
+  image_embeddings = torch.cat(image_embeddings, axis=0).to(evaluator.device)
 
   # Split to train and eval sets
-  status = 'Step 2/2: Training the model...'
+  status = 'Training the model...'
   print(status)
-  X_train, X_test, y_train, y_test = train_test_split(embeddings, image_scores, test_size=0.1, random_state=42)
+  X_train, X_test, y_train, y_test = train_test_split(image_embeddings, image_scores, test_size=0.1, random_state=42)
 
   print("X_train:", len(X_train), "X_test:", len(X_test))
+  print("y_train min max:", min(y_train), max(y_train))
 
   # Calculate the mean score of all train scores
   mean_score = np.mean(y_train)
   # Calculate baseline accuracy
-  baseline_accuracy = 1 - np.mean(np.abs(mean_score - np.array(y_test)) / (np.array(y_test) + 1))
-
-  # Create the model
-  evaluator = src.scoring_models.Evaluator(embedding_dim=768, rate_classes=11)
+  baseline_accuracy = 1 - np.mean(np.abs(mean_score - np.array(y_test)) / (np.array(y_test) + evaluator.mape_bias))
 
   # Train the model
   best_train_accuracy = 0
   best_test_accuracy = 0
   best_epoch = 0
-  total_epochs = 2001
+  total_epochs = 5001
 
   # Initialize the progress bar
   pbar = tqdm(range(total_epochs))
@@ -76,3 +70,6 @@ def train_image_evaluator(cfg, callback=None):
   print(status)
   if callback: 
     callback(status, 100, baseline_accuracy)
+
+  evaluator.load('./models/image_evaluator.pt')
+  print('Training complete! Now you can use new model to evaluate images.')

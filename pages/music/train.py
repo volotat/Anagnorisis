@@ -39,7 +39,7 @@ def train_audio_evaluator(callback=None):
   # Calculate the mean score of all train scores
   mean_score = np.mean(y_train)
   # Calculate baseline accuracy
-  baseline_accuracy = 1 - np.mean(np.abs(mean_score - np.array(y_test)) / (np.array(y_test) + 1))
+  baseline_accuracy = 1 - np.mean(np.abs(mean_score - np.array(y_test)) / (np.array(y_test) + evaluator.mape_bias))
 
   # Create the model
   evaluator = src.scoring_models.Evaluator(embedding_dim=embedder.embedding_dim, rate_classes=11)

@@ -28,6 +28,8 @@ import pandas as pd
 import pages.music.train
 import pages.images.train
 
+import time
+
 
 def init_socket_events(socketio, cfg=None, app=None):
 
@@ -63,20 +65,25 @@ def init_socket_events(socketio, cfg=None, app=None):
   def handle_emit_start_image_evaluator_training():
     train_accuracy_hist = []
     test_accuracy_hist = []
+    last_emit_time = 0  # Initialize the last emit time
 
     def callback(status, percent, baseline_accuracy, train_accuracy = None, test_accuracy = None):
+      nonlocal last_emit_time  # Access the outer scope variable
+      current_time = time.time()  # Get the current time
+
       if train_accuracy is not None and test_accuracy is not None:
         train_accuracy_hist.append(train_accuracy * 100)
         test_accuracy_hist.append(test_accuracy * 100)
 
-      data = {
-        'status': status,
-        'percent': percent * 100,
-        'baseline_accuracy': baseline_accuracy * 100,
-        'train_accuracy_hist': list(train_accuracy_hist),
-        'test_accuracy_hist': list(test_accuracy_hist)
-      }
-      socketio.emit("emit_train_page_display_train_data", data)
+      if current_time - last_emit_time >= 1:
+        data = {
+          'status': status,
+          'percent': percent * 100,
+          'baseline_accuracy': baseline_accuracy * 100,
+          'train_accuracy_hist': list(train_accuracy_hist),
+          'test_accuracy_hist': list(test_accuracy_hist)
+        }
+        socketio.emit("emit_train_page_display_train_data", data)
 
     pages.images.train.train_image_evaluator(cfg, callback)
 
