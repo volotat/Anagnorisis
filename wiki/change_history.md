@@ -15,11 +15,14 @@ In radio mode add an "Open file destination" button to be able to move or remove
 
 ### Images 
 Implement some sort of effective resolution estimation technique.   
-Improve sorting by resolution performance (one idea might be caching information of image resolution).  
-Add some way to delete multiple images at once.  
-Add a display of the amount of images in each folder.  
-Add a way to select only some particular folder for displaying images from.  
+Improve sorting by resolution performance (one idea might be caching information of image resolution).   
+Add a way to select only some particular folders for displaying images from.  
 Remove from DB images that no longer exist in the media folder and have no user rating. This should reduce the size of the DB as embeddings took quite a lot of space.  
+Add a way to create new folders in the UI.  
+Add a way to copy path to a folder trough the UI.  
+Make start rating bar sensitive to fractional value to allow more fine-tuned user rating.  
+Make number of images per page adjustable via config.yaml file.  
+Make number of columns of images presented dependent on the screen size.  
 
 ### Train page
 Disable the start button if fine-tuning has already started.  
@@ -41,11 +44,20 @@ Redo music page representation to more closely resemble images page and apply it
 Add automatic database backup generation from time to time to prevent loss of data in case of a failure.  
 Find a way for more optimal embeddings storage in the DB.  
 Create a roadmap for the project.  
+Separate the file-management part of the project into separate scripts.  
 
 ## Important fixes before 0.2.0 release
 Create a working docker environment to easily run the project.  
 
 ## Versions History
+
+### Version 0.1.1 (27.10.2024)
+Added a way to select multiple files in the 'Images' module to perform some actions on them, such as deleting or moving into another folder.  
+Added batch deletion of images in the 'Images' module.  
+Added batch moving of images in the 'Images' module.  
+Added a way to search for similar images to the selected one in the 'Images' module. To activate it, you need to place path to the image into the search field or press the 'Find similar' button nearby the image.  
+If shift is pressed while selecting images, all images between are ether selected or deselected if there were no images selected beforehand. Otherwise all images from the first to the last selected are selected or deselected.   
+Now there are numbers of images in each folder and total number of images including subfoldes displayed in the 'Images' module beside the folder name.  
 
 ### Version 0.1.0 (21.10.2024)
 Images embeddings caching moved from file-based storage solution to the database. While it is significantly increased the size of the database, the retrieval is much faster now and there might be a way to optimize the compression of the embeddings in the future. It also allow to store embeddings of the images that was removed to still use them for the training process.  

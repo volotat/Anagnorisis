@@ -98,6 +98,7 @@ images:
   - .gif
   - .bmp
   - .webp
+  - .tiff
 videos:
   media_directory: /media/alex/Expansion/Videos
   media_formats:

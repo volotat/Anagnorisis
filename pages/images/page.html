@@ -71,7 +71,7 @@
       </p>-->
 
       <div class="control is-expanded">
-        <input class="input is-fullwidth" id="search_input" type="text" placeholder="Write your search query or drag-and-drop an image file here." 
+        <input class="input is-fullwidth" id="search_input" type="text" placeholder="Write your search query or place a path to an image file here." 
               ondragover="event.preventDefault()" 
               ondrop="handleDrop(event)"
               onkeydown="if (event.key === 'Enter') document.getElementById('seach_button').click()">
@@ -158,5 +158,60 @@
         <p class="image-search-status">...</p>
       </div>
     </nav>
+  </div>
+
+  <!-- Small window in the left bottom side of the screen with actions that could be performed on the selected files -->
+  <div class="box block mb-0" id="files_actions" style="position: fixed; bottom: 1rem; left: 1rem; display: none;">
+    <!-- Show how much files are selected-->
+    <div class="field">
+      <div class="control">
+        <p class=" has-text-centered" id="selected_files_counter">0 files selected</p>
+      </div>
+    </div>
+    <!-- Move all selected files into another folder button -->
+    <div class="field">
+      <div class="control">
+        <button class="button is-info is-fullwidth" id="move_selected_files">Move</button>
+      </div>
+    </div>
+    <!-- Delete all selected files button -->
+    <div class="field">
+      <div class="control">
+        <button class="button is-danger is-fullwidth" id="delete_selected_files">Delete</button>
+      </div>
+    </div>
+    <!-- Undo all selections-->
+    <div class="field">
+      <div class="control">
+        <button class="button is-light is-fullwidth" id="unselect_all_files">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal for moving files to a folder -->
+  <div class="modal" id="move_files_modal">
+    <div class="modal-background modal-close-action"></div>
+    <div class="modal-card">
+      <header class="modal-card-head">
+        <p class="modal-card-title">Move files</p>
+        <button class="delete modal-close is-large modal-close-action" aria-label="close"></button>
+      </header>
+      <section class="modal-card-body">
+        <div class="field">
+          <label class="label">Path to the folder</label>
+          <div class="control">
+            <input class="input" type="text" placeholder="Write folder path here">
+          </div>
+        </div>
+        <!-- Added note -->
+        <p class="has-text-info mt-4">
+          If there already exists a file with the same name in the destination folder, copied file will be given a new name.
+        </p>
+      </section>
+      <footer class="modal-card-foot">
+        <button class="button is-info mr-2 modal-confirm-action">Move</button>
+        <button class="button modal-close-action">Cancel</button>
+      </footer>
+    </div>
   </div>
 <div>

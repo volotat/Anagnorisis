@@ -87,29 +87,34 @@ def compute_distances_batched(embeds_img, batch_size=1024 * 24):
   
   return distances  # Convert to a NumPy
 
-def get_folder_structure(root_folder):
-  folder_dict = {}
-  for root, dirs, _ in os.walk(root_folder):
-    # Extract the relative path from the root_folder to the current root
-    rel_path = os.path.relpath(root, root_folder)
-    # Skip the root folder itself
-    if rel_path == ".":
-      rel_path = ""
-    # Navigate/create nested dictionaries based on the relative path
-    current_level = folder_dict
-    for part in rel_path.split(os.sep):
-      if part:  # Avoid empty strings
-        current_level = current_level.setdefault(part, {})
-    # Add subdirectories to the current level
-    for d in dirs:
-      current_level[d] = {}
-  return folder_dict
+def get_folder_structure(folder_path, image_extensions=None):
+  def count_images(folder):
+    return sum(1 for f in os.listdir(folder) if os.path.splitext(f)[1].lower() in image_extensions)
+
+  def build_structure(path):
+    folder_dict = {
+      'name': os.path.basename(path),
+      'num_images': count_images(path),
+      'total_images': 0,
+      'subfolders': {}
+    }
+    folder_dict['total_images'] = folder_dict['num_images']
+    
+    for subfolder in os.listdir(path):
+      subfolder_path = os.path.join(path, subfolder)
+      if os.path.isdir(subfolder_path):
+        subfolder_structure = build_structure(subfolder_path)
+        folder_dict['subfolders'][subfolder] = subfolder_structure
+        folder_dict['total_images'] += subfolder_structure['total_images']
+    
+    return folder_dict
+  return build_structure(folder_path)
+
 
 from PIL import Image
 def get_image_resolution(file_path):
     with Image.open(file_path) as img:
         return img.size
-
 
 
 def init_socket_events(socketio, app=None, cfg=None):
@@ -239,8 +244,23 @@ def init_socket_events(socketio, app=None, cfg=None):
     # Sort image by text or image query
     show_search_status(f"Sorting images by {text_query}")
     if text_query and len(text_query) > 0:
+      # If there is an image file with the path of the query, sort image by similarity to that image
+      if os.path.isfile(text_query) and text_query.lower().endswith(tuple(cfg.images.media_formats)):
+        target_path = text_query
+        show_search_status(f"Extracting embeddings")
+        embeds_img = ImageSearch.process_images(all_files, callback=embedding_gathering_callback, media_folder=media_directory)
+        target_emb = ImageSearch.process_images([target_path], callback=embedding_gathering_callback, media_folder=media_directory)
+
+        show_search_status(f"Computing distances between embeddings")
+        scores = torch.cdist(embeds_img, target_emb, p=2).cpu().detach().numpy() 
+
+        # Create a list of indices sorted by their corresponding score
+        sorted_indices = sorted(range(len(scores)), key=scores.__getitem__)
+
+        # Use the sorted indices to sort all_files
+        all_files = [all_files[i] for i in sorted_indices]
       # Sort images by file size
-      if text_query.lower().strip() == "file size":
+      elif text_query.lower().strip() == "file size":
         all_files = sorted(all_files, key=os.path.getsize)
       # Sort images by resolution
       elif text_query.lower().strip() == "resolution":
@@ -384,15 +404,41 @@ def init_socket_events(socketio, app=None, cfg=None):
       files_data.append(data)
                  
     # Extract subfolders structure from the path into a dict
-    folders = get_folder_structure(media_directory)
+    folders = get_folder_structure(media_directory, cfg.images.media_formats)
 
     # Extract main folder name
     main_folder_name = os.path.basename(os.path.normpath(media_directory))
-    folders = {main_folder_name: folders}
+    folders['name'] = main_folder_name
+
+    print(folders)
     
     socketio.emit('emit_images_page_show_files', {"files_data": files_data, "folder_path": folder_path, "total_files": len(all_files), "folders": folders})
 
     show_search_status(f'{len(all_files)} images processed in {time.time() - start_time:.4f} seconds.')
+
+  @socketio.on('emit_images_page_move_files')
+  def move_files(data):
+    files = data['files']
+    target_folder = data['target_folder']
+
+    for file_path in files:
+      target_path = os.path.join(target_folder, os.path.basename(file_path))
+
+      # Check if the target path already exists add a suffix if necessary
+      if os.path.exists(target_path):
+        # If it is the same file, skip
+        if os.path.samefile(file_path, target_path):
+          continue
+
+        file_name, file_extension = os.path.splitext(target_path)
+        counter = 1
+        new_file_name = f"{file_name}_{counter}{file_extension}"
+        while os.path.exists(new_file_name):
+          counter += 1
+          new_file_name = f"{file_name}_{counter}{file_extension}"
+        target_path = new_file_name
+
+      os.rename(file_path, target_path)
 
   @socketio.on('emit_images_page_open_file_in_folder')
   def open_file_in_folder(file_path):
@@ -424,6 +470,7 @@ def init_socket_events(socketio, app=None, cfg=None):
   def send_file_to_trash(file_path):
     if os.path.isfile(file_path):
       send2trash.send2trash(file_path)
+      print(f"File '{file_path}' sent to trash.")
       '''if sys.platform == "win32":  # Windows
         # Move the file to the recycle bin
         subprocess.run(["cmd", "/c", "del", "/q", "/f", file_path], check=True)
@@ -434,7 +481,12 @@ def init_socket_events(socketio, app=None, cfg=None):
         # Move the file to the trash
         subprocess.run(["gio", "trash", file_path], check=True)'''
     else:
-      print("Error: File does not exist.")  
+      print(f"Error: File '{file_path}' does not exist.")  
+
+  @socketio.on('emit_images_page_send_files_to_trash')
+  def send_files_to_trash(files):
+    for file_path in files:
+      send_file_to_trash(file_path)
 
   @socketio.on('emit_images_page_set_image_rating')
   def set_image_rating(data):

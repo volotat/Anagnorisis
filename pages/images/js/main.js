@@ -109,7 +109,9 @@ class StarRatingHTMLContainer {
 // Create a closed scope to avoid any variable collisions  
 (function() {
   //// CONSTANTS AND VARIABLES
-  let num_images_on_page = 30;
+  let num_images_on_page = 60;
+  let num_images_in_row = 6; // TODO: calculate from the screen size
+  let selected_files = [];
 
   //// BEFORE PAGE LOADED
   // read page number from the URL ?page=1
@@ -167,28 +169,41 @@ class StarRatingHTMLContainer {
 
   function create_folder_representation(folders_dict, active_path = '', current_path = '') {
     let folderRepresentation = '';
-    
-    for (const folder in folders_dict) {
-      console.log('folder', folder);
-      let folder_dict = folders_dict[folder];
-      console.log('folder_dict', folder_dict);
-      let current_path_ = current_path + folder + '/';
-      console.log('current_path', current_path_);
-      console.log('active_path', active_path);
-      console.log('isSubfolder', isSubfolder(active_path, current_path_));
-      const isActive = active_path === current_path_ ? 'is-active' : '';
-      let encoded_link = `path=${encodeURIComponent(current_path_)}`;
-      let color = isSubfolder(active_path, current_path_) ? 'has-text-black' : 'has-text-grey-light';
-      if (active_path === current_path_) color = '';
-      folderRepresentation += `<li><a class="${isActive} ${color}" href="?${encoded_link}">${folder}</a>`;
-      
+
+    const folderName = folders_dict.name;
+    const numImages = folders_dict.num_images;
+    const totalImages = folders_dict.total_images;
+    let current_path_ = current_path + folderName + '/';
+    const isActive = active_path === current_path_ ? 'is-active' : '';
+    let encoded_link = `path=${encodeURIComponent(current_path_)}`;
+    let color = isSubfolder(active_path, current_path_) ? 'has-text-black' : 'has-text-grey-light';
+    if (active_path === current_path_) color = '';
+
+    // Conditional check for displaying image counts
+    let imageCountDisplay = numImages === totalImages ? `[${numImages}]` : `[${numImages} | ${totalImages}]`;
+    folderRepresentation += `<li><a class="${isActive} ${color}" href="?${encoded_link}">${folderName} ${imageCountDisplay}</a>`;
+
+
+    // Sort the folders by name
+    const sortedFolders = Object.keys(folders_dict.subfolders).sort((a, b) => {
+      return folders_dict.subfolders[a].name.localeCompare(folders_dict.subfolders[b].name);
+    });
+
+    folderRepresentation += '<ul>';
+
+    // Create a new folder representation for each subfolder
+    for (const folderKey of sortedFolders) {
+      const folder = folders_dict.subfolders[folderKey];
+      let current_path_ = current_path + folderName + '/';
+
       if (isSubfolder(current_path_, active_path)) {
-        folderRepresentation += '<ul>';
-        folderRepresentation += create_folder_representation(folder_dict, active_path, current_path_);
-        folderRepresentation += '</ul>';
+        folderRepresentation += create_folder_representation(folder, active_path, current_path_);
       }
-      folderRepresentation += '</li>';
-    }
+    } 
+
+    folderRepresentation += '</ul>';
+    folderRepresentation += '</li>';
+
     return folderRepresentation;
   }
 
@@ -210,20 +225,38 @@ class StarRatingHTMLContainer {
       console.log('emit_images_page_show_files', data);
 
       // Create a container for the images
-      let container = `<div class="fixed-grid has-6-cols is-gap-0.5">
+      let container = `<div class="fixed-grid has-${num_images_in_row}-cols is-gap-0.5">
         <div class="grid" id="images_grid_container">
         </div>
       </div>`;
       // Add the container to the body (or another container)
       $('#images_preview_container').append(container);
 
+      // Create a checkbox tracking variables
+      let lastActivatedCheckbox = null;
+
+      // Add checkbox select method
+      function selectCheckbox(currentCheckbox, isChecked) {
+        currentCheckbox.checked = isChecked;
+        const filePath = $(currentCheckbox).data('file-path');
+        if (isChecked) {
+          if (!selected_files.includes(filePath)) {
+            selected_files.push(filePath);
+          }
+        } else {
+          selected_files = selected_files.filter(function(value) {
+            return value !== filePath;
+          });
+        }
+      }
+
       // Create a new div for each image
       data["files_data"].forEach(item => {
         const imageDataDiv = document.createElement('div');
-        imageDataDiv.className = 'cell has-background-light p-1';
+        imageDataDiv.className = 'cell has-background-light p-1 is-flex is-flex-direction-column is-justify-content-space-between';
 
         const imageContainer = document.createElement('div');
-        imageContainer.classList.add('pswp-gallery__item')
+        imageContainer.classList.add('pswp-gallery__item', 'is-flex-direction-column');
         // Make image container always square
         imageContainer.style.aspectRatio = 1;
         // Horizontally center the image
@@ -254,6 +287,15 @@ class StarRatingHTMLContainer {
         image.onload = function() {
           // Create link to full image
           const link = document.createElement('a');
+          // Align the image to the center of the a element
+          link.style.display = 'flex';
+          link.style.justifyContent = 'center';
+          link.style.alignItems = 'center';
+          link.style.width = '100%';
+          link.style.height = '100%';
+          // Set aspect ratio to maintain the square shape
+          link.style.aspectRatio = '1';
+          
           link.href = 'image_files/'+item.file_path;
           link.target = '_blank';
           link.setAttribute('data-pswp-width', image.width);
@@ -317,6 +359,8 @@ class StarRatingHTMLContainer {
         $(data).append('<b>File size:</b>&nbsp;' + item.file_size + '<br>');
         $(data).append('<b>Resolution:</b>&nbsp;' + item.resolution + '<br><br>');
 
+        imageDataDiv.append(data);
+
         
         /*data.innerHTML = '<b>Path:</b> ' + item.file_path;
         data.innerHTML += '<br><b>Hash:</b> ' + item.hash;
@@ -329,16 +373,112 @@ class StarRatingHTMLContainer {
         data.innerHTML += '<br><b>Resolution:</b> ' + item.resolution;
         data.innerHTML += '<br><br>';*/
 
-        // Create buttons for opening and deleting the file
-        btn_open = document.createElement('button');
-        btn_open.className = 'button is-pulled-left';
+        // Create a level container
+        const levelContainer = document.createElement('div');
+        levelContainer.className = 'level is-gapless';
+        imageDataDiv.append(levelContainer);
+
+        // Create level-left container
+        const levelLeft = document.createElement('div');
+        levelLeft.className = 'level-left is-gapless';
+
+        // Create level-right container
+        const levelRight = document.createElement('div');
+        levelRight.className = 'level-right is-gapless';
+
+        // Add the level containers to the level container
+        levelContainer.append(levelLeft);
+        levelContainer.append(levelRight);
+
+        // Create buttons for opening the file
+        const btn_open = document.createElement('button');
+        btn_open.className = 'button level-left is-gapless';
         btn_open.innerHTML = '<span class="icon"><i class="fas fa-folder-open"></i></span><span>Open</span>';
         btn_open.onclick = function() {
-          console.log('Open file in folder: ' + item.full_path)
+          console.log('Open file in folder: ' + item.full_path);
           socket.emit('emit_images_page_open_file_in_folder', item.full_path);
         };
-        data.append(btn_open);
+        levelLeft.append(btn_open);
 
+        // Create a button for finding similar images
+        const btn_find_similar = document.createElement('button');
+        btn_find_similar.className = 'button level-left is-gapless';
+        btn_find_similar.innerHTML = '<span class="icon"><i class="fas fa-search"></i></span><span>Find similar</span>';
+        btn_find_similar.onclick = function() {
+          console.log('Find similar images for: ' + item.full_path);
+
+          let url = new URL(window.location.href);
+          let params = new URLSearchParams(url.search);
+          params.set('text_query', item.full_path);
+          params.set('page', 1);
+          url.search = params.toString();
+          window.location.href = url.toString();
+        };
+        levelLeft.append(btn_find_similar);
+
+        // Create a checkbox for selecting the file for further actions
+        const checkboxLabel = document.createElement('label');
+        checkboxLabel.className = 'b-checkbox checkbox is-large level-right mr-0 ';
+        checkboxLabel.innerHTML = `<input type="checkbox" value="false">
+                              <span class="check is-success"></span>`;
+        checkboxLabelInput = checkboxLabel.querySelector('input');
+        checkboxLabelInput.dataset.filePath = item.full_path;
+
+        // Handle the checkbox click event
+        checkboxLabelInput.onclick = function(event) {
+          //event.stopPropagation();
+          const isShiftPressed = event.shiftKey;
+          const checkboxes = $("input[type='checkbox']");
+          const isChecked = this.checked;
+
+          if (isShiftPressed) {
+            console.log('Shift is pressed');
+            
+            if (!isChecked) lastActivatedCheckbox = null;
+        
+            if (lastActivatedCheckbox === null) {
+              // No checkbox was activated before, select all checkboxes
+              checkboxes.each(function() {
+                selectCheckbox(this, isChecked);
+              });
+            } else {
+              // Select all checkboxes from last activated to current one
+              let start = checkboxes.index(lastActivatedCheckbox);
+              let end = checkboxes.index(this);
+              console.log('start', start, 'end', end);
+              if (start > end) [start, end] = [end, start]; // Ensure start is less than end
+
+              checkboxes.slice(start, end + 1).each(function() {
+                selectCheckbox(this, isChecked);
+              });
+            }
+          } else {
+            console.log('Shift is not pressed');
+            lastActivatedCheckbox = this.checked ? this : null;
+
+            // Check if the checkbox is activated
+            selectCheckbox(this, isChecked);
+          }
+
+          // Update the counter of selected files
+          let selectedCount = $("input[type='checkbox']:checked").length;
+          let msg = selectedCount + " file" + (selectedCount !== 1 ? "s" : "") + " selected";
+          $("#selected_files_counter").text(msg);
+
+          // Show files_actions window if there are selected files or hide it if there none
+          if ($("input[type='checkbox']:checked").length > 0){
+            $('#files_actions').show();
+          } else {
+            $('#files_actions').hide();
+            selected_files = [];
+          }
+
+          console.log('selected_files', selected_files);
+        };
+        levelRight.append(checkboxLabel);
+
+
+        /*
         // Create a button for deleting the file
         btn_delete = document.createElement('button');
         btn_delete.className = 'button is-pulled-right';
@@ -350,9 +490,10 @@ class StarRatingHTMLContainer {
           location.reload();
         };
         data.append(btn_delete);
+        */
 
         //name.className = 'has-text-centered';
-        imageDataDiv.append(data);
+        
 
         $('#images_grid_container').append(imageDataDiv);
         //window.photoGalleryLightbox.init();
@@ -485,6 +626,42 @@ class StarRatingHTMLContainer {
       setTimeout(function(){
         location.reload();
       }, 500);
+    });
+
+    // Unselect all files
+    $('#unselect_all_files').click(function() {
+      $("input[type='checkbox']").prop('checked', false);
+      $('#files_actions').hide();
+    });
+
+    // Delete selected files
+    $('#delete_selected_files').click(function() {
+      //console.log('Delete selected files: ' + selected_files);
+      socket.emit('emit_images_page_send_files_to_trash', selected_files);
+      // refresh page
+      location.reload();
+    });
+
+    // Move selected files to the new folder
+    $('#move_selected_files').click(function() {
+      // Activate the modal window
+      $('#move_files_modal').addClass('is-active');
+    });
+
+    // Close the modal window
+    $('#move_files_modal .modal-close-action').click(function() {
+      $('#move_files_modal').removeClass('is-active');
+    });
+
+    // Move selected files to the new folder if confirmed
+    $('#move_files_modal .modal-confirm-action').click(function() {
+      let target_folder = $('#move_files_modal input').val();
+      socket.emit('emit_images_page_move_files', {
+        files: selected_files,
+        target_folder: target_folder
+      });
+      // refresh page
+      location.reload();
     });
   })
 
