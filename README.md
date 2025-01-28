@@ -129,7 +129,7 @@ Here is some pages that might be interesting for you:
 ## `ask.py` - Project Question Answering
 For easier development and information access, the project includes an `ask.py` script located in the `project_info` folder. This script allows you to ask questions about the project's codebase using Google's "gemini-2.0-flash-exp" model.  
 
-⚠️  **Warning**: Please be aware that when using `ask.py`, the project's source code and any current changes are sent to Google's servers for processing. **Do not include any personal or sensitive information in the project's files or in the questions you ask.**  
+⚠️  **Warning**: Please be aware that when using `ask.py`, the project's source code and any current changes are sent to Google's servers for processing. **Do not include any personal or sensitive information in the project's folders and files or in the questions you ask.**  
 
 To use `ask.py`, follow these steps:
 
