@@ -21,6 +21,7 @@ import pickle
 from omegaconf import OmegaConf
 
 import src.scoring_models
+from pages.utils import convert_size
 
 # TODO: Move this class to into some separate files with callbacks or something like it
 class EmbeddingGatheringCallback:
@@ -38,15 +39,6 @@ class EmbeddingGatheringCallback:
       # Show the status
       self.show_status_function(f"Extracted embeddings for {num_extracted}/{num_total} ({percent:.2f}%) images.")
       self.last_shown_time = current_time
-
-def convert_size(size_bytes):
-  if size_bytes == 0:
-      return "0B"
-  size_name = ("B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB")
-  i = int(math.floor(math.log(size_bytes, 1024)))
-  p = math.pow(1024, i)
-  s = round(size_bytes / p, 2)
-  return f"{s} {size_name[i]}"
 
 def compute_distances_batched(embeds_img, batch_size=1024 * 24):
   # Ensure input is a torch tensor (on CPU)
@@ -341,7 +333,7 @@ def init_socket_events(socketio, app=None, cfg=None):
 
         # Sort the files by the ratings
         all_files = [file_path for _, file_path in sorted(zip(all_ratings, all_files), reverse=True)]
-      # Present images as is
+      # Sort images by the text query
       else:
         show_search_status(f"Extracting embeddings")
         embeds_img = ImageSearch.process_images(all_files, callback=embedding_gathering_callback, media_folder=media_directory)

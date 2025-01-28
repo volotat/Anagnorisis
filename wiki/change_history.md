@@ -12,6 +12,7 @@ Add "Chain Mode" where each song is selected as the most similar to a previous s
 Add a way to restart the radio session.  
 Explore ways to optimize the music library update process.  
 In radio mode add an "Open file destination" button to be able to move or remove bad music if found.  
+Move embedding model to "Text-to-Music Retrieval++" and implement text based music search.
 
 ### Images 
 Implement some sort of effective resolution estimation technique.   
@@ -46,10 +47,28 @@ Find a way for more optimal embeddings storage in the DB.
 Create a roadmap for the project.  
 Separate the file-management part of the project into separate scripts.  
 
+
 ## Important fixes before 0.2.0 release
 Create a working docker environment to easily run the project.  
 
 ## Versions History
+
+### Version 0.1.2 (28.01.2025)
+*   File `requirements.txt` has been updated to include all necessary packages for the project without particular versions.
+*   Roadmap of the project has been added to the wiki.
+*   A complete overhaul of the 'music' module has been done. The old version was moved to `pages/_music_v0.1.1`. The new module is more similar to the 'images' module, using a grid-based layout for music files and folders, and has many of its improvements, such as file-hashing mechanism for faster file access, and a similar approach to the database interaction. Some of the features from the old 'music' module are still missing, but they will be added in the future. Note, that recommendations are not currently working as the recommendation model is not yet utilized. Embedding model is also going to be changed, so music embeddings are not yet in use. There is no way to rate the music for now either. The old `js/radio.js` file was removed, and all the radio functionality was moved into the new `js/main.js`. Also `js/library.js` was removed and its functionality were also added to the `js/main.js`. The `pages/music/data` folder was also removed, and the background sound file was moved to `static/background-music`.
+*   The music DB model (`MusicLibrary`) has been changed to resemble the images DB model. It now includes `id`, `hash`, `file_path`, `user_rating`, `user_rating_date`, `model_rating`, `embedding`, `embedder_hash`, `full_play_count`, `skip_count`, and `last_played` fields. Many of the old fields are not used anymore. Embeddings are not yet stored in the DB.
+*   The `ImagesLibrary` model now also includes `model_hash` and `embedder_hash` fields. The model rating is also now a float number for images.
+*   Added a separate folder `project_info` with general data about the project and its structure, and `ask.py` script that uses "Gemini 2.0 Flash-exp" (over 1m tokens of context) to answer questions about the project and help in its development. The `ask.py` sends the entire codebase to Google's servers, so users should avoid including any sensitive data in the project. The response of the model is saved into `project_info/llm_response.md` file for review. The user prompt is stored to the `project_info/llm_prompt.txt` file for review.
+*   Whole database now could be downloaded as a `.csv` file via the download button on the navbar.
+*   Added import into the database from a `.csv` file using the upload button on the navbar. The import only adds new data and does not remove any data that already in the DB.
+*   The project now uses a file list caching mechanism (`CachedFileList`) and a file hash caching mechanism (`CachedFileHash`) in `pages/file_manager.py`, for better performance of file management. The old way of database access was removed. The new one uses the same approach as in 'images' module.
+*   The `pages/utils.py` file was created and the methods `convert_size` and `convert_length` were moved to it.
+*   The rating components are now a separate .js file `pages/StarRating.js` that is used in both 'images' and 'music' modules.
+*   The database now stores the embedding model's hash (`model_hash`) to prevent using old rating models.
+*   The project is now more strictly divided by extensions, as all of the data related to an extension, including the DB models, server-side python code, html page and front-end javascript code is now stored in a separate folder. The base code now acts as a base for all the extensions. The extensions are automatically discovered.
+*   The navbar now contains a button to download the whole DB as a .csv file.
+*   The navbar now contains a button to upload the whole DB from a .csv file.
 
 ### Version 0.1.1 (27.10.2024)
 Added a way to select multiple files in the 'Images' module to perform some actions on them, such as deleting or moving into another folder.  

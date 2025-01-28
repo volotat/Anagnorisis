@@ -19,10 +19,18 @@ Notice that the project has only been tested on Ubuntu 22.04, there is no guaran
 
 Recreate the Environment with following commands: 
 ``` 
+    # For Linux
     python3 -m venv .env  # recreate the virtual environment
     source .env/bin/activate  # activate the virtual environment
     pip install -r requirements.txt  # install the required packages
 ```
+```
+    # For Windows
+    python -m venv .env  # recreate the virtual environment
+    .env\Scripts\activate # activate the virtual environment
+    pip install -r requirements.txt # install the required packages
+```
+
 
 Initialize your database with this command: 
 ```
@@ -33,7 +41,12 @@ This should create a new 'instance/project.db' file, that will store your prefer
 
 Then run the project with command:
 ```  
+    # For Linux
     bash run.sh
+```
+```  
+    # For Windows
+    ./run.bat
 ```
 The project should be up and running on http://127.0.0.1:5001/  
 
@@ -82,6 +95,8 @@ Please watch this video to see presentation of 'Images' page usage:
 Or you can read the guide at the [Images wiki](wiki/images.md) page.
 
 ## Music Page
+⚠️ **Warning**: Since version 0.1.2 the music module is on overhaul, so many features are not available yet. Please be patient. The text below is outdated and will be updated soon.
+
 1. Set up the path to your local music folder  
 ![music page step 1](static/music_step_1.png)
 
@@ -110,6 +125,23 @@ Here is some pages that might be interesting for you:
 [Philosophy](wiki/philosophy.md)  
 [Music](wiki/music.md)  
 [Images](wiki/images.md)  
+
+## `ask.py` - Project Question Answering
+For easier development and information access, the project includes an `ask.py` script located in the `project_info` folder. This script allows you to ask questions about the project's codebase using Google's "gemini-2.0-flash-exp" model.  
+
+⚠️  **Warning**: Please be aware that when using `ask.py`, the project's source code and any current changes are sent to Google's servers for processing. **Do not include any personal or sensitive information in the project's files or in the questions you ask.**  
+
+To use `ask.py`, follow these steps:
+
+1.  Set your Google Gemini API key as an environment variable:
+    ```bash
+    export GEMINI_API_KEY="your-api-key"
+    ```
+2.  Run the script from the `project_info` directory:
+    ```bash
+    cd project_info
+    python ask.py
+    ```
 
 ---------------	
 In memory of [Josh Greenberg](https://variety.com/2015/digital/news/grooveshark-josh-greenberg-dead-1201544107/) - one of the creators of Grooveshark. Long gone music service that had the best music recommendation system I've ever seen. 

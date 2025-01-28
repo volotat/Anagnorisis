@@ -47,7 +47,28 @@
       socket.on('emit_llm_engine_end_loading', function(){
         $('#llm_processing_progress_bar').attr("value", 0);
       });
+
+      document.getElementById('import_csv_trigger').addEventListener('click', () => {
+        document.getElementById('import_database_csv').click();
+      });
+
+      $('#import_database_csv').on('change', function(event) {
+        const file = event.target.files[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const csvData = e.target.result;
+                socket.emit('emit_import_database_csv', csvData);
+              
+                // Clear the input field to allow uploading of the same file again
+                $('#import_database_csv').val('');
+            };
+            reader.readAsText(file);
+        }
+      });
     })
+
+    
   </script>
 
   <nav class="navbar is-light" role="navigation" aria-label="main navigation">
@@ -70,6 +91,18 @@
               {{ name|title }}
           </a>
         {% endfor %}
+      </div>
+
+      <div class="navbar-end">
+        <!-- Add the download .csv with full DB button in the navbar -->
+        <a class="navbar-item" href="/export_database_csv" title="export database in csv file" target=”_blank”>
+          <span class="icon"><i class="fas fa-download"></i></span>
+        </a>
+        <!-- Add the upload .csv with full DB button in the navbar -->
+        <a class="navbar-item" id="import_csv_trigger" title="import database from csv file">
+          <span class="icon"><i class="fas fa-upload"></i></span>
+          <input type="file" id="import_database_csv" style="display: none;" accept=".csv">
+        </a>
       </div>
     </div>
   </nav>

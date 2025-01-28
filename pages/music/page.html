@@ -1,125 +1,270 @@
-<script src="static/js/jsmediatags.min.js" integrity="sha512-YsR46MmyChktsyMMou+Bs74oCa/CDdwft7rJ5wlnmDzMj1mzqncsfJamEEf99Nk7IB0JpTMo5hS8rxB49FUktQ==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-<script type="text/javascript" src="pages/music/js/main.js"></script>
-<script type="text/javascript" src="pages/music/js/radio.js"></script>
-<script type="text/javascript" src="pages/music/js/library.js"></script>
+<script type="module" type="text/javascript" src="pages/music/js/main.js"></script>
 
 <!-- PAGE MAIN CONTENT -->
-<audio controls id="bg_audio" autoplay class="is-hidden"></audio>
-<audio controls id="my_audio" autoplay class="is-hidden"></audio>
-<audio controls id="AIDJ_speaker" autoplay class="is-hidden"></audio>
+<audio controls id="audio_player" autoplay class="is-hidden"></audio>
 
-<!-- ? -->
-<div class="block py-6 max-width" >
-  <div class="tabs is-centered">
-    <ul>
-      <li id="tab_button_library" class="tab-button">
-        <a>
-          <span class="icon is-small"><i class="fas fa-image" aria-hidden="true"></i></span>
-          <span>Library</span>
-        </a>
-      </li>
-      <li id="tab_button_radio" class="tab-button is-active">
-        <a>
-          <span class="icon is-small"><i class="fas fa-music" aria-hidden="true"></i></span>
-          <span>Radio</span>
-        </a>
-      </li>
-    </ul>
-  </div>
+<div class="container is-fluid columns is-centered py-6 mb-6">
+  <aside class="column is-2 menu">
+    <p class="menu-label">Path to local music library</p>
+    <div class="field has-addons">
+      <div class="control is-expanded">
+        <input class="input is-fullwidth" id="path_to_media_folder" type="text" placeholder="Write folder path here">
+      </div>
+      <div class="control">
+        <button class="button is-info" id="update_path_to_media_folder">Save</button>
+      </div>
+    </div>
+    
+    <!--<ul class="menu-list" id="folders_menu">
+      ...
+    </ul>-->
+  </aside>
 
-  <div  style="max-height: calc(100vh - 350px); overflow-y: auto; text-align: justify;">
-    <div id="tab_content_library" class="container p-3 tab-content" style="display: none;">
-      <div class="field">
-        <label class="label">Path to local music library</label>
+  <div class="column">
+    <!-- Search bar, image input, and filter dropdown -->
+    <div class="field has-addons">
+      <div class="control is-expanded">
+        <input class="input is-fullwidth" id="search_input" type="text" placeholder="Write your search query or place a path to a music file here." 
+              ondragover="event.preventDefault()" 
+              ondrop="handleDrop(event)"
+              onkeydown="if (event.key === 'Enter') document.getElementById('seach_button').click()">
       </div>
-      <div class="field has-addons mb-6">
-        <div class="control is-flex-grow-1">
-          <input class="input" type="text" id="path_to_music_folder" placeholder="Path to music folder">
-        </div>
-        <div class="control">
-          <button class="button is-info" id="update_path_to_music_folder">
-            Save Path
-          </button>
-        </div>
+  
+      <div class="control">
+        <button class="button is-info" id="seach_button">Search</button>
       </div>
-      
-      <progress id="music_library_update_progress" class="progress mb-2" value="0" max="100">0%</progress>
-      <div class="is-flex mb-6">
-        <div class="buttons my-0 is-flex-grow-1">
-          <button class="button is-info is-fullwidth m-0" id="update_music_library">Update music library</button>
-        </div>
-        <span class="icon is-large">
-          <i class="fas fa-2x fa-circle-check" id="music_library_update_status"></i>
-        </span>
-      </div>
-      
-      
-      <nav class="breadcrumb" aria-label="breadcrumbs">
-        <ul id="library_files_breadcrumb">
-          <li><a href="#">Exmaple</a></li>
-          <li><a href="#">Documentation</a></li>
-          <li><a href="#">Components</a></li>
-          <li class="is-active"><a href="#" aria-current="page">Breadcrumb</a></li>
+    </div>
+
+    <!-- Field with helper tags for search -->
+    <div class="field is-grouped is-grouped-multiline mt-4" id="tags_container">
+      <b>Special keywords:</b>
+      <button class="tag is-light set_search">recommendation</button>
+      <button class="tag is-light set_search">rating</button>
+      <button class="tag is-info is-light set_search">random</button>
+      <button class="tag is-light set_search">file size</button>
+      <button class="tag is-light set_search">length</button>
+      <button class="tag is-light set_search">similarity</button>
+    </div>
+
+    <!-- Pagination and status on top-->
+    <nav class="level mt-6">
+      <nav class="pagination is-rounded level-left mb-0" role="navigation" aria-label="pagination">    
+        <ul class="pagination-list">
+          <li>
+            <span class="pagination-ellipsis">&hellip;</span>
+          </li>
         </ul>
       </nav>
-      <div id="library_files_container"  class="columns is-mobile is-multiline is-centered is-variable is-1">
+      <div class="level-right">
+        <p class="music-search-status">...</p>
+      </div>
+    </nav>
+
+    <!-- Grid with previews of images -->
+    <div id="images_preview_container">
+    </div>
+
+    <!-- Pagination and status on bottom-->
+    <nav class="pagination is-rounded mt-6" role="navigation" aria-label="pagination">
+      <nav class="pagination is-rounded level-left mb-0" role="navigation" aria-label="pagination">    
+        <ul class="pagination-list">
+          <li>
+            <span class="pagination-ellipsis">&hellip;</span>
+          </li>
+        </ul>
+      </nav>
+      <div class="level-right">
+        <p class="music-search-status">...</p>
+      </div>
+    </nav>
+  </div>
+
+  <!-- Small window in the left bottom side of the screen with actions that could be performed on the selected files -->
+  <div class="box block mb-0" id="files_actions" style="position: fixed; bottom: 1rem; left: 1rem; display: none;">
+    <!-- Show how much files are selected-->
+    <div class="field">
+      <div class="control">
+        <p class=" has-text-centered" id="selected_files_counter">0 files selected</p>
       </div>
     </div>
-
-    <div id="tab_content_radio" class="container p-3 tab-content"></div>
-  </div>
-  
-  <div class="modal" id="song_edit_modal">
-    <div class="modal-background"></div>
-    <div class="card mx-4 my-4" id="song_edit_content" style="width:800px">
+    <!-- Move all selected files into another folder button -->
+    <div class="field">
+      <div class="control">
+        <button class="button is-info is-fullwidth" id="move_selected_files">Move</button>
+      </div>
+    </div>
+    <!-- Delete all selected files button -->
+    <div class="field">
+      <div class="control">
+        <button class="button is-danger is-fullwidth" id="delete_selected_files">Delete</button>
+      </div>
+    </div>
+    <!-- Undo all selections-->
+    <div class="field">
+      <div class="control">
+        <button class="button is-light is-fullwidth" id="unselect_all_files">Close</button>
+      </div>
     </div>
   </div>
-</div>
 
-<!-- SONG CONTROL PANEL -->
-<nav class="navbar level is-mobile is-fixed-bottom m-0 p-4 is-light">
-  <div class="level-left has-text-centered">
-    <div class="tags tags has-addons are-large">
-      <span class="mr-4">
-        <figure class="image is-128x128">
-          <img src="static/images/128x128.png" id="song_cover_image">
-        </figure>
-      </span>
-      <a class="tag button is-size-4" id="prev_btn">
-        <i class="fas fa-backward-fast"></i>
-      </a>
-      <a class="tag button is-size-4" id="play_btn"> 
-        <i class="fas fa-solid fa-play"></i>
-      </a>
-      <a class="tag button is-size-4 mr-4" id="next_btn">
-        <i class="fas fa-forward-fast"></i>
-      </a>
-    </div>
-  </div>
-  <div class="level-item has-text-centered">
-    <div style="width:100%">
-      <div class="level-item">
-        <div class="field has-addons">
-          <p class="control">
-            <span class="tag is-size-5 mb-6" id="song_label">Band - Title | Album</span>
-          </p>
-          <p class="control">
-            <button class="button" id="song_edit_btn">
-              <span class="icon-text">
-                <span class="icon">
-                  <i class="fas fa-lg fa-solid fa-pen-to-square"></i>
-                </span>
-                <span>Edit</span>
-              </span>
-            </button>
-          </p>
+  <!-- Modal for moving files to a folder -->
+  <div class="modal" id="move_files_modal">
+    <div class="modal-background modal-close-action"></div>
+    <div class="modal-card">
+      <header class="modal-card-head">
+        <p class="modal-card-title">Move files</p>
+        <button class="delete modal-close is-large modal-close-action" aria-label="close"></button>
+      </header>
+      <section class="modal-card-body">
+        <div class="field">
+          <label class="label">Path to the folder</label>
+          <div class="control">
+            <input class="input" type="text" placeholder="Write folder path here">
+          </div>
         </div>
-      </div>
-      
-      <progress class="progress" value="0" max="100" id="song_progress"></progress>
+        <!-- Added note -->
+        <p class="has-text-info mt-4">
+          If there already exists a file with the same name in the destination folder, copied file will be given a new name.
+        </p>
+      </section>
+      <footer class="modal-card-foot">
+        <button class="button is-info mr-2 modal-confirm-action">Move</button>
+        <button class="button modal-close-action">Cancel</button>
+      </footer>
     </div>
   </div>
-  <div class="level-right has-text-centered is-size-3 is-gapless" id="song_rating">
-    ◦☆☆☆☆☆☆☆☆☆☆
-  </div>
-</nav>
+
+  <!-- SONG CONTROL PANEL -->
+  <style>
+    .song-control-panel {
+      border-top: 2px solid var(--bulma-border-weak);
+      box-shadow: 0px -10px 160px 20px rgba(0, 0, 0, 0.15);
+      height: 150px;
+    }
+
+    .playlist-panel {
+      position: fixed;
+      top: 60px;
+      right: 0;
+      width: 0;
+      padding: 0;
+      height: calc(100vh - 215px);
+      transition: width 0.3s ease-in-out;
+      background: white;
+      border-bottom-right-radius: 0;
+      border-top-right-radius: 0;
+      z-index: 999;
+    }
+
+    .toggle-playlist-btn {
+      position: absolute;
+      left: -39px;
+      height: 100px;
+      width: 40px;
+      top: 50%;
+      transform: translateY(-50%);
+      border-radius: 40% 0% 0% 40%;
+      border-right-width: 0;
+      box-shadow: none;
+    }
+
+    #playlist_content {
+      overflow-y: scroll;
+      height: calc(100% - 60px);
+    }
+  </style>
+
+  <!-- When playlist has not been activated -->
+  <nav id="song_control_panel_dectivated" class="navbar is-fixed-bottom is-mobile is-light m-0 p-4 is-flex is-flex-direction-column song-control-panel"> 
+    <!-- Activate Playlist Button -->
+    <div class="navbar-item level is-justify-content-center">
+      <button class="button is-info update_playlist">Play as playlist</button>
+    </div>
+  </nav>
+
+  <!-- When playlist has been activated -->
+  <nav id="song_control_panel_activated" class="navbar level is-mobile is-fixed-bottom m-0 p-4 is-light is-hidden song-control-panel">
+    <div class="level-left has-text-centered">
+      <div class="tags tags has-addons are-large">
+        <span class="mr-4">
+          <figure class="image is-128x128">
+            <img src="static/images/128x128.png" id="song_cover_image">
+          </figure>
+        </span>
+        <a class="tag button is-size-4" id="prev_btn">
+          <i class="fas fa-backward-fast"></i>
+        </a>
+        <a class="tag button is-size-4" id="play_btn"> 
+          <i class="fas fa-solid fa-play"></i>
+        </a>
+        <a class="tag button is-size-4 mr-4" id="next_btn">
+          <i class="fas fa-forward-fast"></i>
+        </a>
+      </div>
+    </div>
+    <div class="level-item has-text-centered">
+      <div style="width:100%">
+        <div class="level-item">
+          <div class="field has-addons">
+            <p class="control">
+              <span class="tag is-size-5 mb-6" id="song_label">Band - Title | Album</span>
+            </p>
+            <p class="control is-hidden">
+              <button class="button" id="song_edit_btn">
+                <span class="icon-text">
+                  <span class="icon">
+                    <i class="fas fa-lg fa-solid fa-pen-to-square"></i>
+                  </span>
+                  <span>Edit</span>
+                </span>
+              </button>
+            </p>
+          </div>
+        </div>
+        
+        <progress class="progress" value="0" max="100" id="song_progress"></progress>
+      </div>
+    </div>
+    <div class="level-right has-text-centered is-size-3 is-gapless" id="song_rating">
+      ◦☆☆☆☆☆☆☆☆☆☆
+    </div>
+  </nav>
+
+  <!-- Playlist side panel -->
+  <aside class="box playlist-panel" id="playlist_panel">
+    <!-- Button that triggers panel expansion -->
+    <div class="panel-block">
+      <button class="button has-text-grey-lighter toggle-playlist-btn" id="toggle_playlist_btn">
+        <span class="icon is-large">
+          <i class="fas fa-2x fa-solid fa-chevron-left"></i>
+        </span>
+      </button>
+    </div>
+    
+    <div class="panel is-info p-4" style="overflow: hidden; height: 100%;">
+      <!-- refresh playlist from the currently active folder or selected files -->
+      <button class="button is-info is-fullwidth mb-4 refresh_playlist">Refresh playlist</button>
+      
+      <!-- playlist content goes here -->
+      <div class="p-4 pb-6" id="playlist_content">
+        <p class="is-size-6">Your playlist will be here...</p>
+        <!-- More playlist items... -->
+      </div>
+    </div>
+  </aside>
+
+  <script>
+    const playlistPanel = document.getElementById('playlist_panel');
+    const toggleBtn = document.getElementById('toggle_playlist_btn');
+
+    // Expand panel when hovering over the button
+    toggleBtn.addEventListener('mouseenter', () => {
+      playlistPanel.style.width = '400px';
+    });
+
+    // Collapse panel when mouse leaves the panel
+    playlistPanel.addEventListener('mouseleave', () => {
+      playlistPanel.style.width = '0';
+    });
+  </script>
+<div>

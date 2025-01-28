@@ -1,0 +1,81 @@
+---- 21 окт. 2024 г. ("Anagnorisis: Images module preview (v0.1.0)" video script)
+Welcome to the ‘Anagnorisis’ 'Images' module. ‘Anagnorisis’ is an open-source local recommendation system designed to let you search, filter and process your personal data, securely on your local machine with the help of an AI-based recommendation engine that learns from your feedback.
+
+First, set up your image library path. Copy your local image folder path into the 'Path to local image library' field and press the ‘Save’ button. This initiates a process that gathers image hashes, setting up the caching system.
+
+Once this is done, click on any image to enlarge it. You’ll see a rating bar at the bottom, allowing you to rate images from 0 to 10. Ratings are stored in the database for later use in training your personalized image evaluation model.
+
+The module supports text-based semantic image search. Enter any text describing an image you want to find and press the ‘Search ‘button. The system will retrieve images most relevant to your query.
+
+There are multiple filtering options included in the module. For example ‘Text search’ might be used to filter out categories like 'NSFW' or other specific categories of images.
+
+‘Similarity filtering’ groups visually similar images, allowing you to quickly identify and remove duplicates and see clusters of images that are presented in your image library.
+
+‘Resolution’ filtering might help you find images that do or do not meet your size requirements.
+
+‘Proportion’ filtering provides a clear way to go from wide to tall images in your dataset.
+
+‘File size’ filtering might help you find and eliminate excessively large or small files.
+
+‘Random’ filtering enables quick dataset exploration.
+
+And finally, ‘Rating-based’ filtering is effective for excluding low-quality or unwanted images once your model is trained, prioritizing your ratings when available, or using model predictions when not. 
+
+To train the model, you have to rate some amount of images, proceed to the ‘Train’ page and press ‘Train image evaluator’ button. After training, return to the ‘Images’ page. Now the system will rate new images as if it was rated by you. If you do not agree with the rating you can simply change it and train the model again, getting the model that is more and more aligned to your preferences., 
+
+Thank you for your attention. Till the next time.
+
+
+---- Friday, January 24, 2025 at 1:57:46 PM GMT+3 (Reddit post at r/DataHoarder) 
+Reddit post title: 
+I am making an open-source project that allow to do search and recommendations across locally stored data such as music and images. Here is a little preview of it.
+
+Dev Post:
+I would like to share with you my little personal project called “Anagnorisis”. It's a local recommendation system designed for personal data management, specifically for locally stored music and image collections. In the future I would also like to implement Video and Text modalities. The aim is to provide search and recommendation capabilities without reliance on external services, keeping data processing local. The idea behind the project is to give users control and data privacy by operating entirely on local devices. You can think about it as Spotify and Pinterest that works completely locally on your data. The recommendation engine is built on local AI models that is trained from your feedback of how much you like or dislike one or another piece of data.
+
+The video in the post is a demonstration of the image module. (Sorry for the AI-generated voice.) For context on the project's motivations and the rationale behind local data storage, you can read my latest article about the project "Why Should You Go Local?": https://medium.com/@AlexeyBorsky/anagnorisis-part-3-why-should-you-go-local-b68e2b99ff53
+
+Project repository is available on GitHub: https://github.com/volotat/Anagnorisis
+
+Thank you for your attention. Feedback and questions are really welcome.
+
+---- Friday, January 24, 2025 at 2:07:46 PM GMT+3 (Reddit post at r/DataHoarder) 
+Question: 
+What kind of hardware do you need to run the models/training reasonably fast?
+Dev Answer: 
+It is really low right now. There are only embedding models with a couple of very small personalization models. In total it takes less than 2BG of VRAM to run to use and train it. Although I do plan to add to this stack some LLMs for analyzing text data and from this the requirements might grow. But this is a long way ahead. The development is quite slow as there is not much free time to put into it, unfortunately.
+Question: 
+This project sounds very nice.
+"The development is quite slow as there is not much free time to put into it, unfortunately."
+But this is unfortunate.
+
+---- Friday, January 24, 2025 at 6:21:27 PM GMT+3 (Reddit post at r/DataHoarder) 
+Question:
+Spent about 20 minuted reading your write-ups and watching the video. Projects looks very interesting. I'm ready to jump in!
+Go to download and see.... not for Windows. <sad noises>
+Just another notch in the old "stop F'ing around and switch to Linux already!" column.
+Dev Answer:
+I was trying to run it on windows 11 some time ago. And it did work well, although the commands for set up had to be adjusted. I’m not sure if it is still the case, but I still encourage you to try it and create an issue in case it would not work.
+Question:
+I'm on Win10, not sure if that makes a difference? Would WSL or anything similar be required, or just different commands?
+I do have python installed, but I'm not sure about flask or anything else on Windows. I can do the research on how to make it work, just basically confirming it's possible.
+Dev Answer:
+Version of windows should not make the difference. If is it is not 98 or NT ofc. But the python is essential.
+
+---- Saturday, January 24, 2025 at 6 PM GMT+3 (Youtube comment on "Anagnorisis: Images module preview (v0.1.0)" video)
+Question: Can you select and import a subfolder with ratings already applied? I have images already rated in separate folders and being able to import them with ratings would greatly reduce the time to get this to work optimally.
+Dev Answer:
+Not yet, unfortunately. But I have .csv database import and export in the plans. If you could convert the ratings into appropriate csv table, you should be able to do that.
+
+---- Saturday, January 25, 2025 at 4:42:53 AM GMT+3 (Reddit post at r/DataHoarder) 
+Question:
+I'm sorry to be negative, but the AI narration on this was really annoying.
+
+I would much rather hear you yourself talk about it - I would probably understand it better if you explained by you created it, like "I had all my photos that I'd taken" or "I collect stock photography and wanted to navigate it"; if you were to talk simply and honestly about your goals for the app than I think it would be more understandable.
+Dev Answer:
+I am not a native speaker, so I generally avoid talking myself. But I will try to do that next time as I totally agree that AI narration sounds quite dull.
+Question:
+Best of luck to you with your project.
+
+---- Saturday, January 25, 2025 at 6:54:12 PM GMT+3 (Reddit post at r/DataHoarder) 
+Comment: This would be great to combinewith a vision LLM that creates Tags and Descriptions of the photos.

@@ -32,6 +32,7 @@ socketio = SocketIO(app, cors_allowed_origins="*")
 
 # List all folders in the extensions directory
 extension_names = [entry.name for entry in os.scandir('pages') if entry.is_dir()]
+extension_names = [entry for entry in extension_names if not entry.startswith('_')]
 
 # Import models from each extension
 for extension_name in extension_names:
@@ -117,6 +118,38 @@ for extension_name in extension_names:
 
   # Create a route for the extension
   app.add_url_rule(f'/{extension_name}', f'{extension_name}_route', create_route(extension_name))
+
+#### EXPORT DATABASE TO CSV FUNCTIONALITY
+import src.db_models
+from flask import send_file
+import io
+
+@app.route('/export_database_csv')
+def export_database_csv():
+    """
+    Exports all database tables to a CSV file, excluding BLOB data, and sends it as a response.
+    """
+    csv_data = src.db_models.export_db_to_csv(db.session, excluded_columns=['embedding'])  # Exclude embedding column
+    
+    csv_file = io.BytesIO()
+    csv_file.write(csv_data.encode('utf-8'))
+    csv_file.seek(0)
+
+    return send_file(
+        csv_file,
+        mimetype='text/csv',
+        as_attachment=True,
+        download_name='database_export.csv'
+    )
+
+@socketio.on('emit_import_database_csv')
+def import_database_csv(csv_data):
+    """
+    Handles the import of data from a CSV string into the database.
+    """
+    print('Importing the database from csv')
+    src.db_models.import_db_from_csv(db.session, csv_data)
+    print('Database has been imported successfully')
 
 #### RUNNING THE APPLICATION
 socketio.run(app, host=cfg.main.host, port=cfg.main.port)
