@@ -51,20 +51,27 @@ Then run the project with command:
 The project should be up and running on http://127.0.0.1:5001/  
 
 ## Downloading the models
+To make audio and visual search possible the project uses the models that are based on these works:  
+[LAION-AI/CLAP](https://github.com/LAION-AI/CLAP)  
+[Google/SigLIP](https://arxiv.org/pdf/2303.15343)  
+
 First of all make sure you have git-lfs installed (https://git-lfs.com).  
 Then go to 'models' folder with  
 ```cd models```
 
-**Music embedder: m-a-p/MERT-v1-95M**  
-```git clone https://huggingface.co/m-a-p/MERT-v1-95M```  
+**Music embedder: laion/clap-htsat-fused**  
+```git clone https://huggingface.co/laion/clap-htsat-fused```  
 
-Note that not all files from the repository are necessary. If you like, you can download only the files that are needed by hand and place them in the 'models/m-a-p/MERT-v1-95M' folder. Here is the list of files that are necessary:  
+Note that not all files from the repository are necessary. If you like, you can download only the files that are needed by hand and place them in the 'models/clap-htsat-fused' folder. Here is the list of files that are necessary:  
 ```
     config.json
-    configuration_MERT.py
-    modeling_MERT.py
+    merges.txt
     preprocessor_config.json
     pytorch_model.bin
+    special_tokens_map.json
+    tokenizer_config.json
+    tokenizer.json
+    vocab.json
 ```
 
 **Image embedder: google/siglip-base-patch16-224**  

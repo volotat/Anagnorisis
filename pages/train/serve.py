@@ -21,7 +21,7 @@ import transformers
 from flask import request
 
 from sklearn.model_selection import train_test_split
-from src.scoring_models import AudioEmbedder, Evaluator
+from src.scoring_models import Evaluator
 from tqdm import tqdm
 
 import pandas as pd
@@ -89,6 +89,8 @@ def init_socket_events(socketio, cfg=None, app=None):
 
   @socketio.on("emit_train_page_export_audio_dataset")
   def handle_emit_export_audio_dataset():
+    return None
+  
     # Create dataset from DB, select only music with user rating
     music_library_entries = src.db_models.MusicLibrary.query.filter(src.db_models.MusicLibrary.user_rating != None).all()
 

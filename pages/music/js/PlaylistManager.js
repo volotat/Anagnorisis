@@ -10,6 +10,7 @@ class PlaylistManager {
         this.DEFAULT_COVER_IMAGE = "static/images/128x128.png";
         this.isPlaying = false;
         this.MAX_SONGS_SHOWN = 30;
+        this.songControlPanel = null; // This is the SongControlPanel instance, it should be setted up by the main script
     }
 
     updatePlaylistPanel() {
@@ -25,7 +26,7 @@ class PlaylistManager {
           // Highlight if it's the currently playing song
           let isActiveClass = (globalIndex === this.currentSongIndex) ? 'is-active' : '';
       
-          playlistHtml += `
+          playlistHtml += /*html*/`
             <a class="panel-block ${isActiveClass}" data-path="${item.file_path}" data-index="${globalIndex}">
               <span class="panel-icon is-size-7">
                 <i class="fas fa-music" aria-hidden="true"></i>
@@ -37,7 +38,7 @@ class PlaylistManager {
       
         // Show how many songs are left if truncated
         if (this.playlist.length - startIndex - this.MAX_SONGS_SHOWN > 0) {
-          playlistHtml += `
+          playlistHtml += /*html*/`
             <a class="panel-block">
               ${this.playlist.length - startIndex - this.MAX_SONGS_SHOWN} more songs...
             </a>
@@ -77,7 +78,7 @@ class PlaylistManager {
         this.audioPlayer.src = '/music_files/' + currentSong.file_path;
         this.audioPlayer.play();
         this.isPlaying = true;
-        this.updateSongInfo(currentSong);
+        this.songControlPanel.updateSongInfo(currentSong);
         this.updatePlaylistPanel();
     }
     
@@ -114,16 +115,6 @@ class PlaylistManager {
             this.audioPlayer.play();
             this.isPlaying = true;
         }
-    }
-
-    updateSongInfo(song){
-        console.log(song);
-        // this.song_label_element.text(`${song.audiofile_data['artist']} - ${song.audiofile_data['title']} | ${song.audiofile_data['album']}`);
-        this.song_label_element.text(`${song.base_name}`);
-        //if (song.audiofile_data['image'] == null)
-        //    this.song_cover_image_element.attr("src", this.DEFAULT_COVER_IMAGE);
-        //else
-        //    this.song_cover_image_element.attr("src", song.audiofile_data['image']);
     }
 }
 

@@ -15,8 +15,9 @@ import imageio
 
 import src.scoring_models
 import pages.images.db_models as db_models
+import pages.file_manager as file_manager
 
-
+'''
 # TODO: Move hash caching into utils as it will be useful for all modules
 
 ###########################################
@@ -122,13 +123,13 @@ def get_all_files(current_path, media_formats):
     # Save the updated cache to the file
     save_file_list_cache()
     
-    return all_files
+    return all_files    
 
 ###########################################
 # Metadata Caching
 # TODO: Implement metadata caching
 # file_size, resolution, glip_embedding
-
+'''
 
 images_embeds_fast_cache = {}
 
@@ -148,6 +149,9 @@ class ImageSearch:
     ImageSearch.processor = AutoProcessor.from_pretrained("./models/siglip-base-patch16-224", local_files_only=True)
     ImageSearch.model_hash = ImageSearch.get_model_hash()
     ImageSearch.embedding_dim = ImageSearch.model.config.text_config.hidden_size
+
+    ImageSearch.cached_file_list = file_manager.CachedFileList('cache/images_file_list.pkl')
+    ImageSearch.cached_file_hash = file_manager.CachedFileHash('cache/images_file_hash.pkl')
 
   '''_instance = None
   def __new__(self, *args, **kwargs):
@@ -225,7 +229,7 @@ class ImageSearch:
     for ind, image_path in enumerate(tqdm(images)):
       try:
         # Compute the hash of the image file
-        image_hash = get_file_hash(image_path)
+        image_hash = ImageSearch.cached_file_hash.get_file_hash(image_path)
         
         # If the cache file exists, load the embeddings from it
         if image_hash in images_embeds_fast_cache:
@@ -328,6 +332,7 @@ class ImageSearch:
 
   @staticmethod
   def compare(embeds_img, embeds_text):
+    print(embeds_img.shape, embeds_text.shape) 
     logits_per_text = torch.matmul(embeds_text, embeds_img.t()) * ImageSearch.model.logit_scale.exp() + ImageSearch.model.logit_bias
     logits_per_image = logits_per_text.t()
 

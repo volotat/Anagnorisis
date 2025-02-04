@@ -181,7 +181,7 @@ class StarRatingHTMLContainer {
 
     // Conditional check for displaying image counts
     let imageCountDisplay = numImages === totalImages ? `[${numImages}]` : `[${numImages} | ${totalImages}]`;
-    folderRepresentation += `<li><a class="${isActive} ${color}" href="?${encoded_link}">${folderName} ${imageCountDisplay}</a>`;
+    folderRepresentation += /*html*/`<li><a class="${isActive} ${color}" href="?${encoded_link}">${folderName} ${imageCountDisplay}</a>`;
 
 
     // Sort the folders by name
@@ -225,7 +225,7 @@ class StarRatingHTMLContainer {
       console.log('emit_images_page_show_files', data);
 
       // Create a container for the images
-      let container = `<div class="fixed-grid has-${num_images_in_row}-cols is-gap-0.5">
+      let container = /*html*/`<div class="fixed-grid has-${num_images_in_row}-cols is-gap-0.5">
         <div class="grid" id="images_grid_container">
         </div>
       </div>`;
@@ -419,7 +419,7 @@ class StarRatingHTMLContainer {
         // Create a checkbox for selecting the file for further actions
         const checkboxLabel = document.createElement('label');
         checkboxLabel.className = 'b-checkbox checkbox is-large level-right mr-0 ';
-        checkboxLabel.innerHTML = `<input type="checkbox" value="false">
+        checkboxLabel.innerHTML = /*html*/`<input type="checkbox" value="false">
                               <span class="check is-success"></span>`;
         checkboxLabelInput = checkboxLabel.querySelector('input');
         checkboxLabelInput.dataset.filePath = item.full_path;
@@ -516,14 +516,14 @@ class StarRatingHTMLContainer {
           }
           console.log('urlParams', urlParams.toString());
 
-          let template = `<li>
+          let template = /*html*/`<li>
             <a href="?${urlParams.toString()}" class="pagination-link ${i == page?'is-current':''}" aria-label="Goto page ${i}">${i}</a>
           </li>`
           $(".pagination-list").append(template);
         }
         // add ellipsis when there are skipped pages
         else if (i == 2 && page > 3 || i == total_pages - 1 && page < total_pages - 2) {
-          let template = `<li>
+          let template = /*html*/`<li>
             <span class="pagination-ellipsis">&hellip;</span>
           </li>`
           $(".pagination-list").append(template);

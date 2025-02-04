@@ -1,4 +1,51 @@
----- 21 окт. 2024 г. ("Anagnorisis: Images module preview (v0.1.0)" video script)
+---- Topic start ---- (Reddit post at r/grooveshark)
+# I'm building a spiritual successor to Grooveshark: a local recommendation system that uses ML to recommend music from your personal music library : r/grooveshark
+
+**Posted by** u/Another__one **on** 2024-05-17 21:42:14 UTC
+
+Hello everybody, 
+  
+Many years ago, I loved spending time listening to music on Grooveshark, which had almost perfect recommendations 90% of the time. Unfortunately, the service was shut down, and, funny enough, my very first post on Reddit was about the death of Josh Greenberg: [Grooveshark Co-founder Found Dead at 28](https://www.reddit.com/r/grooveshark/comments/3gp98e/grooveshark_cofounder_found_dead_at_28/).
+
+Since then, I've tried many different music services, including YouTube Music, Spotify, Pandora, and others. None of them have worked nearly as well as Grooveshark, especially in terms of library completeness and recommendations. It's quite difficult to find the obscure music I enjoy on any of these services. What annoys me the most is how these platforms start pushing "popular" songs as soon as you stop paying attention, turning into promotion platforms rather than recommendation services.
+
+Ever since Grooveshark closed, I've been searching for a solution to fill this void. Eventually, I realized that the only way it could work is if the streaming service is hosted on the user's PC and plays their own music, just like in the good old days. However, I don't want to simply play songs randomly, I want the music to be recommended based on how much I like each song, similar to what recommendation services do. Therefore, I need a recommendation service that works locally.
+
+I tried to find something similar already built, but I had no luck. There are self-hosted streaming services, but none of them provide any sort of recommendation engine. So, about six months ago, I started developing such a service myself. The main idea is to give users a new way of filtering their own data by using AI to learn what types of data are important to them and to what extent.
+
+One of the main differences between Grooveshark and many other music recommendation services was that Grooveshark didn't use metadata as the basis for its recommendations. Instead, it used sonic analysis, which allowed for much more personalized recommendations. Anagnorisis works in a similar fashion but uses machine learning models to extract embeddings of the music and trains your personal model to estimate how much you would like a song based on your previous ratings. 
+
+And It is not only about the music. What I really wish to happen is to have a system that could work with any data on your behalf, and be able to rate sort it as if it was you. Local AI that could help you navigate a wasteful amount of information without any intermediates that can control it. So I plan to implement vector search to, for example, find music similar to what you want to listen to right now and add many more types of data: text, images, videos and so on.
+
+Anagnorisis is fully open-source and allows you to run it locally. I suspect there are still some people that might be interested in a project like this and maybe even provide some feedback.
+
+Here is the project on GitHub: [Anagnorisis](https://github.com/volotat/Anagnorisis)
+
+And here are articles I wrote about the ideas behind the project in more detail:
+[Anagnorisis. Part 1: A Vision for Better Information Management.](https://medium.com/@AlexeyBorsky/anagnorisis-part-1-a-vision-for-better-information-management-5658b6aaffa0)
+[Anagnorisis. Part 2: The Music Recommendation Algorithm.](https://medium.com/@AlexeyBorsky/anagnorisis-part-2-the-music-recommendation-algorithm-ba5ce7a0fa30)
+
+---
+**Comments:**
+
+*   **u/Funes-o-memorioso** said on 2024-08-23 01:24:03 UTC:
+    > I cannot overestimate how awesome your effort is. Nice work man!
+
+*   **u/adonaros** said on 2024-10-17 03:05:29 UTC:
+    > hey, i would like to help you. want to discuss over chat/message?
+    *   **u/Another__one** replied on 2024-10-17 07:01:09 UTC:
+        > Nice to hear that. I'll write you a DM.
+
+*   **u/angryaardvark** said on 2024-12-09 03:58:06 UTC:
+    > Just wanted to chime in - I worked on Grooveshark’s recommendation engine. We had notoriously bad metadata, but we had playlists. We leveraged how songs appeared together in playlists and how playlists were named.
+    >
+    >We had access to EchoNest (just like Spotify does now) but I don’t believe it was extensively used. Autoplay was based on similar artists in the queue. I don’t quite recall how similar artists were generated.
+    >
+    >Much much more was based on manual curation by a dedicated team of music fans than you can imagine :)
+---- Topic end ----
+
+---- Topic start ---- ("Anagnorisis: Images module preview (v0.1.0)" video script)
+---- 21 окт. 2024 г. ----
 Welcome to the ‘Anagnorisis’ 'Images' module. ‘Anagnorisis’ is an open-source local recommendation system designed to let you search, filter and process your personal data, securely on your local machine with the help of an AI-based recommendation engine that learns from your feedback.
 
 First, set up your image library path. Copy your local image folder path into the 'Path to local image library' field and press the ‘Save’ button. This initiates a process that gathers image hashes, setting up the caching system.
@@ -24,11 +71,235 @@ And finally, ‘Rating-based’ filtering is effective for excluding low-quality
 To train the model, you have to rate some amount of images, proceed to the ‘Train’ page and press ‘Train image evaluator’ button. After training, return to the ‘Images’ page. Now the system will rate new images as if it was rated by you. If you do not agree with the rating you can simply change it and train the model again, getting the model that is more and more aligned to your preferences., 
 
 Thank you for your attention. Till the next time.
+---- Topic end ----
 
 
----- Friday, January 24, 2025 at 1:57:46 PM GMT+3 (Reddit post at r/DataHoarder) 
+---- Topic start ---- (Reddit post at r/StableDiffusion)
+# I made an open-source tool that might be helpful to anyone working with a big amount of images. It can do semantic search, filter images by many properties and learn your personal preferences. Here is a preview of how it works. : r/StableDiffusion
+[Video presenting 'Images' module of the project]
+
+* **u/Another__one** said on 2024-10-21 18:05:49 UTC:
+    > I hope this might be helpful for people here. Especially for anyone training their own LoRAs on big datasets.  
+    > For anybody interested, here is the link to the Github: [https://github.com/volotat/Anagnorisis](https://github.com/volotat/Anagnorisis)
+    * **u/thrownawaymane** replied on 2024-10-22 00:06:04 UTC:
+        > Oh man, I forgot about Josh. RIP, definitely gone too soon
+        * **u/GBJI** replied on 2024-10-22 02:10:46 UTC:
+            > GrooveShark was the best !
+        * **u/Particular_Stuff8167** replied on 2024-10-22 00:52:16 UTC:
+            > who is Josh?
+            * **u/DevilaN82** replied on 2024-10-22 10:15:50 UTC:
+                > Josh Greenberg. Mentioned in the very end of readme file in the repo.
+    * **u/xxxxx451** replied on 2024-10-22 15:15:34 UTC:
+        > thank you ! is it able to load existing ratings from exif/xmp/iptc metadata or do we have to manually tag before training ? do you plan to support exporting metadata from the db to xmp (embed to metadata in the images or in sidecar files) ?
+        * **u/Another__one** replied on 2024-10-22 15:36:00 UTC:
+            > There is no import/export yet, but I do have plans for csv export/import of the user-ratings data. The project is still in its infancy, so there are yet lot of work to do.
+            > By the way, ratings are not connected to particular files, but rather their hash values. This way files might be easily copied and transferred while the ratings will still be preserved.
+            * **u/xxxxx451** replied on 2024-10-22 18:44:01 UTC:
+                > csv import/export sounds great !
+                > another question : would the file hash value remain the same if the user adds metadata in an external program ? (I guess the question is : do you compute the hash on the image data only - excluding metadata ?
+                *   **u/Another__one** replied on 2024-10-22 19:09:23 UTC:
+                    > It is byte-data hashing, so change in metadata would change a hash value. I am fully aware of this problem and tried to solve it in the 'Music' module by calculating hash only from audio-data. This turns out to be not so good a solution, as it is significantly slower (and it matters when there are a lot of files needed to be processed) and does not apply when the audio container or sampling frequency has been changed.
+                    > Much better solution would be to tie up ratings to embeddings rather than hashing. But I do expect all embedding models to be changed in the future, so it is not the time for it yet.
+                    > If only there be a general embedding model that could take any kind of data and produce meaningful embeddings out of it. Even better if the values of generated embeddings would be somewhat persisted from version to version and somehow sorted in the order of importance for a much faster way to find similar embeddings. But let's not spill all the beans right away...
+* **u/DankGabrillo** said on 2024-10-21 20:02:45 UTC:
+    > Dude, as caption editing and auto captioning to this and it’ll be the Swiss Army knife of Lora training, looks really promising
+    * **u/DankGabrillo** replied on 2024-10-21 20:05:14 UTC:
+        > Also imaging if this could somehow know the images you like then find them on the web and build the dataset, good god.
+*   **u/cmeerdog** said on 2024-10-21 20:31:39 UTC:
+    > does this show prompts, seeds, and other generative metadata?
+*   **u/monsieur__A** said on 2024-10-21 19:06:46 UTC:
+    > Looks really interesting, thx for sharing
+*   **u/Enshitification** said on 2024-10-21 22:05:58 UTC:
+    > It might be interesting to link into this with a Comfy node that can poll low-res overnight batch renders to determine which gens will be run again at full resolution.
+    * **u/Enshitification** replied on 2024-10-21 21:46:57 UTC:
+        > You can use a venv with a version of Python earlier than 3.12.
+        > Edit: Install pyenv and "pyenv install 3.11.9" to load whatever version of Python you want. then "pyenv local 3.11.9" or whatever in a directory. That directory and all subdirectories will now use that version of python.
+        * **u/cosmicnag** replied on 2024-10-22 11:57:06 UTC:
+            > Great thanks !
+    * **u/Enshitification** replied on 2024-10-21 22:18:02 UTC:
+        > I can't find a python version that doesn't break the requirements.txt. 3.9 is too old, 3.10 is too new. What's the solution?
+        * **u/Another__one** replied on 2024-10-21 22:22:55 UTC:
+            > I use Python 3.10.12 right now. But I will probably update it in a near future. I haven't tested it in any other environment rather than my own, so I guess it is expected for it not to run easily. I have plans to include a docker container, but I am still not sure if this is actually necessary.
+            * **u/Man_or_Monster** replied on 2024-10-21 22:34:52 UTC:
+                > Setting every requirement to an exact version is not best practice. This should only be done if the application absolutely requires that exact version. I know it would potentially be a lot of work to figure out which of these actually need that version, since the list is so massive, but the more of these in your requirements.txt, the more likely it will not work for anything but your specific environment.
+                > I really want to give this a try, but the requirements list is so massive and daunting that I'm nearly certain I will not be able to get it to work in my environment.
+                *   **u/Another__one** replied on 2024-10-22 00:07:26 UTC:
+                    > Yeah, I know. It is so specific and so massive because it is basically a snapshot of the exact environment I use while developing the project. I just updated it by the way, but not sure if it would help anybody. You are right though, it would be a good idea to figure it out one day.
+                    * **u/Mix-Acceptable** replied on 2024-12-23 10:04:29 UTC:
+                        > I’m also right now in the middle of redeveloping some major parts of the project, though it is mostly about music player and its recommendation engine.
+                        * **u/Mix-Acceptable** replied on 2024-12-23 20:31:41 UTC:
+                            > Thanks! Also, I’m not sure if I understand this well but how rating an image as a result of the similarity search help the algorithm improve? Does it improve the embedding model or a better ranking algorithm?
+                            * **u/Another__one** replied on 2024-12-23 23:59:11 UTC:
+                                > You train the model by going to the 'Train' page and pressing the button. Each time you do it, it creates a new small pytorch model (literally a few layers deep) that takes embeddings from the CLIP-like model and tries to predict your ratings from it. The model itself is quite small so it only takes a few minutes to train. And that's it. There is no ranking algorithm but the output of your model and the embedding model stays always the same, at least for now.
+                                > I have a dream to create a universal-embedding model that would allow to create a single model of any person's interests. But it is a long way to go, as there is not much time I could dedicate to that project, unfortunately.
+            * **u/cosmicnag** replied on 2024-10-22 12:46:17 UTC:
+                > Yeah, just tried and failed with
+                > ```
+                > No matching distribution found for torch==2.1.1+cu121
+                > ```
+                > Lemme know if you figure out something. Thanks.
+*   **u/reditor_13** said on 2024-10-21 23:26:30 UTC:
+    > Looks really promising, but one note - [https://huggingface.co/m-a-p/MERT-v1-95M](https://huggingface.co/m-a-p/MERT-v1-95M) the music model you suggest downloading to the 'models' folder has been flagged as suspicious by huggingface. However, based on your [https://github.com/volotat/Anagnorisis/blob/main/README.md](https://github.com/volotat/Anagnorisis/blob/main/README.md) it seems like the .pt model itself is not needed for the music embedding or the .sft for the image embedding?
+    * **u/Another__one** replied on 2024-10-21 23:36:33 UTC:
+        > No .pt is not required. pytorch_model.bin - the weights itself, everything else are just configuration files. Not sure why 'MERT-v1-95M_fairseq.pt' might be flagged. Probably simply because of unsafe data storage format. Regarding images, model.safetensors - is required as it is the file that contains the weights.
+*   **u/iternet** said on 2024-10-22 13:32:12 UTC:
+    > Why I think digiKam is more useful..
+*   **u/Hearcharted** said on 2024-10-22 02:11:12 UTC:
+    > A Cultured DataSet 🤔 Impressive • Very Nice 😏
+*   **u/msbeaute00000001** said on 2024-10-22 18:24:38 UTC:
+    > I think you should add License to your repo. What license will you put in there?
+*   **u/SiggySmilez** said on 2024-10-22 07:52:02 UTC:
+    > Wow amazing! Thanks for sharing!
+*   **u/Trysem** said on 2024-10-22 08:16:36 UTC:
+    > Great....!!!!!! Expecting an installer for apple silicon...
+---- Topic end ----
+
+---- Topic start ---- (Reddit post at r/StableDiffusion) 
+# What tool to keep images organized?
+
+Was wondering what tools you guys were using (if any) to keep your AI images library organised.
+
+I saw https://breadboard.me/ and https://github.com/RupertAvery/DiffusionToolkit but the first one lacks a tree-like folder/albums organisation structure and the 2nd one has albums but doesn't seem like you can have multi-layer folder structure.
+
+What I want to have is one folder per project then subfolders for each stages of the project. What I call a project is "a set of related images with a consistent character"
+
+Basically something like this :
+
+Project Name -- main folder of the project
+-ideas -- folder to mess with ideas
+-to fix -- composition needs fixes
+-low res -- composition is ok but in low res
+-upscaled -- final high quality images
+
+At the moment I'm using https://github.com/zanllp/sd-webui-infinite-image-browsing but it's not the best since folders are basically just references to the file system folders, so you have to manually move the files and create the folders in the file system which is a bit slow.
+
+Anyone got tool recommendation for this kind of workflow or even just remarks and advice to improve this workflow? I'm still very new to SD so all advices are much welcome!
+
+*   **u/Another__one** said on 2024-07-02 10:00:32 UTC:
+    > I am in the middle of developing something like this. [https://github.com/volotat/Anagnorisis](https://github.com/volotat/Anagnorisis)
+    > 
+    > It allows setting some folder as a root and then being able to perform semantic search on images in that folder and/or its subfolders. However, for now there is not that much functionality beyound search but only options to delete images or open it in their folders. This project is not about images, but data management in general with an ability to train models of your preferences and then use it as a filter for different types of data. For example one can rate several songs, train their music preferences model and use it for local radio stations that works similarly to Spotify but with your local music. Similar functionality is going to be implemented for images, text and other modalities.
+    *   **u/GodFalx** replied on 2024-07-02 16:57:21 UTC:
+        > Linux only :C
+        *   **u/Another__one** replied on 2024-07-02 17:05:04 UTC:
+            > I’m pretty sure it will run on windows just fine, I just never tested it on other platforms. As for now this project mostly for myself (and I do use it on a daily bases) it might change with time if people would be interested in it.
+---- Topic end ----
+
+
+---- Topic start ---- (Reddit post at r/LocalLLaMA) 
+# Demo of Anagnorisis - completely local recommendation system powered by Llama 2. Radio mode. Work in progress. : r/LocalLLaMA
+[Video presenting 'Radio' feature of the project] (The 'Radio' feature was removed later in the development)
+
+*   **u/Another__one** posted on 2023-12-11 11:18:41 UTC:
+    > Demo of Anagnorisis - completely local recommendation system powered by Llama 2. Radio mode. Work in progress.
+    
+    [Video](https://v.redd.it/wtapmju9gn5c1)
+    *   **u/a_beautiful_rhind** said on 2023-12-11 12:51:42 UTC:
+        > What is the tts?
+        *   **u/Another__one** replied on 2023-12-11 13:10:34 UTC:
+            > "tts_models/multilingual/multi-dataset/xtts_v2" model from [https://github.com/coqui-ai/TTS](https://github.com/coqui-ai/TTS). It gives pretty good results and works with references, so it's pretty easy to change the voice. By the way the source code of the project is open: [https://github.com/volotat/Anagnorisis](https://github.com/volotat/Anagnorisis) but be ready, the code is pretty raw for now.
+            *  **u/a_beautiful_rhind** replied on 2023-12-11 13:20:16 UTC:
+                > That explains why it sometimes goes into a UK accent but it's holding together surprisingly well. i should see if they released another update to their model.
+---- Topic end ----
+
+---- Topic start ---- (Reddit post at r/LocalLLaMA) 
+# Making a local recommendation system on top of Llama 2. Here is how it can help navigate the news from multiple sources. : r/LocalLLaMA
+[Video presenting 'News on map' feature of the project] (The 'News on map' feature was removed later in the development)
+
+*   **u/Another__one** said on 2024-01-06 19:28:38 UTC:
+    > For the past few months I’ve been developing a recommendation system that could work totally locally. It can gather information from multiple sources, rate and filter it. Here is the demonstration of how it could help to navigate through the news feed. It could predict the importance of the news based on your feedback, predict the GPS coordinate of the news, place it on the map and make a short summary of it.
+    > The project is at a very early stage, do not expect it working perfectly right the way. Here is the code of the project: [https://github.com/volotat/Anagnorisis](https://github.com/volotat/Anagnorisis)
+    *   **u/toothpastespiders** replied on 2024-01-07 01:26:00 UTC:
+        > That's ridiculously cool. Amazing job so far. And while this seems like an odd thing to give props for, fantastic name for it too!
+        *   **u/[deleted]** replied on 2024-01-07 14:16:47 UTC:
+            > agreed, I just wanted to pop in and say OP -- super cool
+    *   **u/slider2k** replied on 2024-01-06 20:50:25 UTC:
+        > Does it learn and predict the user preferences?
+        *   **u/Another__one** replied on 2024-01-06 20:57:33 UTC:
+            > Yes. This is the point. It saves your adjustments into the DB and then generates new data for model fine-tuning with qLora. Over time it becomes better and better align to your preferences.
+            *   **u/slider2k** replied on 2024-01-06 21:37:39 UTC:
+                > Can you describe in more detail?
+                *  **u/Another__one** replied on 2024-01-06 21:44:53 UTC:
+                    > You may take a look at the project description on the github, it should be pretty clear of how it is working.
+    *   **u/slider2k** replied on 2024-01-06 20:50:25 UTC:
+        > Does it learn and predict the user preferences?
+        *   **u/Another__one** replied on 2024-01-06 20:57:33 UTC:
+            > Yes. This is the point. It saves your adjustments into the DB and then generates new data for model fine-tuning with qLora. Over time it becomes better and better align to your preferences.
+            *   **u/slider2k** replied on 2024-01-06 21:37:39 UTC:
+                > Can you describe in more detail?
+                *   **u/Another__one** replied on 2024-01-06 21:44:53 UTC:
+                    > You may take a look at the project description on the github, it should be pretty clear of how it is working.
+*   **u/NachosforDachos** said on 2024-01-06 20:42:44 UTC:
+    > This is very cool especially the interface approach.
+    >
+    > How does it decide where to drop the pin?
+    >
+    > If one can swap out the data source from news to places at locations that would be a very nice tool. For example restaurants and when you click on them you can ask questions using RAG. Policy and inventory etc etc.
+    >
+    > Would need openai endpoint to be commercially deployable.
+    *   **u/Another__one** replied on 2024-01-06 20:54:34 UTC:
+        > It is simply predicted by LLM as text. At first the coordinate predictions are very rough, but then you can adjust some of the pins and add them to the DB. Then fine tune LLM with that data using qLora and it becomes much better over time. Basically the whole promise of the project is to create a set of instruments that allows you to align the model to you as well as possible.
+        *   **u/NachosforDachos** replied on 2024-01-06 21:13:31 UTC:
+            > I see. Looks like your target market is high end individuals in the sense of people that would go far to have something better than their peers.
+            >
+            > I can see someone into stock trading finding much value in a refined version catering to their discussion needs.
+            >
+            > The average person won’t expend this much energy to use such functions or learn them even.
+            *   **u/Another__one** replied on 2024-01-06 21:19:27 UTC:
+                > Nah.. My main target audience is just me. For some time at least. This is probably the only project of mine that I actually use on a daily basis. Though I wouldn't mind if someone else would find it helpful.
+                *   **u/NachosforDachos** replied on 2024-01-06 22:05:02 UTC:
+                    > It’s definitely nice to have in your portfolio to demonstrate your worth and resourcefulness. I’ve wasted so much time in my life doing similar things.
+                    >
+                    > This is an awful waste of talent to just expend on yourself however. If I was you I would change it a bit to be less towards your personal vision such as using local models and having privacy and more accessible by using gpt 3.5 and allowing the users to input their keys. It drastically lowers the barrier to entry.
+                    >
+                    > On top of that swap out the training and rather just try making it approximate location through scraping and Google searches. There’s no perfect products out there that all are flawed so don’t try to be perfect.
+                    >
+                    > Being able to select your news sites would on top of this and the interface accommodating it would be quite slick. Making it pull from surrounding areas to give more info on this around there might be nice too for the person wanting more even if not always relevant info.
+                    >
+                    > For example if I read about a murder at the lake I wouldn’t mind having a button that says find me more info related to the lake and summarise it.
+                    >
+                    > Throw that thing on product hunt and see what happens.
+                    >
+                    > There’s only so much consideration a person can have for finer details in a reply to the stranger to the internet so these are more like a skeleton of an idea of what you can do. I personally hate showing things I made to people because of the cheap way they comment on things haha.
+                    *   **u/Another__one** replied on 2024-01-06 22:18:38 UTC:
+                        > Thank you for your detailed response, I appreciate your input, though I am not planning on making this project into any sort of business. Yet I do see this project evolving into something interesting over time. News is just a very small part of this vision.
+*   **u/ThiloteE** said on 2024-01-06 23:02:10 UTC:
+    > I am very impressed by your system, even though it is only in python. Here my two cents:
+    >
+    > Have you considered using a different base model for the finetune? For instance- [https://huggingface.co/mistralai/Mistral-7B-v0.1](https://huggingface.co/mistralai/Mistral-7B-v0.1), [https://huggingface.co/01-ai/Yi-34B](https://huggingface.co/01-ai/Yi-34B)- [https://huggingface.co/microsoft/phi-2](https://huggingface.co/microsoft/phi-2), [https://huggingface.co/TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T](https://huggingface.co/TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T) or in general an option to switch the model? Also, how do you deal with the low context size of llama-7b? How will old messages vanish from context?
+    *   **u/Another__one** replied on 2024-01-07 01:16:00 UTC:
+        > For now I stick to LLama 2 as it works pretty well on my 8GB GPU. I do not want to have any limit on the model, so potentially you should be able to choose whatever the model you like. But it is in the future, I think.
+        >
+        > Then there is this project [https://github.com/sshh12/multi_token](https://github.com/sshh12/multi_token) that I really want to encorparate. So the model could rate the music, videos any other types of data.
+        *   **u/ThiloteE** replied on 2024-02-07 14:31:11 UTC:
+            > Thanks for the instant response. The reasons for why I asked were mainly three things:
+            >
+            > 1.  Llama 2 only has a context window limit of 4096 tokens, whereas mistral and its finetunes have up to 32768 tokens.
+            > 2.  If you look at huggingface or other benchmark leaderboards, mistral (and especially many of its derivative finetunes) beat llama-2 even though they are of comparable size.
+            > 3.  You might want to take licenses into account. Llama-2 has the meta license, which is more restrictive than mistrals apache-2.0 license. That is why many individuals in the fine-tuning community have moved on to use mistral or mixtral based models.
+*  **u/ThiloteE** said on 2024-01-06 23:09:32 UTC:
+    > Will this model become your own echo-chamber if you just train it long enough?
+    *   **u/Another__one** replied on 2024-01-07 01:11:07 UTC:
+        > Yes. Even more, if ever, it can accurately predict everything you like or dislike, it should have some sort of internal model of you, and pretty accurate one. And after that point there is no end to speculation of its deeper meaning...
+*   **u/AndrewVeee** said on 2024-01-06 21:21:49 UTC:
+    > This is cool! Love playing with ideas like this and seeing new ideas. I have no idea what fine tuning takes, but I assume my little laptop can't handle it haha
+    *   **u/Another__one** replied on 2024-01-07 12:09:22 UTC:
+        > Before switching to ML I worked as a full-stack programmer and we used Bulma quite extensively back then. I think this is one of the cleanest way to deal with css existing right now. Right now I do not use any JS framework for reactiveness as it would require to set up a separate server at least for front-end development and I do not like this idea, as I really do not want to complicate this project even further. But If anything I would choose Vue.js for it, rather than React or anything else.
+*   **u/Deerz** said on 2024-01-07 02:12:25 UTC:
+    > This is really cool! I love to see applications that go beyond the chat interface.
+    >
+    > What was your experience like using Bulma? I have experience building applications fully in Dash/Wave but for these LLM applications I'm hitting a bit of a wall not having the full front-end/back-end setup. I have Flask experience but was wondering if I should go full into learning React now or if there is a simpler option.
+    >
+    > Your front-end looks great and quite reactive.
+    *   **u/Another__one** replied on 2024-01-07 12:09:22 UTC:
+        > Before switching to ML I worked as a full-stack programmer and we used Bulma quite extensively back then. I think this is one of the cleanest way to deal with css existing right now. Right now I do not use any JS framework for reactiveness as it would require to set up a separate server at least for front-end development and I do not like this idea, as I really do not want to complicate this project even further. But If anything I would choose Vue.js for it, rather than React or anything else.
+---- Topic end ----
+
+---- Topic start ---- (Reddit post at r/DataHoarder) 
+-- Friday, January 24, 2025 at 1:57:46 PM GMT+3 
 Reddit post title: 
 I am making an open-source project that allow to do search and recommendations across locally stored data such as music and images. Here is a little preview of it.
+[Video presenting 'Images' module of the project]
 
 Dev Post:
 I would like to share with you my little personal project called “Anagnorisis”. It's a local recommendation system designed for personal data management, specifically for locally stored music and image collections. In the future I would also like to implement Video and Text modalities. The aim is to provide search and recommendation capabilities without reliance on external services, keeping data processing local. The idea behind the project is to give users control and data privacy by operating entirely on local devices. You can think about it as Spotify and Pinterest that works completely locally on your data. The recommendation engine is built on local AI models that is trained from your feedback of how much you like or dislike one or another piece of data.
@@ -39,7 +310,7 @@ Project repository is available on GitHub: https://github.com/volotat/Anagnorisi
 
 Thank you for your attention. Feedback and questions are really welcome.
 
----- Friday, January 24, 2025 at 2:07:46 PM GMT+3 (Reddit post at r/DataHoarder) 
+-- Friday, January 24, 2025 at 2:07:46 PM GMT+3
 Question: 
 What kind of hardware do you need to run the models/training reasonably fast?
 Dev Answer: 
@@ -49,7 +320,7 @@ This project sounds very nice.
 "The development is quite slow as there is not much free time to put into it, unfortunately."
 But this is unfortunate.
 
----- Friday, January 24, 2025 at 6:21:27 PM GMT+3 (Reddit post at r/DataHoarder) 
+-- Friday, January 24, 2025 at 6:21:27 PM GMT+3 
 Question:
 Spent about 20 minuted reading your write-ups and watching the video. Projects looks very interesting. I'm ready to jump in!
 Go to download and see.... not for Windows. <sad noises>
@@ -62,12 +333,12 @@ I do have python installed, but I'm not sure about flask or anything else on Win
 Dev Answer:
 Version of windows should not make the difference. If is it is not 98 or NT ofc. But the python is essential.
 
----- Saturday, January 24, 2025 at 6 PM GMT+3 (Youtube comment on "Anagnorisis: Images module preview (v0.1.0)" video)
+-- Saturday, January 24, 2025 at 6 PM GMT+3 (Youtube comment on "Anagnorisis: Images module preview (v0.1.0)" video)
 Question: Can you select and import a subfolder with ratings already applied? I have images already rated in separate folders and being able to import them with ratings would greatly reduce the time to get this to work optimally.
 Dev Answer:
 Not yet, unfortunately. But I have .csv database import and export in the plans. If you could convert the ratings into appropriate csv table, you should be able to do that.
 
----- Saturday, January 25, 2025 at 4:42:53 AM GMT+3 (Reddit post at r/DataHoarder) 
+-- Saturday, January 25, 2025 at 4:42:53 AM GMT+3 
 Question:
 I'm sorry to be negative, but the AI narration on this was really annoying.
 
@@ -77,5 +348,9 @@ I am not a native speaker, so I generally avoid talking myself. But I will try t
 Question:
 Best of luck to you with your project.
 
----- Saturday, January 25, 2025 at 6:54:12 PM GMT+3 (Reddit post at r/DataHoarder) 
-Comment: This would be great to combinewith a vision LLM that creates Tags and Descriptions of the photos.
+-- Saturday, January 25, 2025 at 6:54:12 PM GMT+3 
+Comment: This would be great to combine with a vision LLM that creates Tags and Descriptions of the photos.
+
+-- Sunday, January 26, 2025 at 9:10:38 AM GMT+3
+Comment: Very interested in this project. I purchased Excire Foto for similar functionality, but still looking for the right mix of features. Getting a new computer in Feb and will try installing/testing.
+---- Topic end ----

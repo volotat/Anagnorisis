@@ -53,8 +53,8 @@ class SongControlPanel {
         const currentTime = this.audioPlayer.currentTime;
         const duration = this.audioPlayer.duration;
         this.songProgressElement.val(duration > 0 ? ((currentTime + 0.25) / duration * 100) : 0);
-        localStorage.setItem("music_page_song_play_time", currentTime);
-        localStorage.setItem("music_page_song_hash", this.currentSongHash);
+        //localStorage.setItem("music_page_song_play_time", currentTime);
+        //localStorage.setItem("music_page_song_hash", this.currentSongHash);
     }
 
     handleProgressBarClick(event) {
@@ -85,13 +85,57 @@ class SongControlPanel {
         if (onHover === false)
             this.showSongRatingTimeout = setTimeout(() => this.showSongRating(this.currentSongScore, false, isUserRating), 500);
     }
-    
-    // updateSongInfo(song) {
-    //     this.currentSongHash = song.hash;
-    //     this.showSongRating(parseInt(song.user_rating) || parseInt(song.model_rating) || 0, false, song.user_rating != null);
-    //     this.songLabelElement.text(`${song.artist} - ${song.title} | ${song.album}`);
-    //     this.songCoverElement.attr("src", song.image || this.DEFAULT_COVER_IMAGE);
-    // }
+
+    // `${item.audio_element['artist']} - ${item.audio_element['title']} | ${item.audio_element['album']}`
+    // this.song_label_element.text(`${song.base_name}`);
+
+    updateSongInfo(song) {
+        // Initially, song contains only file_path info.
+        this.currentSongHash = null;
+        // Optionally, show a loading state here.
+        this.songLabelElement.text(`Loading song details...`);
+
+        // Now request additional info from the server.
+        this.fetchSongDetails(song.file_path)
+          .then((details) => {
+            console.log("Song details:", details);
+
+            // Merge detailed info into the song object.
+            song.artist = details.artist;
+            song.title = details.title;
+            song.album = details.album;
+            song.image = details.image;
+            song.user_rating = details.user_rating;
+            song.model_rating = details.model_rating;
+
+            // Update UI components.
+            this.showSongRating(parseInt(song.user_rating) || parseInt(song.model_rating) || null, false, song.user_rating != null);
+            this.songLabelElement.text(`${song.artist} - ${song.title} | ${song.album}`);
+            this.songCoverElement.attr("src", song.image || this.DEFAULT_COVER_IMAGE);
+          })
+          .catch((error) => {
+            console.error("Failed to fetch song details:", error);
+            this.songLabelElement.text("Error loading song details.");
+          });
+    }
+
+    fetchSongDetails(filePath) {
+        return new Promise((resolve, reject) => {
+            // Emit a socket event asking for song details.
+            this.socket.emit('emit_music_page_get_song_details', { file_path: filePath });
+
+            // Listen once for the response, e.g., 'emit_song_details'
+            this.socket.once('emit_music_page_show_song_details', (data) => {
+                if (data && data.file_path === filePath) {
+                    resolve(data);
+                } else {
+                    reject("Song details mismatch.");
+                }
+            });
+            // Add a timeout to reject the promise.
+            setTimeout(() => reject("Song details timeout."), 5000);
+        });
+    }
 
     updateButtons() {
         if (this.playlistManager.isPlaying) {

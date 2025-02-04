@@ -8,7 +8,7 @@ import hashlib
 import numpy as np
 from io import BytesIO
 
-from pages.images.engine import ImageSearch, ImageEvaluator, get_file_hash, save_hash_cache, get_all_files
+from pages.images.engine import ImageSearch, ImageEvaluator #, get_file_hash, save_hash_cache, get_all_files
 import math
 from scipy.spatial import distance
 import torch
@@ -111,6 +111,7 @@ def get_image_resolution(file_path):
 
 def init_socket_events(socketio, app=None, cfg=None):
   media_directory = cfg.images.media_directory
+  ImageSearch.initiate()
 
   image_evaluator = ImageEvaluator() #src.scoring_models.Evaluator(embedding_dim=768)
   image_evaluator.load('./models/image_evaluator.pt')
@@ -122,8 +123,9 @@ def init_socket_events(socketio, app=None, cfg=None):
   
 
   def update_model_ratings(files_list):
+    print(files_list)
     # filter out files that already have a rating in the DB
-    files_list_hash_map = {file_path: get_file_hash(file_path) for file_path in files_list}
+    files_list_hash_map = {file_path: ImageSearch.cached_file_hash.get_file_hash(file_path) for file_path in files_list}
     hash_list = list(files_list_hash_map.values())
 
     # Fetch rated images from the database in a single query
@@ -213,7 +215,7 @@ def init_socket_events(socketio, app=None, cfg=None):
     show_search_status(f"Searching for images in '{folder_path}'.")
   
     # Walk with cache 1.5s for 66k files
-    all_files = get_all_files(current_path, cfg.images.media_formats)
+    all_files = ImageSearch.cached_file_list.get_all_files(current_path, cfg.images.media_formats)
 
     show_search_status(f"Gathering hashes for {len(all_files)} images.")
     
@@ -228,9 +230,9 @@ def init_socket_events(socketio, app=None, cfg=None):
         show_search_status(f"Gathering hashes for {ind+1}/{len(all_files)} images.")
         last_shown_time = current_time
       
-      all_hashes.append(get_file_hash(file_path))
+      all_hashes.append(ImageSearch.cached_file_hash.get_file_hash(file_path))
 
-    save_hash_cache()
+    ImageSearch.cached_file_hash.save_hash_cache()
 
 
     # Sort image by text or image query
@@ -353,19 +355,19 @@ def init_socket_events(socketio, app=None, cfg=None):
     # Extracting metadata for relevant batch of images
     show_search_status(f"Extracting metadata for relevant batch of images")
     page_files = all_files[pagination:limit]
-    page_hashes = [get_file_hash(file_path) for file_path in page_files]
+    page_hashes = [ImageSearch.cached_file_hash.get_file_hash(file_path) for file_path in page_files]
 
     # Extract DB data for the relevant batch of images
     image_db_items = db_models.ImagesLibrary.query.filter(db_models.ImagesLibrary.hash.in_(page_hashes)).all()
     image_db_items_map = {item.hash: item for item in image_db_items}
 
     # Check if there images without model rating
-    no_model_rating_images = [item.hash for item in image_db_items if item.model_rating is None]
+    no_model_rating_images = [os.path.join(media_directory, item.file_path) for item in image_db_items if item.model_rating is None]
     print('no_model_rating_images size', len(no_model_rating_images))
 
     if len(no_model_rating_images) > 0:
       # Update the model ratings of all current images
-      update_model_ratings(page_files)
+      update_model_ratings(no_model_rating_images)
 
     for ind, full_path in enumerate(page_files):
       basename = os.path.basename(full_path)

@@ -53,6 +53,17 @@ Create a working docker environment to easily run the project.
 
 ## Versions History
 
+### Version 0.1.3 (04.02.2025)
+*   The project now checks for the existence of the image/music evaluator models before attempting to load them. If they don't exist, a dummy model is created to prevent errors. This ensures the application can start even if the evaluator models haven't been trained yet.
+*   Replaced the old audio embedding model (`m-a-p/MERT-v1-95M`) with `LAION-AI/CLAP`. New audio embedding model is based on the CLIP architecture that allows to make text search over the local music library.
+*   Significantly refactored the music embedder code. Removed the `AudioEmbedder` class from the main code. Implemented a new `MusicSearch` class in the `Music` page module, analogous to the `ImageSearch` class in the `Images` module, to handle music library searches.
+*   The `pages/music/serve.py` file was updated to reflect the changes in the way music is processed and embeddings are handled.
+*   When importing the database from a `.csv` file, empty fields are now correctly handled as `None` instead of empty string that caused errors.
+*   Some more info has been added to `project_info` folder to better handle AI interactions.
+*   The `ask.py` script can now use prompts from `.txt` files, allowing for more complex and reusable queries.
+*   Updated the requirements.txt file to include the sentencepiece library.
+*   Restored song metadata representation in the song's control panel. It now correctly displays album's image, artist, album, and title as well as current rating of the song. Changing the song's metadata and rating is not yet available.
+
 ### Version 0.1.2 (28.01.2025)
 *   File `requirements.txt` has been updated to include all necessary packages for the project without particular versions.
 *   Roadmap of the project has been added to the wiki.

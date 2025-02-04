@@ -28,3 +28,4 @@ moviepy
 peft 
 trl 
 pandas
+sentencepiece

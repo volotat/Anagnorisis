@@ -9,6 +9,7 @@ class MusicLibrary(db.Model):
   user_rating = db.Column(db.Integer, nullable=True)
   user_rating_date = db.Column(db.DateTime, nullable=True, default=None)
   model_rating = db.Column(db.Integer, nullable=True)
+  model_hash = db.Column(db.String, nullable=True)
   embedding = db.Column(db.LargeBinary, nullable=True)
   embedder_hash = db.Column(db.String, nullable=True)
   full_play_count = db.Column(db.Integer, nullable=True, default=0, server_default='0')

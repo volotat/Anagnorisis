@@ -110,7 +110,7 @@ def get_git_diff(input_dir):
         return "Unable to retrieve Git diff information."
 
 
-def main():
+def generate_from_source():
     # Configuration
     input_dir = os.path.abspath("../")
     system_prompt = """
@@ -122,22 +122,13 @@ def main():
     Consider best practices, potential issues, and optimization opportunities.
     Format your answers with clear headings and proper code formatting when needed."""
     
-    # Get API key from environment
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        print("Error: GEMINI_API_KEY not found in environment variables.")
-        print("Please set it using:")
-        print('export GEMINI_API_KEY="your-api-key"')
-        sys.exit(1)
     
-    genai.configure(api_key=api_key)
-
     # Create the model
     generation_config = {
         "temperature": 0.8,
         "top_p": 0.95,
         "top_k": 40,
-        "max_output_tokens": 8192,
+        "max_output_tokens": 8192 * 2,
         "response_mime_type": "text/plain",
     }
 
@@ -191,6 +182,72 @@ USER QUESTION:
             
     except Exception as e:
         print(f"\nError generating response: {str(e)}")
+
+def generate_from_prompt(prompt_path="prompt.txt"):
+    print("Generating response from prompt...")
+
+    # Read prompt from file
+    with open(prompt_path, "r") as f:
+        full_prompt = f.read()
+
+    system_prompt = "You are helpful AI assistant. Provide detailed, professional responses to the user's questions."
+
+    # Create the model
+    generation_config = {
+        "temperature": 0.8,
+        "top_p": 0.95,
+        "top_k": 40,
+        "max_output_tokens": 8192 * 2,
+        "response_mime_type": "text/plain",
+    }
+
+    # Initialize model with system instruction
+    model = genai.GenerativeModel(
+        model_name="gemini-2.0-flash-exp",
+        system_instruction=system_prompt,
+        generation_config=generation_config,
+    )
+
+    # Generate and stream response
+    print("\nGenerating response...\n")
+    try:
+        response = model.generate_content(full_prompt, stream=True)
+        
+        # Print streaming response
+        full_response = []
+        for chunk in response:
+            chunk_text = chunk.text
+            print(chunk_text, end="", flush=True)
+            full_response.append(chunk_text)
+        
+        # Save full response to file
+        with open("llm_response.md", "w") as f:
+            f.write("".join(full_response))
+            
+    except Exception as e:
+        print(f"\nError generating response: {str(e)}")
+
+def main():
+    # Get API key from environment
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        print("Error: GEMINI_API_KEY not found in environment variables.")
+        print("Please set it using:")
+        print('export GEMINI_API_KEY="your-api-key"')
+        sys.exit(1)
+    
+    genai.configure(api_key=api_key)
+
+    # Check for command-line arguments
+    if len(sys.argv) > 1:
+        prompt_path = sys.argv[1]
+        if os.path.exists(prompt_path):
+            generate_from_prompt(prompt_path)
+        else:
+            print(f"Error: The file '{prompt_path}' does not exist.")
+            sys.exit(1)
+    else:
+        generate_from_source()
 
 if __name__ == "__main__":
     main()

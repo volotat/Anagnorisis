@@ -55,6 +55,8 @@ import SongControlPanel from '/pages/music/js/SongControlPanel.js';
       socket,
       playlistManager
     );
+    playlistManager.songControlPanel = songControlPanel;
+
     
     // Event listener for when the current song ends
     audioPlayer.onended = function() {
@@ -79,7 +81,7 @@ import SongControlPanel from '/pages/music/js/SongControlPanel.js';
       all_files_paths = data["all_files_paths"];
 
       // Create a container for the images
-      let container = `<div class="fixed-grid has-${num_files_in_row}-cols is-gap-0.5">
+      let container = /*html*/`<div class="fixed-grid has-${num_files_in_row}-cols is-gap-0.5">
         <div class="grid" id="images_grid_container">
         </div>
       </div>`;
@@ -285,7 +287,7 @@ import SongControlPanel from '/pages/music/js/SongControlPanel.js';
         // Create a checkbox for selecting the file for further actions
         const checkboxLabel = document.createElement('label');
         checkboxLabel.className = 'b-checkbox checkbox is-large level-right mr-0 ';
-        checkboxLabel.innerHTML = `<input type="checkbox" value="false">
+        checkboxLabel.innerHTML = /*html*/`<input type="checkbox" value="false">
                               <span class="check is-success"></span>`;
         const checkboxLabelInput = checkboxLabel.querySelector('input');
         checkboxLabelInput.dataset.filePath = item.full_path;
@@ -383,14 +385,14 @@ import SongControlPanel from '/pages/music/js/SongControlPanel.js';
           }
           console.log('urlParams', urlParams.toString());
 
-          let template = `<li>
+          let template = /*html*/`<li>
             <a href="?${urlParams.toString()}" class="pagination-link ${i == page?'is-current':''}" aria-label="Goto page ${i}">${i}</a>
           </li>`
           $(".pagination-list").append(template);
         }
         // add ellipsis when there are skipped pages
         else if (i == 2 && page > 3 || i == total_pages - 1 && page < total_pages - 2) {
-          let template = `<li>
+          let template = /*html*/`<li>
             <span class="pagination-ellipsis">&hellip;</span>
           </li>`
           $(".pagination-list").append(template);

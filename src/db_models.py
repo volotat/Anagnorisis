@@ -103,6 +103,9 @@ def import_db_from_csv(db_session, csv_data):
                             value = datetime.strptime(value, '%Y-%m-%d %H:%M:%S.%f')
                         else:
                             value = None
+                    # Convert empty strings to None for non-string fields
+                    elif value == "" and not isinstance(db_table.c[db_col_name].type, db.String):
+                        value = None
                     row_data[db_col_name] = value
 
             # Attempt to match an existing record by "hash" or "file_path" if present

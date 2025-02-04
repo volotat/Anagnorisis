@@ -11,8 +11,26 @@ from omegaconf import OmegaConf
 import pages.file_manager as file_manager
 import pages.music.db_models as db_models
 
+from pages.music.engine import MusicSearch, MusicEvaluator
+
 from pages.utils import convert_size, convert_length
 
+
+class EmbeddingGatheringCallback:
+  def __init__(self, show_status_function=None):
+    self.last_shown_time = 0
+    self.start_time = time.time()
+    self.show_status_function = show_status_function
+
+  def __call__(self, num_extracted, num_total):
+    current_time = time.time()
+    if current_time - self.last_shown_time >= 1:
+      # Calculate the percentage of processed files
+      percent = (num_extracted / num_total) * 100
+
+      # Show the status
+      self.show_status_function(f"Extracted embeddings for {num_extracted}/{num_total} ({percent:.2f}%) files.")
+      self.last_shown_time = current_time
 
 def get_audiofile_data(file_path, url_path):
   """
@@ -105,14 +123,17 @@ def get_audiofile_data(file_path, url_path):
 def init_socket_events(socketio, app=None, cfg=None):
   media_directory = cfg.music.media_directory
 
-  cached_file_list = file_manager.CachedFileList('cache/music_file_list.pkl')
-  cached_file_hash = file_manager.CachedFileHash('cache/music_hashes.pkl')
+  MusicSearch.initiate()
+  cached_file_list = MusicSearch.cached_file_list
+  cached_file_hash = MusicSearch.cached_file_hash
 
-  # music_evaluator = MusicEvaluator() #src.scoring_models.Evaluator(embedding_dim=768)
-  # music_evaluator.load('./models/music_evaluator.pt')
+  music_evaluator = MusicEvaluator(embedding_dim=MusicSearch.embedding_dim) #src.scoring_models.Evaluator(embedding_dim=768)
+  music_evaluator.load('./models/music_evaluator.pt')
 
-  music_evaluator = lambda: None # Remove when music evaluator is implemented
-  music_evaluator.hash = None # Remove when music evaluator is implemented
+  def show_search_status(status):
+    socketio.emit('emit_music_page_show_search_status', status)
+
+  embedding_gathering_callback = EmbeddingGatheringCallback(show_search_status)
 
   def show_search_status(status):
     socketio.emit('emit_music_page_show_search_status', status)
@@ -137,18 +158,20 @@ def init_socket_events(socketio, app=None, cfg=None):
     db_models.db.session.commit()
 
   def update_model_ratings(files_list):
+    print('update_model_ratings')
+
     # filter out files that already have a rating in the DB
     files_list_hash_map = {file_path: cached_file_hash.get_file_hash(file_path) for file_path in files_list}
     hash_list = list(files_list_hash_map.values())
 
-    # Fetch rated images from the database in a single query
+    # Fetch rated files from the database in a single query
     rated_files_db_items = db_models.MusicLibrary.query.filter(
       db_models.MusicLibrary.hash.in_(hash_list),
       db_models.MusicLibrary.model_rating.isnot(None),
       db_models.MusicLibrary.model_hash.is_(music_evaluator.hash)
     ).all()
 
-    # Create a list of hashes for rated images
+    # Create a list of hashes for rated files
     rated_files_hashes = {item.hash for item in rated_files_db_items}
 
     # Filter out files that already have a rating in the database
@@ -156,38 +179,38 @@ def init_socket_events(socketio, app=None, cfg=None):
     if not filtered_files_list: return
     
 
-    # Rate all images in case they are not rated or model was updated
-    #embeddings = MusicSearch.process_images(filtered_files_list, callback=embedding_gathering_callback, media_folder=media_directory) #.cpu().detach().numpy() 
-    #model_ratings = music_evaluator.predict(embeddings)
+    # Rate all files in case they are not rated or model was updated
+    embeddings = MusicSearch.process_audio(filtered_files_list, callback=embedding_gathering_callback, media_folder=media_directory) #.cpu().detach().numpy() 
+    model_ratings = music_evaluator.predict(embeddings)
 
     # Update the model ratings in the database
-    show_search_status(f"Updating model ratings of images...") 
+    show_search_status(f"Updating model ratings of files...") 
     new_items = []
     update_items = []
     last_shown_time = 0
     for ind, full_path in enumerate(filtered_files_list):
-      print(f"Updating model ratings for {ind+1}/{len(filtered_files_list)} images.")
+      print(f"Updating model ratings for {ind+1}/{len(filtered_files_list)} files.")
 
       hash = files_list_hash_map[full_path]
-      model_rating = None #model_ratings[ind].item()
+      model_rating = model_ratings[ind].item()
 
-      image_db_item = db_models.ImagesLibrary.query.filter_by(hash=hash).first()
-      if image_db_item:
-        image_db_item.model_rating = model_rating
-        image_db_item.model_hash = music_evaluator.hash
-        update_items.append(image_db_item)
+      music_db_item = db_models.MusicLibrary.query.filter_by(hash=hash).first()
+      if music_db_item:
+        music_db_item.model_rating = model_rating
+        music_db_item.model_hash = music_evaluator.hash
+        update_items.append(music_db_item)
       else:
-        image_data = {
+        file_data = {
             "hash": hash,
             "file_path": os.path.relpath(full_path, media_directory),
             "model_rating": model_rating,
             "model_hash": music_evaluator.hash
         }
-        new_items.append(db_models.ImagesLibrary(**image_data))
+        new_items.append(db_models.MusicLibrary(**file_data))
 
       current_time = time.time()
       if current_time - last_shown_time >= 1:
-        show_search_status(f"Updated model ratings for {ind+1}/{len(filtered_files_list)} images.")
+        show_search_status(f"Updated model ratings for {ind+1}/{len(filtered_files_list)} files.")
         last_shown_time = current_time   
 
     # Bulk update and insert
@@ -225,7 +248,7 @@ def init_socket_events(socketio, app=None, cfg=None):
     folder_path = os.path.relpath(current_path, os.path.join(media_directory, '..')) + os.path.sep
     print('folder_path', folder_path)
 
-    show_search_status(f"Searching for images in '{folder_path}'.")
+    show_search_status(f"Searching for music files in '{folder_path}'.")
 
     all_files = []
     
@@ -255,10 +278,10 @@ def init_socket_events(socketio, app=None, cfg=None):
 
 
     # Sort music files by text or file query
-    show_search_status(f"Sorting images by {text_query}")
+    show_search_status(f"Sorting music files by {text_query}")
     if text_query and len(text_query) > 0:
       # If there is an music file with the path of the query, sort files by similarity to that file
-      if os.path.isfile(text_query) and text_query.lower().endswith(tuple(cfg.images.media_formats)):
+      if os.path.isfile(text_query) and text_query.lower().endswith(tuple(cfg.music.media_formats)):
         '''target_path = text_query
         show_search_status(f"Extracting embeddings")
         embeds_img = ImageSearch.process_images(all_files, callback=embedding_gathering_callback, media_folder=media_directory)
@@ -327,11 +350,11 @@ def init_socket_events(socketio, app=None, cfg=None):
         np.random.shuffle(all_files)
       # Sort music by rating
       elif text_query.lower().strip() == "rating": 
-        '''# Update the model ratings of all current images
+        # Update the model ratings of all current files
         update_model_ratings(all_files)
 
         # Get all ratings from the database
-        items = db_models.ImagesLibrary.query.filter(db_models.ImagesLibrary.hash.in_(all_hashes)).all()
+        items = db_models.MusicLibrary.query.filter(db_models.MusicLibrary.hash.in_(all_hashes)).all()
 
         # Create a dictionary to map hashes to their ratings
         hash_to_rating = {item.hash: item.user_rating if item.user_rating is not None else item.model_rating for item in items}
@@ -346,20 +369,20 @@ def init_socket_events(socketio, app=None, cfg=None):
         all_ratings = [rating if rating is not None else mean_score for rating in all_ratings]
 
         # Sort the files by the ratings
-        all_files = [file_path for _, file_path in sorted(zip(all_ratings, all_files), reverse=True)]'''
+        all_files = [file_path for _, file_path in sorted(zip(all_ratings, all_files), reverse=True)]
       # Sort music by the text query
       else:
-        '''show_search_status(f"Extracting embeddings")
-        embeds_img = ImageSearch.process_images(all_files, callback=embedding_gathering_callback, media_folder=media_directory)
-        embeds_text = ImageSearch.process_text(text_query)
-        scores = ImageSearch.compare(embeds_img, embeds_text)
+        show_search_status(f"Extracting embeddings")
+        embeds_img = MusicSearch.process_audio(all_files, callback=embedding_gathering_callback, media_folder=media_directory)
+        embeds_text = MusicSearch.process_text(text_query)
+        scores = MusicSearch.compare(embeds_img, embeds_text)
 
         # Create a list of indices sorted by their corresponding score
         show_search_status(f"Sorting by relevance")
         sorted_indices = sorted(range(len(scores)), key=scores.__getitem__, reverse=True)
 
         # Use the sorted indices to sort all_files
-        all_files = [all_files[i] for i in sorted_indices]'''
+        all_files = [all_files[i] for i in sorted_indices]
 
     #all_files = sorted(all_files, key=os.path.basename)
 
@@ -373,13 +396,13 @@ def init_socket_events(socketio, app=None, cfg=None):
     music_db_items = db_models.MusicLibrary.query.filter(db_models.MusicLibrary.hash.in_(page_hashes)).all()
     music_db_items_map = {item.hash: item for item in music_db_items}
 
-    # Check if there images without model rating
-    no_model_rating_files = [item.hash for item in music_db_items if item.model_rating is None]
+    # Check if there files without model rating
+    no_model_rating_files = [os.path.join(media_directory, item.file_path) for item in music_db_items if item.model_rating is None]
     print('no_model_rating_files size', len(no_model_rating_files))
     
-    #if len(no_model_rating_files) > 0:
-    #  # Update the model ratings of all current images
-    #  update_model_ratings(page_files)
+    if len(no_model_rating_files) > 0:
+      # Update the model ratings of all current files
+      update_model_ratings(no_model_rating_files)
 
     for ind, full_path in enumerate(page_files):
       basename = os.path.basename(full_path)
@@ -427,7 +450,21 @@ def init_socket_events(socketio, app=None, cfg=None):
     
     socketio.emit('emit_music_page_show_files', {"files_data": files_data, "folder_path": folder_path, "total_files": len(all_files), "folders": folders, "all_files_paths": all_files_paths})
 
-    show_search_status(f'{len(all_files)} images processed in {time.time() - start_time:.4f} seconds.')
+    show_search_status(f'{len(all_files)} files processed in {time.time() - start_time:.4f} seconds.')
+
+  @socketio.on('emit_music_page_get_song_details')
+  def get_song_details(data):
+    file_path = data.get('file_path', '')
+
+    full_path = os.path.join(media_directory, file_path)
+    audiofile_data = get_audiofile_data(full_path, "")
+    audiofile_data['hash'] = cached_file_hash.get_file_hash(full_path)
+    db_item = db_models.MusicLibrary.query.filter_by(hash=audiofile_data['hash']).first()
+    audiofile_data['user_rating'] = db_item.user_rating
+    audiofile_data['model_rating'] = db_item.model_rating
+    audiofile_data['file_path'] = file_path
+
+    socketio.emit('emit_music_page_show_song_details', audiofile_data)
 
   @socketio.on('emit_music_page_get_path_to_media_folder')
   def get_path_to_media_folder():
@@ -437,7 +474,7 @@ def init_socket_events(socketio, app=None, cfg=None):
   @socketio.on('emit_music_page_update_path_to_media_folder')
   def update_path_to_media_folder(new_path):
     nonlocal media_directory
-    cfg.images.media_directory = new_path
+    cfg.music.media_directory = new_path
 
     # Update the configuration file
     with open('config.yaml', 'w') as file:

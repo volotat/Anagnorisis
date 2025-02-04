@@ -2,8 +2,6 @@ main:
   host: localhost
   port: 5001
   flask_secret_key: secret!123
-models:
-  audio_embedder: m-a-p/MERT-v1-95M
 music:
   media_directory: /media/alex/Expansion/Music/
   media_formats:

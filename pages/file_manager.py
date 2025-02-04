@@ -27,6 +27,9 @@ class CachedFileHash:
             pickle.dump(self.file_hash_cache, cache_file)
 
     def get_file_hash(self, file_path):
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"File not found: {file_path}")
+
         # Get the last modified time of the file
         last_modified_time = os.path.getmtime(file_path)
         
