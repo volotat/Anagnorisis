@@ -31,6 +31,7 @@ class SongControlPanel {
 
     setupEventListeners() {
         this.audioPlayer.addEventListener("timeupdate", () => this.updateProgressBar());
+        this.audioPlayer.addEventListener("ended", () => this.nextSong());
         this.songProgressElement.on("click", (event) => this.handleProgressBarClick(event));
     }
 
@@ -41,12 +42,11 @@ class SongControlPanel {
       this.starRatingComponent = new StarRatingComponent({callback: callback});
       let element = this.starRatingComponent.issueNewHtmlComponent({
         containerType: 'span',
-        size:3, 
-        isActive: true
+        //size:3, 
+        isActive: true,
       });
       this.songRatingElement.empty();
       this.songRatingElement.append(element);
-      this.songRatingElement.mouseleave(() => this.showSongRating(this.currentSongScore));
     }
 
     updateProgressBar() {
@@ -66,24 +66,17 @@ class SongControlPanel {
         this.audioPlayer.currentTime = (clickPercentage / 100) * audioDuration;
     }
 
-    setSongRating(score) {
+    setSongRating(score, updateServer = true) {
         this.currentSongScore = score;
-        this.showSongRating(score);
-        // this.socket.emit('emit_music_page_set_song_rating', { hash: this.currentSongHash, score: score });
-    }
+        //this.showSongRating(score);
 
-    showSongRating(score, onHover = false, isUserRating = true) {
-        if (!onHover) {
-            this.currentSongScore = score;
-        }
         this.starRatingComponent.rating = score;
         this.starRatingComponent.updateAllContainers();
 
-        if (this.showSongRatingTimeout) {
-          clearTimeout(this.showSongRatingTimeout);
+        if (updateServer && this.currentSongHash) {
+            console.log(`Calling server to set '${this.currentSongHash}' song rating: ${score}`);
+            this.socket.emit('emit_music_page_set_song_rating', { hash: this.currentSongHash, score: score });
         }
-        if (onHover === false)
-            this.showSongRatingTimeout = setTimeout(() => this.showSongRating(this.currentSongScore, false, isUserRating), 500);
     }
 
     // `${item.audio_element['artist']} - ${item.audio_element['title']} | ${item.audio_element['album']}`
@@ -107,9 +100,12 @@ class SongControlPanel {
             song.image = details.image;
             song.user_rating = details.user_rating;
             song.model_rating = details.model_rating;
+            this.currentSongHash = details.hash;
 
             // Update UI components.
-            this.showSongRating(parseInt(song.user_rating) || parseInt(song.model_rating) || null, false, song.user_rating != null);
+            //this.showSongRating(parseInt(song.user_rating) || parseInt(song.model_rating) || null, false, song.user_rating != null);
+            this.starRatingComponent.isUserRated = song.user_rating != null;
+            this.setSongRating(parseFloat(song.user_rating) || parseFloat(song.model_rating) || null, false);
             this.songLabelElement.text(`${song.artist} - ${song.title} | ${song.album}`);
             this.songCoverElement.attr("src", song.image || this.DEFAULT_COVER_IMAGE);
           })

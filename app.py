@@ -26,7 +26,7 @@ app = Flask(__name__, template_folder='pages', static_folder='static')
 #app.debug = True
 
 app.config['SECRET_KEY'] = cfg.main.flask_secret_key
-app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///project.db"
+app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{cfg.main.database_path}"
 
 socketio = SocketIO(app, cors_allowed_origins="*")
 
@@ -57,8 +57,10 @@ migrate = Migrate(app, db)
 
 markdown_extensions = [
     'tables',
-    CodeHiliteExtension(),
     ArithmatexExtension(generic=True, preview=False, smart_dollar=False),
+    'fenced_code', 
+    'codehilite',
+    'nl2br',
 ]
 
 #### MAIN PAGE FUNCTIONALITY
@@ -106,18 +108,25 @@ def create_route(ext_name):
     return render_template_string(page_template, cfg=cfg, pages=extension_names, current_page=ext_name)
   return extension_route
 
+# Initialize the socket events for each extension
 for extension_name in extension_names:
-  if not os.path.exists(f'pages/{extension_name}/serve.py'):
-    continue
-  
-  # Import pages/music/serve.py
-  exec(f'import pages.{extension_name}.serve')
+    if not os.path.exists(f'pages/{extension_name}/serve.py'):
+        continue
 
-  # Initialize the extension
-  exec(f'pages.{extension_name}.serve.init_socket_events(socketio, app=app, cfg=cfg)')
+    serve_module_path = f'pages.{extension_name}.serve'
+    try:
+        module = import_module(serve_module_path)
+        if hasattr(module, 'init_socket_events') and callable(module.init_socket_events):
+            module.init_socket_events(socketio, app=app, cfg=cfg)
 
-  # Create a route for the extension
-  app.add_url_rule(f'/{extension_name}', f'{extension_name}_route', create_route(extension_name))
+            # Create a route for the extension
+            app.add_url_rule(f'/{extension_name}', f'{extension_name}_route', create_route(extension_name))
+        else:
+            print(f"Warning: Module {serve_module_path} does not have a callable init_socket_events function.")
+    except ImportError as e:
+        print(f"Warning: Could not import module {serve_module_path}: {e}")
+    except Exception as e:
+        print(f"Error initializing extension {extension_name}: {e}")
 
 #### EXPORT DATABASE TO CSV FUNCTIONALITY
 import src.db_models

@@ -6,7 +6,7 @@ import SongControlPanel from '/pages/music/js/SongControlPanel.js';
 // Create a closed scope to avoid any variable collisions  
 (function() {
   //// CONSTANTS AND VARIABLES
-  let num_files_on_page = 60;
+  let num_files_on_page = 30;
   let num_files_in_row = 6; // TODO: calculate from the screen size
   let selected_files = [];
   let all_files_paths = [];
@@ -56,12 +56,6 @@ import SongControlPanel from '/pages/music/js/SongControlPanel.js';
       playlistManager
     );
     playlistManager.songControlPanel = songControlPanel;
-
-    
-    // Event listener for when the current song ends
-    audioPlayer.onended = function() {
-      songControlPanel.nextSong();
-    };
 
     // Request current media folder path
     socket.emit('emit_music_page_get_path_to_media_folder');
@@ -127,11 +121,11 @@ import SongControlPanel from '/pages/music/js/SongControlPanel.js';
         // Create a new star rating component
         const callback = (rating) => {
           console.log('New rating:', rating);
-          socket.emit('emit_music_page_set_music_rating', {
+          /*socket.emit('emit_music_page_set_music_rating', {
             hash: item.hash,
             file_path: item.file_path,
             rating: rating,
-          });
+          });*/
         }
         const starRating = new StarRatingComponent({
           callback: callback,
@@ -211,7 +205,7 @@ import SongControlPanel from '/pages/music/js/SongControlPanel.js';
 
         const StarRatingComponentObject = starRating.issueNewHtmlComponent({
           containerType: 'span',
-          size:6, 
+          //size:6, 
           isActive: false
         })
         $(data).append('<br><b>User rating:</b>&nbsp;&nbsp;');

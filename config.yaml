@@ -2,6 +2,7 @@ main:
   host: localhost
   port: 5001
   flask_secret_key: secret!123
+  database_path: project.db
 music:
   media_directory: /media/alex/Expansion/Music/
   media_formats:
@@ -98,7 +99,7 @@ images:
   - .webp
   - .tiff
 videos:
-  media_directory: /media/alex/Expansion/Videos
+  media_directory: /media/alex/Expansion/Videos/
   media_formats:
   - .mp4
   - .webm

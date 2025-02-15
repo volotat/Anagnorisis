@@ -169,7 +169,9 @@ static/tmp/
 static/discarded/
 experiments/
 old_code/
+
 project_info/prompt*
 project_info/llm_prompt.txt
 project_info/llm_response.md
 project_info/test_data/
+project_info/conversations/

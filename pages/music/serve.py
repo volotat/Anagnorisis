@@ -7,6 +7,9 @@ from flask import send_from_directory
 import math
 import numpy as np
 from omegaconf import OmegaConf
+import datetime
+import torch
+import gc
 
 import pages.file_manager as file_manager
 import pages.music.db_models as db_models
@@ -14,6 +17,8 @@ import pages.music.db_models as db_models
 from pages.music.engine import MusicSearch, MusicEvaluator
 
 from pages.utils import convert_size, convert_length
+
+from pages.recommendation_engine import sort_files_by_recommendation
 
 
 class EmbeddingGatheringCallback:
@@ -31,6 +36,45 @@ class EmbeddingGatheringCallback:
       # Show the status
       self.show_status_function(f"Extracted embeddings for {num_extracted}/{num_total} ({percent:.2f}%) files.")
       self.last_shown_time = current_time
+
+def compute_distances_batched(embeds_img, batch_size=1024 * 24):
+  # Ensure input is a torch tensor (on CPU)
+  embeds_img = torch.tensor(embeds_img, dtype=torch.float32)
+
+  num_images = embeds_img.shape[0]
+  # Initialize the distances matrix on the CPU
+  distances = torch.zeros((num_images, num_images), dtype=torch.float32)
+
+  for start_row in range(0, num_images, batch_size):
+    print(f"Processing row {start_row} of {num_images}")
+
+    end_row = min(start_row + batch_size, num_images)
+    # Move only the current batch to GPU
+    batch = embeds_img[start_row:end_row].cuda()
+
+    for start_col in range(0, num_images, batch_size):
+      end_col = min(start_col + batch_size, num_images)
+      # Move the comparison batch to GPU
+      compare_batch = embeds_img[start_col:end_col].cuda()
+      # Compute pairwise distances for the batch on GPU
+      dists_batch = torch.cdist(batch, compare_batch, p=2).cpu()  # Move results back to CPU
+      
+      distances[start_row:end_row, start_col:end_col] = dists_batch
+      if start_col != start_row:  # Fill the symmetric part of the matrix
+        distances[start_col:end_col, start_row:end_row] = dists_batch.T
+
+      del compare_batch  # Free the memory used by the comparison batch
+      del dists_batch  # Free the memory used by the batch
+
+    del batch  # Free the memory used by the batch
+
+  distances.fill_diagonal_(float('inf'))  # Ignore self-distances
+  distances = distances.detach().numpy()  # Convert to a NumPy array
+
+  gc.collect()  # Force garbage collection to free memory
+  torch.cuda.empty_cache()  # Free the memory used by the GPU
+  
+  return distances  # Convert to a NumPy
 
 def get_audiofile_data(file_path, url_path):
   """
@@ -307,8 +351,8 @@ def init_socket_events(socketio, app=None, cfg=None):
         all_files = sorted(all_files, key=lambda x: resolutions[x][0] * resolutions[x][1])'''
       # Sort music by duplicates
       elif text_query.lower().strip() == "similarity":
-        '''show_search_status(f"Extracting embeddings")
-        embeds_img = ImageSearch.process_images(all_files, callback=embedding_gathering_callback, media_folder=media_directory).cpu().detach().numpy() 
+        show_search_status(f"Extracting embeddings")
+        embeds_img = MusicSearch.process_audio(all_files, callback=embedding_gathering_callback, media_folder=media_directory).cpu().detach().numpy() 
 
         show_search_status(f"Computing distances between embeddings")
         # Assuming embeds_img is an array of image embeddings
@@ -344,7 +388,7 @@ def init_socket_events(socketio, app=None, cfg=None):
         # Sort the list of tuples by target_min_distance, then by file_size
         sorted_files = sorted(files_with_target_distances_and_sizes, key=lambda x: (x[0], x[1], x[2]))
         # Extract the sorted list of file paths
-        all_files = [file_path for _, _, _, file_path in sorted_files]'''
+        all_files = [file_path for _, _, _, file_path in sorted_files]
       # Sort music randomly
       elif text_query.lower().strip() == "random":
         np.random.shuffle(all_files)
@@ -370,6 +414,21 @@ def init_socket_events(socketio, app=None, cfg=None):
 
         # Sort the files by the ratings
         all_files = [file_path for _, file_path in sorted(zip(all_ratings, all_files), reverse=True)]
+      if text_query.lower().strip() == "recommendation":
+        music_data = db_models.MusicLibrary.query.with_entities(
+            db_models.MusicLibrary.hash,
+            db_models.MusicLibrary.user_rating,
+            db_models.MusicLibrary.model_rating,
+            db_models.MusicLibrary.full_play_count,
+            db_models.MusicLibrary.skip_count,
+            db_models.MusicLibrary.last_played
+        ).filter(db_models.MusicLibrary.hash.in_(all_hashes)).all()
+
+        keys = ['hash', 'user_rating', 'model_rating', 'full_play_count', 'skip_count', 'last_played']
+        music_data_dict = [dict(zip(keys, row)) for row in music_data]
+        all_files, scores = sort_files_by_recommendation(all_files, music_data_dict)
+        #for m, s in zip(all_files, scores):
+        #    print(f"{m} => recommendation score: {s}")
       # Sort music by the text query
       else:
         show_search_status(f"Extracting embeddings")
@@ -465,6 +524,27 @@ def init_socket_events(socketio, app=None, cfg=None):
     audiofile_data['file_path'] = file_path
 
     socketio.emit('emit_music_page_show_song_details', audiofile_data)
+
+  @socketio.on('emit_music_page_set_song_rating')
+  def set_song_rating(data):
+    song_hash = data['hash'] 
+    song_score = data['score']
+
+    print('Set song rating:', song_hash, song_score)
+
+    song = db_models.MusicLibrary.query.filter_by(hash=song_hash).first()
+    song.user_rating = float(song_score)
+    song.user_rating_date = datetime.datetime.now()
+    db_models.db.session.commit()
+
+  @socketio.on('emit_music_page_update_song_info')
+  def update_song_info(data):
+    # NOTE: It is very important to update the hash of the file in the database after the 
+    # metadata has been updated to not lose user rating of the song and other connected data
+    
+    #print('update_song_info', data)
+    #edit_lyrics(data['file_path'], data['lyrics'])
+    pass
 
   @socketio.on('emit_music_page_get_path_to_media_folder')
   def get_path_to_media_folder():

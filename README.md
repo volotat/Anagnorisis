@@ -123,7 +123,6 @@ Notice, that only *.mp3 format could be rated by the model automatically for now
 
 To see how the algorithm works in details, please read this wiki page: [Music](wiki/music.md)
 
-
 ## Wiki
 The project has its own wiki that is integrated into the project itself, you might access it by running the project, or simply reading it as markdown files.
 
@@ -132,23 +131,6 @@ Here is some pages that might be interesting for you:
 [Philosophy](wiki/philosophy.md)  
 [Music](wiki/music.md)  
 [Images](wiki/images.md)  
-
-## `ask.py` - Project Question Answering
-For easier development and information access, the project includes an `ask.py` script located in the `project_info` folder. This script allows you to ask questions about the project's codebase using Google's "gemini-2.0-flash-exp" model.  
-
-⚠️  **Warning**: Please be aware that when using `ask.py`, the project's source code and any current changes are sent to Google's servers for processing. **Do not include any personal or sensitive information in the project's folders and files or in the questions you ask.**  
-
-To use `ask.py`, follow these steps:
-
-1.  Set your Google Gemini API key as an environment variable:
-    ```bash
-    export GEMINI_API_KEY="your-api-key"
-    ```
-2.  Run the script from the `project_info` directory:
-    ```bash
-    cd project_info
-    python ask.py
-    ```
 
 ---------------	
 In memory of [Josh Greenberg](https://variety.com/2015/digital/news/grooveshark-josh-greenberg-dead-1201544107/) - one of the creators of Grooveshark. Long gone music service that had the best music recommendation system I've ever seen. 

@@ -1,0 +1,3 @@
+This folder contains a quick test of p2p connection via py-libp2p library. Unfortunately, for some reason I was not able to connect to any of the available bootstrap nodes. This is either some problems with the library, as it seems to not have all the necessary features yet implemented, or the problem is with the network configuration. 
+
+As a quick solution I might try to set up a traditional server that would collect IPFS CID and corresponding embedding vectors that would be sent by users and then present them in some 'Discovery' page. This way users would be able to find shared content and be able to search and filter through it as well as using Anagnorisis' recommendation engine with this content.

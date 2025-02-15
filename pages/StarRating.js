@@ -4,13 +4,13 @@ class StarRatingComponent {
     this.rating = initialRating;
     this.containers = [];
     this.callback = callback;
+    this.isUserRated = false;
   }
 
   issueNewHtmlComponent(params) {
-    const starRatingHTMLContainer = new StarRatingHTMLContainer(this, params);
-    this.containers.push(starRatingHTMLContainer);
-
-    return starRatingHTMLContainer.container;
+    const ratingContainer = new StarRatingHTMLContainer(this, params);
+    this.containers.push(ratingContainer);
+    return ratingContainer.container;
   }
 
   updateAllContainers() {
@@ -19,103 +19,34 @@ class StarRatingComponent {
 }
 
 class StarRatingHTMLContainer {
-  constructor(starRatingObject, {containerType = 'div', size = 3, isActive = false, showPassiveAsNumber = true}) {
-    this.starRatingObject = starRatingObject;
-    this.isActive = isActive;
-    this.showPassiveAsNumber = showPassiveAsNumber;
-    this.symbolsList = [];
-    this.container = document.createElement(containerType);
-    
-    this.container.classList.add(`is-size-${size.toString()}`);
-    this.container.classList.add('is-gapless');
-    this.container.classList.add('has-text-centered');
-    this.container.classList.add('is-unselectable');
-  
-    this.updateDisplay();
-  }
-
-  generateStarDisplay() {
-    const starRatingObject = this.starRatingObject;
-
-    // Add the initial symbol based on the rating
-    const initialSymbol = document.createElement('span');
-    initialSymbol.textContent = starRatingObject.rating === null ? '◦' : '•';
-    this.container.appendChild(initialSymbol);
-    this.symbolsList.push(initialSymbol);
-  
-    // Create each star element
-    for (let i = 1; i <= starRatingObject.maxRating; i++) {
-      const star = document.createElement('span');
-      star.textContent = i <= starRatingObject.rating ? '★' : '☆';
-      star.classList.add('star');
-  
-      this.container.appendChild(star);
-      this.symbolsList.push(star);
-    }
-
-    if (this.isActive) {
-      for (let i = 0; i < this.symbolsList.length; i++) {
-        this.symbolsList[i].classList.add('is-clickable');
-
-        this.symbolsList[i].addEventListener('mouseover', () => {
-          this.updateDisplay(i); 
-        });
-
-        this.symbolsList[i].addEventListener('mouseout', () => {
-          this.updateDisplay(); 
-        });
-
-        this.symbolsList[i].addEventListener('click', () => {
-          starRatingObject.rating = i;
-          starRatingObject.callback(i);
-          starRatingObject.updateAllContainers();
-        });
-      }
-    }
-  }
-
-  updateDisplay(tmpRating = null) {
-    let rating = this.starRatingObject.rating;
-    const maxRating = this.starRatingObject.maxRating;
-
-    if (tmpRating != null) rating = tmpRating;
-
-    if (!this.isActive && this.showPassiveAsNumber) {
-      if (rating == null)
-        this.container.innerHTML = 'Not rated yet';
-      else
-        this.container.innerHTML = rating.toString() + '/' + maxRating.toString();
-
-      // Clear the symbols list in case it was previously active for some reason
-      this.symbolsList = [];
-    } else {
-      if (this.symbolsList.length == 0) {
-        this.generateStarDisplay();
-      }
-
-      this.symbolsList[0].textContent = rating === null ? '◦' : '•';
-      for (let j = 1; j <= maxRating; j++) {
-        this.symbolsList[j].textContent = j <= rating ? '★' : '☆';
-      }
-    }
-  }
-}
-
-export default StarRatingComponent;
-
-
-
-/*
-class StarRatingHTMLContainer {
-  constructor(starRatingObject, { containerType = 'div', size = 3, isActive = false, showPassiveAsNumber = true } = {}) {
+  constructor(starRatingObject, { containerType = 'div', size = 34, isActive = false, showPassiveAsNumber = true } = {}) {
     this.starRatingObject = starRatingObject;
     this.isActive = isActive;
     this.showPassiveAsNumber = showPassiveAsNumber;
     this.container = document.createElement(containerType);
+
+    // Set cursor to pointer so the mouse changes to a select state over the whole container.
+    this.container.style.cursor = 'pointer';
 
     // Numeric indicator element
     this.indicator = document.createElement('span');
     this.container.appendChild(this.indicator);
+    
+    // Add event listeners to the indicator for 0 rating
+    if (isActive) {
+      this.indicator.addEventListener('mousemove', (e) => {
+        this.updateDisplay(0);
+      });
+      this.indicator.addEventListener('click', (e) => {
+        this.starRatingObject.rating = 0;
+        this.starRatingObject.callback(0);
+        this.starRatingObject.updateAllContainers();
+      });
+      this.indicator.addEventListener('mouseleave', (e) => {
+        this.updateDisplay();
+      });
+    }
+
     // Container for stars
     this.starsWrapper = document.createElement('span');
     this.container.appendChild(this.starsWrapper);
@@ -126,6 +57,7 @@ class StarRatingHTMLContainer {
 
     // Create star elements (noninteractive here)
     this.generateStarDisplay(size);
+    this.updateDisplay();
 
     // Only one set of event handlers on the parent container:
     if (this.isActive) {
@@ -145,6 +77,7 @@ class StarRatingHTMLContainer {
         this.starRatingObject.rating = newRating;
         this.starRatingObject.callback(newRating);
         this.starRatingObject.updateAllContainers();
+        this.starRatingObject.isUserRated = true;
       });
       this.starsWrapper.addEventListener('mouseleave', () => {
         this.updateDisplay();
@@ -159,7 +92,7 @@ class StarRatingHTMLContainer {
       starContainer.classList.add('star-container');
       starContainer.style.position = 'relative';
       starContainer.style.display = 'inline-block';
-      starContainer.style.fontSize = size + 'rem';
+      starContainer.style.fontSize = size+'px';
       starContainer.style.lineHeight = '1';
       starContainer.style.margin = '0 1px';
 
@@ -199,6 +132,10 @@ class StarRatingHTMLContainer {
       return;
     }
 
+    let color_class = this.starRatingObject.isUserRated ? 'has-text-link' : 'has-text-info';
+    this.container.classList.remove('has-text-link', 'has-text-info');
+    this.container.classList.add(color_class);
+
     // Optionally update an indicator. Here we simply use it to show a bullet if set.
     this.indicator.textContent = rating === null ? '◦' : '•';
 
@@ -213,4 +150,6 @@ class StarRatingHTMLContainer {
     }
   }
 }
-*/
+
+
+export default StarRatingComponent;

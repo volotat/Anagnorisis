@@ -53,15 +53,27 @@ Create a working docker environment to easily run the project.
 
 ## Versions History
 
+### Version 0.1.4 (16.02.2025)
+* `ask.py` script and related functionality is now moved to a separate project called [InsightCoder](https://github.com/volotat/InsightCoder).
+* `Recommendation engine` is now separated into its own module and supports creating a list of recommendation based on the same algorithm as it was used in the radio mode. It supposed that the same module would be used for all other types of data supported by the project in the future.
+* `Star rating` module is now supports fractional values and is more responsive to the user input. Database entries related to the user's ratings are now also stored as floats.
+* `Music` module are now supports filtering files by `rating`, `similarity`, `file size`, `random` and `recommendation`.
+* Returned the ability to rate songs in the `Music` module. Play and skip counts are yet to be implemented.
+* Number of files per page in the `Music` are set to 30 as aquering metadata for music files is quite slow for now.
+* Some primitive experiments with p2p connection were done in the `Research` folder.
+* Improved extension loading mechanism using importlib.import_module for better code organization and maintainability.
+* Added configurable database path via database_path setting in `config.yaml`.
+* Minor UI improvements in the `Music` module
+
 ### Version 0.1.3 (04.02.2025)
 *   The project now checks for the existence of the image/music evaluator models before attempting to load them. If they don't exist, a dummy model is created to prevent errors. This ensures the application can start even if the evaluator models haven't been trained yet.
-*   Replaced the old audio embedding model (`m-a-p/MERT-v1-95M`) with `LAION-AI/CLAP`. New audio embedding model is based on the CLIP architecture that allows to make text search over the local music library.
+*   Replaced the old audio embedding model `m-a-p/MERT-v1-95M` with `LAION-AI/CLAP`. New audio embedding model is based on the CLIP architecture that allows to make text search over the local music library.
 *   Significantly refactored the music embedder code. Removed the `AudioEmbedder` class from the main code. Implemented a new `MusicSearch` class in the `Music` page module, analogous to the `ImageSearch` class in the `Images` module, to handle music library searches.
 *   The `pages/music/serve.py` file was updated to reflect the changes in the way music is processed and embeddings are handled.
 *   When importing the database from a `.csv` file, empty fields are now correctly handled as `None` instead of empty string that caused errors.
 *   Some more info has been added to `project_info` folder to better handle AI interactions.
 *   The `ask.py` script can now use prompts from `.txt` files, allowing for more complex and reusable queries.
-*   Updated the requirements.txt file to include the sentencepiece library.
+*   Updated the `requirements.txt` file to include the sentencepiece library.
 *   Restored song metadata representation in the song's control panel. It now correctly displays album's image, artist, album, and title as well as current rating of the song. Changing the song's metadata and rating is not yet available.
 
 ### Version 0.1.2 (28.01.2025)

@@ -38,12 +38,12 @@
     <!-- Field with helper tags for search -->
     <div class="field is-grouped is-grouped-multiline mt-4" id="tags_container">
       <b>Special keywords:</b>
-      <button class="tag is-light set_search">recommendation</button>
+      <button class="tag is-info is-light set_search">recommendation</button>
       <button class="tag is-info is-light set_search">rating</button>
       <button class="tag is-info is-light set_search">random</button>
       <button class="tag is-info is-light set_search">file size</button>
       <button class="tag is-light set_search">length</button>
-      <button class="tag is-light set_search">similarity</button>
+      <button class="tag is-info is-light set_search">similarity</button>
     </div>
 
     <!-- Pagination and status on top-->
@@ -172,6 +172,12 @@
       overflow-y: scroll;
       height: calc(100% - 60px);
     }
+
+    .prevent-select {
+      -webkit-user-select: none; /* Safari */
+      -ms-user-select: none; /* IE 10 and IE 11 */
+      user-select: none; /* Standard syntax */
+    }
   </style>
 
   <!-- When playlist has not been activated -->
@@ -225,7 +231,7 @@
         <progress class="progress" value="0" max="100" id="song_progress"></progress>
       </div>
     </div>
-    <div class="level-right has-text-centered is-size-3 is-gapless" id="song_rating">
+    <div class="level-right has-text-centered is-size-3 is-gapless prevent-select" id="song_rating">
       ◦☆☆☆☆☆☆☆☆☆☆
     </div>
   </nav>
