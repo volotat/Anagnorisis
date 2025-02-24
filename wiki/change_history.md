@@ -12,7 +12,8 @@ Add "Chain Mode" where each song is selected as the most similar to a previous s
 Add a way to restart the radio session.  
 Explore ways to optimize the music library update process.  
 In radio mode add an "Open file destination" button to be able to move or remove bad music if found.  
-Move embedding model to "Text-to-Music Retrieval++" and implement text based music search.
+
+Add training evaluation model to the Music module.
 
 ### Images 
 Implement some sort of effective resolution estimation technique.   
@@ -52,6 +53,15 @@ Separate the file-management part of the project into separate scripts.
 Create a working docker environment to easily run the project.  
 
 ## Versions History
+
+### Version 0.1.5 (24.02.2025)
+* Added metadata caching mechanism and integrated in both `Images` and `Music` modules. New `CachedMetadata` class in `pages/file_manager.py` to handle caching of file metadata, improving performance by reducing redundant metadata extraction. Metadata is cached using file hashes as keys, making the cache robust to file renaming and moving. Cache entries are automatically invalidated after three months to ensure data freshness.
+* Now process of gathering metadata is properly displayed in the status bar in the `Images` and `Music` modules displaying the current percent and total number of files to process.
+* Limitations on `resolution` and `proportion` search in the `Images` module have been removed, allowing users to search for images of any resolution or proportion.
+* Model training for `Music` module has been properly restored and tested.
+* While training the metric has been updated from `1 - MAPE` to `1 / (1 + MAPE)` as it better reflects the quality of the model and cannot give negative values.
+* Fixed an issue with sorting files in the `Music` module.
+
 
 ### Version 0.1.4 (16.02.2025)
 * `ask.py` script and related functionality is now moved to a separate project called [InsightCoder](https://github.com/volotat/InsightCoder).

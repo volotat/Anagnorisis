@@ -22,23 +22,7 @@ from omegaconf import OmegaConf
 
 import src.scoring_models
 from pages.utils import convert_size
-
-# TODO: Move this class to into some separate files with callbacks or something like it
-class EmbeddingGatheringCallback:
-  def __init__(self, show_status_function=None):
-    self.last_shown_time = 0
-    self.start_time = time.time()
-    self.show_status_function = show_status_function
-
-  def __call__(self, num_extracted, num_total):
-    current_time = time.time()
-    if current_time - self.last_shown_time >= 1:
-      # Calculate the percentage of processed images
-      percent = (num_extracted / num_total) * 100
-
-      # Show the status
-      self.show_status_function(f"Extracted embeddings for {num_extracted}/{num_total} ({percent:.2f}%) images.")
-      self.last_shown_time = current_time
+from pages.utils import SortingProgressCallback, EmbeddingGatheringCallback
 
 def compute_distances_batched(embeds_img, batch_size=1024 * 24):
   # Ensure input is a torch tensor (on CPU)
@@ -102,13 +86,6 @@ def get_folder_structure(folder_path, image_extensions=None):
     return folder_dict
   return build_structure(folder_path)
 
-
-from PIL import Image
-def get_image_resolution(file_path):
-    with Image.open(file_path) as img:
-        return img.size
-
-
 def init_socket_events(socketio, app=None, cfg=None):
   media_directory = cfg.images.media_directory
   ImageSearch.initiate()
@@ -118,6 +95,23 @@ def init_socket_events(socketio, app=None, cfg=None):
 
   def show_search_status(status):
     socketio.emit('emit_images_page_show_search_status', status)
+
+  def gather_resolutions(all_files, all_hashes, media_directory):
+    resolutions = {}
+    progress_callback = SortingProgressCallback(show_search_status, operation_name="Gathering images resolution") # Create callback
+
+    for ind, full_path in enumerate(all_files):
+      file_path = os.path.relpath(full_path, media_directory)
+      file_hash = all_hashes[ind]
+
+      image_metadata = ImageSearch.cached_metadata.get_metadata(full_path, file_hash)
+      if 'resolution' not in image_metadata:
+        raise Exception(f"Resolution not found for image: {file_path}")
+      
+      resolutions[full_path] = image_metadata['resolution']
+      progress_callback(ind + 1, len(all_files)) # Update progress
+
+    return resolutions
 
   embedding_gathering_callback = EmbeddingGatheringCallback(show_search_status)
   
@@ -258,17 +252,13 @@ def init_socket_events(socketio, app=None, cfg=None):
         all_files = sorted(all_files, key=os.path.getsize)
       # Sort images by resolution
       elif text_query.lower().strip() == "resolution":
-        if len(all_files) > 10000:
-          raise Exception("Too many images to sort by resolution")
-        # TODO: THIS IS VERY SLOW, NEED TO OPTIMIZE
-        resolutions = {file_path: get_image_resolution(file_path) for file_path in all_files}
+        show_search_status(f"Gathering resolutions for sorting...") # Initial status message
+        resolutions = gather_resolutions(all_files, all_hashes, media_directory)
         all_files = sorted(all_files, key=lambda x: resolutions[x][0] * resolutions[x][1])
       # Sort images by proportion
       elif text_query.lower().strip() == "proportion":
-        if len(all_files) > 10000:
-          raise Exception("Too many images to sort by proportion")
-        # TODO: THIS IS VERY SLOW, NEED TO OPTIMIZE
-        resolutions = {file_path: get_image_resolution(file_path) for file_path in all_files}
+        show_search_status(f"Gathering resolutions for sorting...") # Initial status message
+        resolutions = gather_resolutions(all_files, all_hashes, media_directory)
         all_files = sorted(all_files, key=lambda x: resolutions[x][0] / resolutions[x][1])
       # Sort images by duplicates
       elif text_query.lower().strip() == "similarity":
@@ -370,32 +360,37 @@ def init_socket_events(socketio, app=None, cfg=None):
       update_model_ratings(no_model_rating_images)
 
     for ind, full_path in enumerate(page_files):
+      file_path = os.path.relpath(full_path, media_directory)
       basename = os.path.basename(full_path)
       file_size = os.path.getsize(full_path)
+      file_hash = page_hashes[ind]
 
-      hash = page_hashes[ind]
-      resolution = get_image_resolution(full_path)  # Returns a tuple (width, height)
+      image_metadata = ImageSearch.cached_metadata.get_metadata(full_path, file_hash)
+      resolution = image_metadata.get('resolution')  # Returns a tuple (width, height)
     
       user_rating = None
       model_rating = None
 
-      if hash in image_db_items_map:
-        image_db_item = image_db_items_map[hash]
+      if file_hash in image_db_items_map:
+        image_db_item = image_db_items_map[file_hash]
         user_rating = image_db_item.user_rating
         model_rating = image_db_item.model_rating
 
       data = {
         "type": "file",
         "full_path": full_path,
-        "file_path": os.path.relpath(full_path, media_directory),
+        "file_path": file_path,
         "base_name": basename,
-        "hash": hash,
+        "hash": file_hash,
         "user_rating": user_rating,
         "model_rating": model_rating,
         "file_size": convert_size(file_size),
-        "resolution": f"{resolution[0]}x{resolution[1]}",
+        "resolution": f"{resolution[0]}x{resolution[1]}" if resolution else "N/A",
       }
       files_data.append(data)
+
+    # Save all extracted metadata to the cache
+    ImageSearch.cached_metadata.save_metadata_cache()
                  
     # Extract subfolders structure from the path into a dict
     folders = get_folder_structure(media_directory, cfg.images.media_formats)

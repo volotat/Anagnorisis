@@ -43,6 +43,7 @@ class Evaluator():
     self.criterion = nn.CrossEntropyLoss()
     self.optimizer = torch.optim.Adam(self.model.parameters())
 
+  # Not used in current implementation
   def calculate_metric(self, loader):
     maes = [] 
     with torch.no_grad():
@@ -58,6 +59,7 @@ class Evaluator():
         maes.append(torch.mean(torch.abs(predicted - labels)).item())
     return np.mean(maes)
   
+  # Not used in current implementation
   def calculate_accuracy(self, loader):
     accuracy_list = [] 
     with torch.no_grad():
@@ -74,6 +76,24 @@ class Evaluator():
         mape = torch.mean(torch.abs(predicted - labels) / (labels + self.mape_bias)).item()
         # Invert the MAPE to get the accuracy
         accuracy_list.append(1 - mape)
+    return np.mean(accuracy_list)
+  
+  def calculate_accuracy_2(self, loader):
+    accuracy_list = [] 
+    with torch.no_grad():
+      for data in loader:
+        inputs, labels = data
+        inputs, labels = inputs.to(self.device), labels.to(self.device)
+        outputs = self.model(inputs)
+
+        # Calculate weighted average from all predictions to get the final prediction
+        predicted = torch.softmax(outputs, dim=-1) * torch.arange(0, self.rate_classes, device=self.device)
+        predicted = predicted.sum(dim=-1)
+
+        # Calculate MAPE (Mean absolute percentage error) while increasing scores by 1 to avoid division by zero
+        mape = torch.mean(torch.abs(predicted - labels) / (labels + 1)).item()
+        # Alternative metric: transform MAPE to an accuracy in [0, 1]
+        accuracy_list.append(1 / (1 + mape))
     return np.mean(accuracy_list)
 
   def train(self, X_train, y_train, X_test, y_test, batch_size=32):
@@ -114,8 +134,8 @@ class Evaluator():
       loss.backward()
       self.optimizer.step()
     
-    train_accuracy = self.calculate_accuracy(train_loader)
-    test_accuracy = self.calculate_accuracy(test_loader)
+    train_accuracy = self.calculate_accuracy_2(train_loader)
+    test_accuracy = self.calculate_accuracy_2(test_loader)
 
     return train_accuracy, test_accuracy
 

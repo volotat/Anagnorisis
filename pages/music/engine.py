@@ -13,6 +13,8 @@ import time
 import cv2
 import imageio
 import torchaudio
+from tinytag import TinyTag
+import base64
 
 import src.scoring_models
 import pages.music.db_models as db_models
@@ -20,6 +22,94 @@ import pages.file_manager as file_manager
 
 files_embeds_fast_cache = {}
 
+
+def get_audiofile_data(file_path):
+  """
+  tag.album         # album as string
+  tag.albumartist   # album artist as string
+  tag.artist        # artist name as string
+  tag.audio_offset  # number of bytes before audio data begins
+  tag.bitdepth      # bit depth for lossless audio
+  tag.bitrate       # bitrate in kBits/s
+  tag.comment       # file comment as string
+  tag.composer      # composer as string 
+  tag.disc          # disc number
+  tag.disc_total    # the total number of discs
+  tag.duration      # duration of the song in seconds
+  tag.filesize      # file size in bytes
+  tag.genre         # genre as string
+  tag.samplerate    # samples per second
+  tag.title         # title of the song
+  tag.track         # track number as string
+  tag.track_total   # total number of tracks as string
+  tag.year          # year or date as string
+  """
+
+  metadata = {
+    'file_path': file_path,
+    #'url_path': url_path,
+    #'hash': calculate_audiodata_hash(file_path),
+  }
+
+  
+
+  #audiofile = eyed3.load(file_path)
+
+  tag = TinyTag.get(file_path, image=True)
+
+  metadata['title'] = tag.title or "N/A"
+  metadata['artist'] = tag.artist or "N/A"
+  metadata['album'] = tag.album or "N/A"
+  metadata['track_num'] = tag.track if tag.track else "N/A"
+  metadata['genre'] = tag.genre if tag.genre else "N/A"
+  metadata['date'] = str(tag.year) if tag.year else "N/A"
+
+  metadata['duration'] = tag.duration #(seconds)
+  metadata['bitrate'] = tag.bitrate #(kbps)
+
+  metadata['lyrics'] = tag.extra.get('lyrics', "")
+
+  img = tag.get_image()
+  if img is not None:
+    base64_image = base64.b64encode(img).decode('utf-8')
+
+    #buffer = io.BytesIO()
+    #img.save(buffer, format='PNG')
+    #buffer.seek(0)
+    
+    #data_uri = base64.b64encode(buffer.read()).decode('ascii')
+    metadata['image'] = f"data:image/png;base64,{base64_image}"
+  else:
+    metadata['image'] = None
+
+    # Get all available tags and their values as a dictionary
+    #tag_dict = audiofile.tag.frame_set
+
+    # If there are multiple artists, they will be stored in a list
+    #if audiofile.tag.artist:
+    #    print("Artists:", ", ".join(audiofile.tag.artist))
+
+    # If there are multiple genres, they will be stored in a list
+    #if audiofile.tag.genre:
+    #    print("Genres:", ", ".join(audiofile.tag.genre))
+
+    # You can access other tag fields in a similar way
+
+    # To print all tags and their values, you can iterate through them
+    #for tag in audiofile.tag.frame_set:
+    #    print(tag, ":", audiofile.tag.frame_set[tag][0])
+
+    # If you want to access additional metadata, you can use audiofile.tag.file_info
+    #print("Sample Width (bits):", audiofile.tag.file_info.sample_width)
+    #print("Channel Mode:", audiofile.tag.file_info.mode)
+
+    # To print the entire tag as a dictionary
+    #print("Tag Dictionary:", audiofile.tag.frame_set)
+
+    #for frame in audiofile.tag.frameiter(["TXXX"]):
+    #  print(f"{frame.description}: {frame.text}")
+  
+  return metadata
 
 class MusicSearch ():
   device = None
@@ -42,6 +132,7 @@ class MusicSearch ():
 
     MusicSearch.cached_file_list = file_manager.CachedFileList('cache/music_file_list.pkl')
     MusicSearch.cached_file_hash = file_manager.CachedFileHash('cache/music_file_hash.pkl')
+    MusicSearch.cached_metadata = file_manager.CachedMetadata('cache/music_metadata.pkl', get_audiofile_data)
 
   '''_instance = None
   def __new__(self, *args, **kwargs):

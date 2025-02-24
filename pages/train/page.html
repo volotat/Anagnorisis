@@ -15,7 +15,7 @@
     <p class="mb-3" id="fine_tuning_status">Training status</p>
     <progress id="fine_tuning_progress" class="progress" value="0" max="100">0%</progress>
     <canvas id="chart_loss"></canvas>
-    <p class="mb-3">This graph shows (100% - <a href="https://en.wikipedia.org/wiki/Mean_absolute_percentage_error">MAPE</a>) metric of how well the model predicts your preferences. Baseline line shows metric of mean value of all training scores calculated relative to test scores. If the 'Test accuracy' not much greater then a baseline, it means there is not enough user rated datapoints yet or user rating values are too similar to each other.</p>
+    <p class="mb-3">This graph shows (1 / (1 - <a href="https://en.wikipedia.org/wiki/Mean_absolute_percentage_error">MAPE</a>) * 100%) metric of how well the model predicts your preferences. Baseline line shows metric of mean value of all training scores calculated relative to test scores. If the 'Test accuracy' not much greater then a baseline, it means there is not enough user rated datapoints yet or user rating values are too similar to each other, as well as there are very small amount of low-score examples in the database.</p>
   </div>
 
   

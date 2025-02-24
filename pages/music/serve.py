@@ -1,7 +1,5 @@
 import os
 import time
-import base64
-from tinytag import TinyTag
 from flask import send_from_directory
 
 import math
@@ -20,22 +18,7 @@ from pages.utils import convert_size, convert_length
 
 from pages.recommendation_engine import sort_files_by_recommendation
 
-
-class EmbeddingGatheringCallback:
-  def __init__(self, show_status_function=None):
-    self.last_shown_time = 0
-    self.start_time = time.time()
-    self.show_status_function = show_status_function
-
-  def __call__(self, num_extracted, num_total):
-    current_time = time.time()
-    if current_time - self.last_shown_time >= 1:
-      # Calculate the percentage of processed files
-      percent = (num_extracted / num_total) * 100
-
-      # Show the status
-      self.show_status_function(f"Extracted embeddings for {num_extracted}/{num_total} ({percent:.2f}%) files.")
-      self.last_shown_time = current_time
+from pages.utils import SortingProgressCallback, EmbeddingGatheringCallback
 
 def compute_distances_batched(embeds_img, batch_size=1024 * 24):
   # Ensure input is a torch tensor (on CPU)
@@ -76,100 +59,13 @@ def compute_distances_batched(embeds_img, batch_size=1024 * 24):
   
   return distances  # Convert to a NumPy
 
-def get_audiofile_data(file_path, url_path):
-  """
-  tag.album         # album as string
-  tag.albumartist   # album artist as string
-  tag.artist        # artist name as string
-  tag.audio_offset  # number of bytes before audio data begins
-  tag.bitdepth      # bit depth for lossless audio
-  tag.bitrate       # bitrate in kBits/s
-  tag.comment       # file comment as string
-  tag.composer      # composer as string 
-  tag.disc          # disc number
-  tag.disc_total    # the total number of discs
-  tag.duration      # duration of the song in seconds
-  tag.filesize      # file size in bytes
-  tag.genre         # genre as string
-  tag.samplerate    # samples per second
-  tag.title         # title of the song
-  tag.track         # track number as string
-  tag.track_total   # total number of tracks as string
-  tag.year          # year or date as string
-  """
-
-  metadata = {
-    'file_path': file_path,
-    #'url_path': url_path,
-    #'hash': calculate_audiodata_hash(file_path),
-  }
-
-  
-
-  #audiofile = eyed3.load(file_path)
-
-  tag = TinyTag.get(file_path, image=True)
-
-  metadata['title'] = tag.title or "N/A"
-  metadata['artist'] = tag.artist or "N/A"
-  metadata['album'] = tag.album or "N/A"
-  metadata['track_num'] = tag.track if tag.track else "N/A"
-  metadata['genre'] = tag.genre if tag.genre else "N/A"
-  metadata['date'] = str(tag.year) if tag.year else "N/A"
-
-  metadata['duration'] = tag.duration #(seconds)
-  metadata['bitrate'] = tag.bitrate #(kbps)
-
-  metadata['lyrics'] = tag.extra.get('lyrics', "")
-
-  img = tag.get_image()
-  if img is not None:
-    base64_image = base64.b64encode(img).decode('utf-8')
-
-    #buffer = io.BytesIO()
-    #img.save(buffer, format='PNG')
-    #buffer.seek(0)
-    
-    #data_uri = base64.b64encode(buffer.read()).decode('ascii')
-    metadata['image'] = f"data:image/png;base64,{base64_image}"
-  else:
-    metadata['image'] = None
-
-    # Get all available tags and their values as a dictionary
-    #tag_dict = audiofile.tag.frame_set
-
-    # If there are multiple artists, they will be stored in a list
-    #if audiofile.tag.artist:
-    #    print("Artists:", ", ".join(audiofile.tag.artist))
-
-    # If there are multiple genres, they will be stored in a list
-    #if audiofile.tag.genre:
-    #    print("Genres:", ", ".join(audiofile.tag.genre))
-
-    # You can access other tag fields in a similar way
-
-    # To print all tags and their values, you can iterate through them
-    #for tag in audiofile.tag.frame_set:
-    #    print(tag, ":", audiofile.tag.frame_set[tag][0])
-
-    # If you want to access additional metadata, you can use audiofile.tag.file_info
-    #print("Sample Width (bits):", audiofile.tag.file_info.sample_width)
-    #print("Channel Mode:", audiofile.tag.file_info.mode)
-
-    # To print the entire tag as a dictionary
-    #print("Tag Dictionary:", audiofile.tag.frame_set)
-
-    #for frame in audiofile.tag.frameiter(["TXXX"]):
-    #  print(f"{frame.description}: {frame.text}")
-  
-  return metadata
-
 def init_socket_events(socketio, app=None, cfg=None):
   media_directory = cfg.music.media_directory
 
   MusicSearch.initiate()
   cached_file_list = MusicSearch.cached_file_list
   cached_file_hash = MusicSearch.cached_file_hash
+  cached_metadata = MusicSearch.cached_metadata
 
   music_evaluator = MusicEvaluator(embedding_dim=MusicSearch.embedding_dim) #src.scoring_models.Evaluator(embedding_dim=768)
   music_evaluator.load('./models/music_evaluator.pt')
@@ -341,14 +237,31 @@ def init_socket_events(socketio, app=None, cfg=None):
         all_files = [all_files[i] for i in sorted_indices]'''
       # Sort music by file size
       elif text_query.lower().strip() == "file size":
+        show_search_status(f"Gathering file sizes for sorting...") # Initial status message
         all_files = sorted(all_files, key=os.path.getsize)
       # Sort music by length
       elif text_query.lower().strip() == "length":
-        '''if len(all_files) > 10000:
-          raise Exception("Too many images to sort by resolution")
-        # TODO: THIS IS VERY SLOW, NEED TO OPTIMIZE
-        resolutions = {file_path: get_image_resolution(file_path) for file_path in all_files}
-        all_files = sorted(all_files, key=lambda x: resolutions[x][0] * resolutions[x][1])'''
+        show_search_status(f"Gathering resolutions for sorting...") # Initial status message
+
+        durations = {}
+        progress_callback = SortingProgressCallback(show_search_status, operation_name="Gathering music duration ") # Create callback
+        for ind, full_path in enumerate(all_files):
+          file_path = os.path.relpath(full_path, media_directory)
+          file_hash = all_hashes[ind]
+
+          file_metadata = cached_metadata.get_metadata(full_path, file_hash)
+          if 'duration' not in file_metadata:
+            raise Exception(f"Duration not found for file: {file_path}")
+          
+          durations[full_path] = file_metadata['duration']
+          progress_callback(ind + 1, len(all_files)) # Update progress
+
+        # Check if there is none value in the durations and print the files with None duration
+        none_durations = [file_path for file_path, duration in durations.items() if duration is None]
+        if none_durations:
+          print("Files with None duration:", none_durations)
+
+        all_files = sorted(all_files, key=lambda x: durations[x])
       # Sort music by duplicates
       elif text_query.lower().strip() == "similarity":
         show_search_status(f"Extracting embeddings")
@@ -414,7 +327,8 @@ def init_socket_events(socketio, app=None, cfg=None):
 
         # Sort the files by the ratings
         all_files = [file_path for _, file_path in sorted(zip(all_ratings, all_files), reverse=True)]
-      if text_query.lower().strip() == "recommendation":
+      # Sort music with recommendation engine 
+      elif text_query.lower().strip() == "recommendation":
         music_data = db_models.MusicLibrary.query.with_entities(
             db_models.MusicLibrary.hash,
             db_models.MusicLibrary.user_rating,
@@ -464,28 +378,30 @@ def init_socket_events(socketio, app=None, cfg=None):
       update_model_ratings(no_model_rating_files)
 
     for ind, full_path in enumerate(page_files):
+      file_path = os.path.relpath(full_path, media_directory)
       basename = os.path.basename(full_path)
       file_size = os.path.getsize(full_path)
+      file_hash = page_hashes[ind]
 
-      audiofile_data = get_audiofile_data(full_path, "")
+      audiofile_data = cached_metadata.get_metadata(full_path, file_hash)
 
-      hash = page_hashes[ind]
+      
       #resolution = get_image_resolution(full_path)  # Returns a tuple (width, height)
     
       user_rating = None
       model_rating = None
 
-      if hash in music_db_items_map:
-        music_db_item = music_db_items_map[hash]
+      if file_hash in music_db_items_map:
+        music_db_item = music_db_items_map[file_hash]
         user_rating = music_db_item.user_rating
         model_rating = music_db_item.model_rating
 
       data = {
         "type": "file",
         "full_path": full_path,
-        "file_path": os.path.relpath(full_path, media_directory),
+        "file_path": file_path,
         "base_name": basename,
-        "hash": hash,
+        "hash": file_hash,
         "user_rating": user_rating,
         "model_rating": model_rating,
         "audiofile_data": audiofile_data,
@@ -494,7 +410,8 @@ def init_socket_events(socketio, app=None, cfg=None):
       }
       files_data.append(data)
     
-    
+    # Save all extracted metadata to the cache
+    cached_metadata.save_metadata_cache()
 
     # Extract subfolders structure from the path into a dict
     folders = file_manager.get_folder_structure(media_directory, cfg.music.media_formats)
@@ -516,7 +433,8 @@ def init_socket_events(socketio, app=None, cfg=None):
     file_path = data.get('file_path', '')
 
     full_path = os.path.join(media_directory, file_path)
-    audiofile_data = get_audiofile_data(full_path, "")
+    file_hash = cached_file_hash.get_file_hash(full_path)
+    audiofile_data = cached_metadata.get_metadata(full_path, file_hash)
     audiofile_data['hash'] = cached_file_hash.get_file_hash(full_path)
     db_item = db_models.MusicLibrary.query.filter_by(hash=audiofile_data['hash']).first()
     audiofile_data['user_rating'] = db_item.user_rating

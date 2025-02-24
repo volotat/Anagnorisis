@@ -107,9 +107,50 @@ class CachedFileList:
         return all_files
 
 ###########################################
-# Metadata Caching
-# TODO: Implement metadata caching
-# file_size, resolution, glip_embedding
+# Cached Metadata (Hash-Dependent Version)
+
+class CachedMetadata:
+    def __init__(self, cache_file_path, metadata_func):
+        self.cache_file_path = cache_file_path
+        self.metadata_cache = {}
+        self.load_metadata_cache()
+        self.metadata_func = metadata_func
+
+    def load_metadata_cache(self):
+        if os.path.exists(self.cache_file_path):
+            with open(self.cache_file_path, 'rb') as cache_file:
+                self.metadata_cache = pickle.load(cache_file)
+
+            # Remove entries older than three months
+            three_months_ago = datetime.datetime.now() - datetime.timedelta(days=90)
+            self.metadata_cache = {k: v for k, v in self.metadata_cache.items() if v[2] > three_months_ago}
+
+    def save_metadata_cache(self):
+        with open(self.cache_file_path, 'wb') as cache_file:
+            pickle.dump(self.metadata_cache, cache_file)
+
+    def get_metadata(self, file_path, file_hash):
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"File not found: {file_path}")
+
+        # Get the last modified time of the file (still used for time-based invalidation)
+        last_modified_time = os.path.getmtime(file_path)
+
+        cache_key = file_hash # Use file_hash as the cache key
+
+        # Check if metadata for file_hash is in the cache and if the last modified time is still valid
+        if cache_key in self.metadata_cache:
+            cached_last_modified_time, cached_metadata, timestamp = self.metadata_cache[cache_key]
+            if cached_last_modified_time == last_modified_time: # Keep time-based invalidation
+                return cached_metadata
+
+        # If not in cache or file has been modified, extract metadata using metadata_func
+        metadata = self.metadata_func(file_path) # Method expected to return a dictionary of metadata attributes
+        metadata['file_path'] = file_path
+
+        # Update the cache using file_hash as the key
+        self.metadata_cache[cache_key] = (last_modified_time, metadata, datetime.datetime.now())
+        return metadata
 
 
 def get_folder_structure(folder_path, image_extensions=None):

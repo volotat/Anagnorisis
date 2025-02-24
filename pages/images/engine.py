@@ -17,121 +17,23 @@ import src.scoring_models
 import pages.images.db_models as db_models
 import pages.file_manager as file_manager
 
-'''
-# TODO: Move hash caching into utils as it will be useful for all modules
-
-###########################################
-# File Hash Caching
-
-# Cache dictionary to store file path, last modified time, and hash value
-file_hash_cache_file_path = 'cache/images_hashes.pkl'
-file_hash_cache = {}
-
-def load_hash_cache():
-  global file_hash_cache
-
-  if os.path.exists(file_hash_cache_file_path):
-    with open(file_hash_cache_file_path, 'rb') as cache_file:
-      file_hash_cache = pickle.load(cache_file)
-    
-    # Remove entries older than three months
-    three_months_ago = datetime.datetime.now() - datetime.timedelta(days=90)
-    file_hash_cache = {k: v for k, v in file_hash_cache.items() if v[2] > three_months_ago}
-
-def save_hash_cache():
-  # Save the updated cache to the file
-  with open(file_hash_cache_file_path, 'wb') as cache_file:
-    pickle.dump(file_hash_cache, cache_file)
-
-def get_file_hash(file_path):
-  global file_hash_cache
-
-  # Load the cache from the file if it exists and file_hash_cache is empty
-  if not file_hash_cache: load_hash_cache()
-
-  # Get the last modified time of the file
-  last_modified_time = os.path.getmtime(file_path)
-  
-  # Check if the file is in the cache and if the last modified time matches
-  if file_path in file_hash_cache:
-    cached_last_modified_time, cached_hash, timestamp = file_hash_cache[file_path]
-    if cached_last_modified_time == last_modified_time:
-      return cached_hash
-  
-  # If not in cache or file has been modified, calculate the hash
-  with open(file_path, "rb") as f:
-    bytes = f.read()  # Read the entire file as bytes
-    file_hash = hashlib.md5(bytes).hexdigest()
-  
-  # Update the cache
-  file_hash_cache[file_path] = (last_modified_time, file_hash, datetime.datetime.now())
-
-  return file_hash
-
-
-###########################################
-# File List Caching
-
-file_list_cache_file_path = 'cache/images_file_list.pkl'
-file_list_cache = {}
-
-def load_file_list_cache():
-  global file_list_cache
-  if os.path.exists(file_list_cache_file_path):
-    with open(file_list_cache_file_path, 'rb') as cache_file:
-      file_list_cache = pickle.load(cache_file)
-
-    # Remove entries older than three months
-    three_months_ago = datetime.datetime.now() - datetime.timedelta(days=90)
-    file_list_cache = {k: v for k, v in file_list_cache.items() if v[2] > three_months_ago}
-
-def save_file_list_cache():
-  with open(file_list_cache_file_path, 'wb') as cache_file:
-    pickle.dump(file_list_cache, cache_file)
-
-def get_files_in_folder(folder_path, media_formats):
-    global file_list_cache
-
-    # Get the last modified time of the folder
-    folder_last_modified_time = os.path.getmtime(folder_path)
-    
-    # Check if the folder is in the cache and if the last modified time matches
-    if folder_path in file_list_cache:
-        cached_last_modified_time, cached_file_list, timestamp = file_list_cache[folder_path]
-        if cached_last_modified_time == folder_last_modified_time:
-            return cached_file_list
-    
-    # If not in cache or folder has been modified, list the files in the folder
-    file_list = [os.path.join(folder_path, f) for f in os.listdir(folder_path) if os.path.isfile(os.path.join(folder_path, f)) and f.lower().endswith(tuple(media_formats))]
-    
-    # Update the cache with the current timestamp and file list
-    file_list_cache[folder_path] = (folder_last_modified_time, file_list, datetime.datetime.now())
-    
-    return file_list
-
-def get_all_files(current_path, media_formats):
-    global file_list_cache
-
-    # Load the cache from the file if it exists and file_list_cache is empty
-    if not file_list_cache:
-        load_file_list_cache()
-
-    all_files = []
-    for root, dirs, files in os.walk(current_path):
-        all_files.extend(get_files_in_folder(root, media_formats))
-
-    # Save the updated cache to the file
-    save_file_list_cache()
-    
-    return all_files    
-
-###########################################
-# Metadata Caching
-# TODO: Implement metadata caching
-# file_size, resolution, glip_embedding
-'''
 
 images_embeds_fast_cache = {}
+
+def get_image_metadata(file_path):
+    """
+    Extracts relevant metadata from an image file.
+    Currently, it only extracts the image resolution, but can be extended.
+    """
+    metadata = {}
+    try:
+        with Image.open(file_path) as img:
+            metadata['resolution'] = img.size  # (width, height)
+    except Exception as e:
+        raise Exception(f"Error extracting metadata from {file_path}: {e}")
+        print(f"Error extracting metadata from {file_path}: {e}")
+        metadata['resolution'] = None  # Or some default value
+    return metadata
 
 class ImageSearch:
   device = None
@@ -152,6 +54,7 @@ class ImageSearch:
 
     ImageSearch.cached_file_list = file_manager.CachedFileList('cache/images_file_list.pkl')
     ImageSearch.cached_file_hash = file_manager.CachedFileHash('cache/images_file_hash.pkl')
+    ImageSearch.cached_metadata = file_manager.CachedMetadata('cache/images_metadata.pkl', get_image_metadata)
 
   '''_instance = None
   def __new__(self, *args, **kwargs):
