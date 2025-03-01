@@ -31,8 +31,47 @@ class SongControlPanel {
 
     setupEventListeners() {
         this.audioPlayer.addEventListener("timeupdate", () => this.updateProgressBar());
-        this.audioPlayer.addEventListener("ended", () => this.nextSong());
+        this.audioPlayer.addEventListener("ended", () => { this.nextSong(true) });
         this.songProgressElement.on("click", (event) => this.handleProgressBarClick(event));
+
+        if ('mediaSession' in navigator) {
+            const songControlPanel = this;
+
+            //setting the metadata
+            navigator.mediaSession.metadata = new MediaMetadata({
+                title: 'Unforgettable',
+                artist: 'Artist',
+                album: 'Album',
+                artwork: [
+                    { src: 'https://dummyimage.com/96x96',   sizes: '96x96',   type: 'image/png' },
+                    { src: 'https://dummyimage.com/128x128', sizes: '128x128', type: 'image/png' },
+                    { src: 'https://dummyimage.com/192x192', sizes: '192x192', type: 'image/png' },
+                    { src: 'https://dummyimage.com/256x256', sizes: '256x256', type: 'image/png' },
+                    { src: 'https://dummyimage.com/384x384', sizes: '384x384', type: 'image/png' },
+                    { src: 'https://dummyimage.com/512x512', sizes: '512x512', type: 'image/png' },
+                ]
+            });
+            
+            navigator.mediaSession.setActionHandler('play', function() { 
+                songControlPanel.playSong()
+            });
+            navigator.mediaSession.setActionHandler('pause', function() { 
+                songControlPanel.pauseSong()
+            });
+            navigator.mediaSession.setActionHandler('stop', function() { 
+                songControlPanel.pauseSong()
+            });
+            navigator.mediaSession.setActionHandler('seekbackward', function() {  });
+            navigator.mediaSession.setActionHandler('seekforward', function() {  });
+            navigator.mediaSession.setActionHandler('seekto', function() {  });
+            navigator.mediaSession.setActionHandler('previoustrack', function() { 
+                songControlPanel.previousSong();
+            });
+            navigator.mediaSession.setActionHandler('nexttrack', function() { 
+                songControlPanel.nextSong();
+            });
+            //navigator.mediaSession.setActionHandler('skipad', function() {  });
+        }
     }
 
     setupRatingComponent() {
@@ -53,8 +92,10 @@ class SongControlPanel {
         const currentTime = this.audioPlayer.currentTime;
         const duration = this.audioPlayer.duration;
         this.songProgressElement.val(duration > 0 ? ((currentTime + 0.25) / duration * 100) : 0);
-        //localStorage.setItem("music_page_song_play_time", currentTime);
+
+        // Save current song hash and play time to localStorage
         //localStorage.setItem("music_page_song_hash", this.currentSongHash);
+        localStorage.setItem("music_page_song_play_time", currentTime);
     }
 
     handleProgressBarClick(event) {
@@ -108,6 +149,9 @@ class SongControlPanel {
             this.setSongRating(parseFloat(song.user_rating) || parseFloat(song.model_rating) || null, false);
             this.songLabelElement.text(`${song.artist} - ${song.title} | ${song.album}`);
             this.songCoverElement.attr("src", song.image || this.DEFAULT_COVER_IMAGE);
+
+            // Report the server that song is playing to update the last play time.
+            this.socket.emit('emit_music_page_song_start_playing', this.currentSongHash);
           })
           .catch((error) => {
             console.error("Failed to fetch song details:", error);
@@ -161,7 +205,21 @@ class SongControlPanel {
         }
     }
 
-    nextSong() {
+    nextSong(has_ended = false) {
+        const songControlPanel = this;
+        if (this.currentSongHash != null) {
+            if (has_ended)
+                this.socket.emit('emit_music_page_set_song_play_rate', {
+                    "hash": songControlPanel.currentSongHash, 
+                    "skip_score_change": +1
+                });
+            else
+                this.socket.emit('emit_music_page_set_song_play_rate', {
+                    "hash": songControlPanel.currentSongHash, 
+                    "skip_score_change": -1
+                });
+        }
+
         this.playlistManager.nextSong();
     }
 

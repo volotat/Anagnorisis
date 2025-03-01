@@ -70,6 +70,10 @@ class PlaylistManager {
         
         this.currentSongIndex = 0;
         this.updatePlaylistPanel();
+
+        // Save playlist to localStorage
+        localStorage.setItem("music_page_playlist", JSON.stringify(all_files_paths));
+        localStorage.setItem("music_page_current_song_index", this.currentSongIndex);
     }
     
     playSongAtIndex(index = 0) {
@@ -80,6 +84,9 @@ class PlaylistManager {
         this.isPlaying = true;
         this.songControlPanel.updateSongInfo(currentSong);
         this.updatePlaylistPanel();
+
+        // Save current song hash and play time to localStorage
+        localStorage.setItem("music_page_current_song_index", this.currentSongIndex);
     }
     
     nextSong(){
@@ -95,6 +102,8 @@ class PlaylistManager {
     pauseSong(){
         this.audioPlayer.pause();
         this.isPlaying = false;
+
+        localStorage.setItem("music_page_is_playing", 'paused'); // Save playback status
     }
 
     playSong(){
@@ -105,6 +114,8 @@ class PlaylistManager {
 
         this.audioPlayer.play();
         this.isPlaying = true;
+
+        localStorage.setItem("music_page_is_playing", 'playing'); // Save playback
     }
 
     togglePlay(){
@@ -112,8 +123,7 @@ class PlaylistManager {
             this.pauseSong();
         }
         else {
-            this.audioPlayer.play();
-            this.isPlaying = true;
+            this.playSong()
         }
     }
 }

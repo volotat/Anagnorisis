@@ -80,7 +80,16 @@
   </div>
 
   <!-- Small window in the left bottom side of the screen with actions that could be performed on the selected files -->
-  <div class="box block mb-0" id="files_actions" style="position: fixed; bottom: 1rem; left: 1rem; display: none;">
+  <style>
+    #files_actions {
+      position: fixed;
+      bottom: calc(150px + 1rem);
+      left: 1rem;
+      display: none;
+    }
+  </style>
+
+  <div class="box block mb-0" id="files_actions">
     <!-- Show how much files are selected-->
     <div class="field">
       <div class="control">
@@ -249,7 +258,7 @@
     
     <div class="panel is-info p-4" style="overflow: hidden; height: 100%;">
       <!-- refresh playlist from the currently active folder or selected files -->
-      <button class="button is-info is-fullwidth mb-4 refresh_playlist">Refresh playlist</button>
+      <button class="button is-info is-fullwidth mb-4 update_playlist">Refresh playlist</button>
       
       <!-- playlist content goes here -->
       <div class="p-4 pb-6" id="playlist_content">

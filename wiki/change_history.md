@@ -45,14 +45,27 @@ When the folder name contains '[' and ']' symbols it is not correctly read by py
 Redo music page representation to more closely resemble images page and apply its improvements file hash cashing and metadata search.  
 Add automatic database backup generation from time to time to prevent loss of data in case of a failure.  
 Find a way for more optimal embeddings storage in the DB.  
-Create a roadmap for the project.  
 Separate the file-management part of the project into separate scripts.  
+Implement automatic model downloading at the fresh start of the project.
+
+### Tests
+Create an automatic creation of the environment and launch a project to see it is always runnable from the clean start.
 
 
 ## Important fixes before 0.2.0 release
 Create a working docker environment to easily run the project.  
 
 ## Versions History
+
+### Version 0.1.6 (01.03.2025)
+* Implemented control of music playback (play/pause, next/previous track) through browser's `navigator.mediaSession` API. This allows control from external devices and browser UI elements that support media sessions (like media keys on keyboards, lock screen controls, and some bluetooth devices).
+* Fixed issues that prevented `full_play_count` and `skip_count` from being correctly incremented and stored in the database when songs are played or skipped. These counts are now accurately tracked and persisted for use in the recommendation algorithm.
+* Implemented saving and restoring of the music module's state using `localStorage`.  The current playlist, current song, playback position, and play/pause status are now preserved across page refreshes, providing a more seamless user experience.
+* Resolved an issue that prevented searching for music files by their full file path within the `Music` module's library view. Searching by file path now functions as expected.
+* Re-enabled and fixed the 'Find similar' button in the `Music` module. This feature now correctly initiates a similarity-based search for music tracks.
+* Improved playlist behavior: When playing music from the library view, if files are selected, only the selected files are added to the playlist and played. If no files are selected, all files in the current view are played (as before).
+* Added a `Last played` column to the music library grid view in the `Music` module. This column displays the last time each song was played, providing users with playback history information directly in the library view.
+* `Open` button in the music library grid view in the `Music` module now works correctly. This button allows users to open the folder containing the selected music file directly from the library view.
 
 ### Version 0.1.5 (24.02.2025)
 * Added metadata caching mechanism and integrated in both `Images` and `Music` modules. New `CachedMetadata` class in `pages/file_manager.py` to handle caching of file metadata, improving performance by reducing redundant metadata extraction. Metadata is cached using file hashes as keys, making the cache robust to file renaming and moving. Cache entries are automatically invalidated after three months to ensure data freshness.
@@ -61,7 +74,6 @@ Create a working docker environment to easily run the project.
 * Model training for `Music` module has been properly restored and tested.
 * While training the metric has been updated from `1 - MAPE` to `1 / (1 + MAPE)` as it better reflects the quality of the model and cannot give negative values.
 * Fixed an issue with sorting files in the `Music` module.
-
 
 ### Version 0.1.4 (16.02.2025)
 * `ask.py` script and related functionality is now moved to a separate project called [InsightCoder](https://github.com/volotat/InsightCoder).

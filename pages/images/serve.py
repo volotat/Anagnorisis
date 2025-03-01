@@ -24,6 +24,8 @@ import src.scoring_models
 from pages.utils import convert_size
 from pages.utils import SortingProgressCallback, EmbeddingGatheringCallback
 
+import pages.file_manager as file_manager
+
 def compute_distances_batched(embeds_img, batch_size=1024 * 24):
   # Ensure input is a torch tensor (on CPU)
   embeds_img = torch.tensor(embeds_img, dtype=torch.float32)
@@ -431,29 +433,7 @@ def init_socket_events(socketio, app=None, cfg=None):
 
   @socketio.on('emit_images_page_open_file_in_folder')
   def open_file_in_folder(file_path):
-    file_path = os.path.normpath(file_path)
-    print(f'Opening file with path: "{file_path}"')
-    
-    # Assuming file_path is the full path to the file
-    folder_path = os.path.dirname(file_path)
-    if os.path.isfile(file_path):
-      if sys.platform == "win32":  # Windows
-        subprocess.run(["explorer", "/select,", file_path], check=True)
-      elif sys.platform == "darwin":  # macOS
-        subprocess.run(["open", "-R", file_path], check=True)
-      else:  # Linux and other Unix-like OS
-        # Convert the file path to an absolute path
-        abs_path = os.path.abspath(file_path)
-
-         # Check for the file manager and use the appropriate command on Linux
-        if os.environ.get('XDG_CURRENT_DESKTOP') in ['GNOME', 'Unity']:
-          subprocess.run(['nautilus', '--no-desktop', abs_path])
-        elif os.environ.get('XDG_CURRENT_DESKTOP') == 'KDE':
-          subprocess.run(['dolphin', '--select', abs_path])
-        else:
-          print("Unsupported desktop environment. Please add support for your file manager.")
-    else:
-      print("Error: File does not exist.")
+    file_manager.open_file_in_folder(file_path)
 
   @socketio.on('emit_images_page_send_file_to_trash')
   def send_file_to_trash(file_path):

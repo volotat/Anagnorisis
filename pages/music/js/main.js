@@ -57,6 +57,31 @@ import SongControlPanel from '/pages/music/js/SongControlPanel.js';
     );
     playlistManager.songControlPanel = songControlPanel;
 
+    // Load the playlist and song status
+    const savedPlaylist = JSON.parse(localStorage.getItem("music_page_playlist")); 
+    const savedPlayTime = parseFloat(localStorage.getItem("music_page_song_play_time"));
+    const savedCurrentSongIndex = parseInt(localStorage.getItem("music_page_current_song_index"));
+    const savedIsPlaying = localStorage.getItem("music_page_is_playing");
+
+    if(savedPlaylist && savedCurrentSongIndex != null) {
+      // load saved playlist and play current song index
+      playlistManager.setPlaylist(savedPlaylist);
+      playlistManager.playSongAtIndex(savedCurrentSongIndex);
+
+      // Set playback status
+      audioPlayer.currentTime = savedPlayTime || 0;
+
+      $("#song_control_panel_dectivated").addClass('is-hidden');
+      $("#song_control_panel_activated").removeClass('is-hidden');
+
+      if(savedIsPlaying == 'playing') {
+        songControlPanel.playSong();
+      } else {
+        songControlPanel.pauseSong();
+      }
+    }
+
+
     // Request current media folder path
     socket.emit('emit_music_page_get_path_to_media_folder');
 
@@ -219,7 +244,8 @@ import SongControlPanel from '/pages/music/js/SongControlPanel.js';
         }
         
         $(data).append('<b>File size:</b>&nbsp;' + item.file_size + '<br>');
-        $(data).append('<b>Length:</b>&nbsp;' + item.length + '<br><br>');
+        $(data).append('<b>Length:</b>&nbsp;' + item.length + '<br>');
+        $(data).append('<b>Last played:</b>&nbsp;' + item.last_played + '<br><br>');
 
         imageDataDiv.append(data);
 
@@ -439,12 +465,26 @@ import SongControlPanel from '/pages/music/js/SongControlPanel.js';
       }, 500);
     });
     
-    // Unselect all files
+    // Update the playlist
     $('.update_playlist').click(function() {
-      playlistManager.setPlaylist(all_files_paths);
-      songControlPanel.playSong();
+      if (selected_files.length > 0) {
+        playlistManager.setPlaylist(selected_files);
+      } else {
+        playlistManager.setPlaylist(all_files_paths);
+      }
+
+      playlistManager.playSongAtIndex(0);
+      songControlPanel.updateButtons();
+
       $("#song_control_panel_dectivated").addClass('is-hidden');
       $("#song_control_panel_activated").removeClass('is-hidden');
+    });
+
+    // Unselect all files
+    $('#unselect_all_files').click(function() {
+      $("input[type='checkbox']").prop('checked', false);
+      $('#files_actions').hide();
+      selected_files = [];
     });
   })
 

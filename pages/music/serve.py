@@ -14,7 +14,7 @@ import pages.music.db_models as db_models
 
 from pages.music.engine import MusicSearch, MusicEvaluator
 
-from pages.utils import convert_size, convert_length
+from pages.utils import convert_size, convert_length, time_difference
 
 from pages.recommendation_engine import sort_files_by_recommendation
 
@@ -222,10 +222,10 @@ def init_socket_events(socketio, app=None, cfg=None):
     if text_query and len(text_query) > 0:
       # If there is an music file with the path of the query, sort files by similarity to that file
       if os.path.isfile(text_query) and text_query.lower().endswith(tuple(cfg.music.media_formats)):
-        '''target_path = text_query
+        target_path = text_query
         show_search_status(f"Extracting embeddings")
-        embeds_img = ImageSearch.process_images(all_files, callback=embedding_gathering_callback, media_folder=media_directory)
-        target_emb = ImageSearch.process_images([target_path], callback=embedding_gathering_callback, media_folder=media_directory)
+        embeds_img = MusicSearch.process_audio(all_files, callback=embedding_gathering_callback, media_folder=media_directory)
+        target_emb = MusicSearch.process_audio([target_path], callback=embedding_gathering_callback, media_folder=media_directory)
 
         show_search_status(f"Computing distances between embeddings")
         scores = torch.cdist(embeds_img, target_emb, p=2).cpu().detach().numpy() 
@@ -234,7 +234,7 @@ def init_socket_events(socketio, app=None, cfg=None):
         sorted_indices = sorted(range(len(scores)), key=scores.__getitem__)
 
         # Use the sorted indices to sort all_files
-        all_files = [all_files[i] for i in sorted_indices]'''
+        all_files = [all_files[i] for i in sorted_indices]
       # Sort music by file size
       elif text_query.lower().strip() == "file size":
         show_search_status(f"Gathering file sizes for sorting...") # Initial status message
@@ -396,6 +396,13 @@ def init_socket_events(socketio, app=None, cfg=None):
         user_rating = music_db_item.user_rating
         model_rating = music_db_item.model_rating
 
+      # convert datetime to string
+      if music_db_item.last_played:
+        last_played_timestamp = music_db_item.last_played.timestamp() if music_db_item.last_played else None
+        last_played = time_difference(last_played_timestamp, datetime.datetime.now().timestamp())
+      else:
+        last_played = "Never"
+
       data = {
         "type": "file",
         "full_path": full_path,
@@ -407,6 +414,7 @@ def init_socket_events(socketio, app=None, cfg=None):
         "audiofile_data": audiofile_data,
         "file_size": convert_size(file_size),
         "length": convert_length(audiofile_data['duration']),
+        "last_played": last_played
       }
       files_data.append(data)
     
@@ -443,6 +451,24 @@ def init_socket_events(socketio, app=None, cfg=None):
 
     socketio.emit('emit_music_page_show_song_details', audiofile_data)
 
+  @socketio.on('emit_music_page_set_song_play_rate')
+  def request_new_song(data):
+    cur_song_hash = None
+    song_score_change = None
+    
+    if len(data) > 0:
+      cur_song_hash = data['hash']
+      skip_score_change = data['skip_score_change']
+
+    if cur_song_hash is not None:
+      print('Set song play rate:', cur_song_hash, skip_score_change)
+      song = db_models.MusicLibrary.query.filter_by(hash=cur_song_hash).first()
+      if skip_score_change ==  1:  song.full_play_count += 1
+      if skip_score_change == -1:  song.skip_count += 1
+      
+      #song.skip_score += skip_score_change
+      db_models.db.session.commit()
+
   @socketio.on('emit_music_page_set_song_rating')
   def set_song_rating(data):
     song_hash = data['hash'] 
@@ -464,6 +490,12 @@ def init_socket_events(socketio, app=None, cfg=None):
     #edit_lyrics(data['file_path'], data['lyrics'])
     pass
 
+  @socketio.on('emit_music_page_song_start_playing')
+  def song_start_playing(song_hash):
+    song = db_models.MusicLibrary.query.filter_by(hash=song_hash).first()
+    song.last_played = datetime.datetime.now()
+    db_models.db.session.commit()
+
   @socketio.on('emit_music_page_get_path_to_media_folder')
   def get_path_to_media_folder():
     nonlocal media_directory
@@ -480,3 +512,7 @@ def init_socket_events(socketio, app=None, cfg=None):
 
     media_directory = cfg.music.media_directory
     socketio.emit('emit_music_page_show_path_to_media_folder', media_directory)
+
+  @socketio.on('emit_music_page_open_file_in_folder')
+  def open_file_in_folder(file_path):
+    file_manager.open_file_in_folder(file_path)

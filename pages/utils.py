@@ -1,4 +1,6 @@
 import math
+import datetime
+from dateutil.relativedelta import relativedelta
 
 def convert_size(size_bytes):
     if size_bytes == 0:
@@ -17,6 +19,29 @@ def convert_length(length_seconds):
     minutes = round(minutes)
     hours = round(hours)
     return f"{hours:02}:{minutes:02}:{seconds:02}"
+
+def time_difference(timestamp1, timestamp2):
+    dt1 = datetime.datetime.fromtimestamp(timestamp1)
+    dt2 = datetime.datetime.fromtimestamp(timestamp2)
+    total_seconds = (dt2 - dt1).total_seconds()
+    diff = relativedelta(dt2, dt1)
+
+    if total_seconds < 60:
+        return "Just now"
+
+    readable_form = []
+    if diff.years > 0:
+        readable_form.append(f"{diff.years} years")
+    if diff.months > 0:
+        readable_form.append(f"{diff.months} months")
+    if diff.days > 0:
+        readable_form.append(f"{diff.days} days")
+    if diff.hours > 0:
+        readable_form.append(f"{diff.hours} hours")
+    if diff.minutes > 0:
+        readable_form.append(f"{diff.minutes} minutes")
+
+    return " ".join(readable_form) + " ago"
 
 
 import time
