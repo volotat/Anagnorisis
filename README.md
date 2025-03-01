@@ -98,7 +98,7 @@ You repeat these steps again and again, getting each time model that better and 
 
 ## Image Page
 Please watch this video to see presentation of 'Images' page usage:  
-[![Watch the video](https://i3.ytimg.com/vi/S70Lp0oL7aQ/hqdefault.jpg)](https://youtu.be/S70Lp0oL7aQ)   
+[![Watch the video](https://i3.ytimg.com/vi/S70Lp0oL7aQ/hqdefault.jpg?1)](https://youtu.be/S70Lp0oL7aQ)   
 Or you can read the guide at the [Images wiki](wiki/images.md) page.
 
 ## Music Page
