@@ -96,32 +96,15 @@ Here is the main pipeline of working with the project:
 
 You repeat these steps again and again, getting each time model that better and better aligns to your preferences.  
 
-## Image Page
-Please watch this video to see presentation of 'Images' page usage:  
+## Music Module
+Please watch this video to see presentation of 'Music' module usage:  
+[![Watch the video](https://i3.ytimg.com/vi/vux7mDaRCeY/hqdefault.jpg?1)](https://youtu.be/vux7mDaRCeY)  
+To see how the algorithm works in details, please read this wiki page: [Music](wiki/music.md)
+
+## Images Module
+Please watch this video to see presentation of 'Images' module usage:  
 [![Watch the video](https://i3.ytimg.com/vi/S70Lp0oL7aQ/hqdefault.jpg?1)](https://youtu.be/S70Lp0oL7aQ)   
 Or you can read the guide at the [Images wiki](wiki/images.md) page.
-
-## Music Page
-⚠️ **Warning**: Since version 0.1.2 the music module is on overhaul, so many features are not available yet. Please be patient. The text below is outdated and will be updated soon.
-
-1. Set up the path to your local music folder  
-![music page step 1](static/music_step_1.png)
-
-2. Go to the music library tab and press the "Update music library" button to index your music into the data-base.  
-![music page step 2](static/music_step_2.png)
-
-3. Enjoy your music and rate it according to your preferences. All unrated songs would be chosen randomly while already rated ones will be chosen less or more often accordingly.  
-![music page step 3](static/music_step_3.png)
-
-4. After gathering some data go to "Train" page and press "Train music evaluator" to train your preference model. Wait till the process is complete.  
-![music page step 4](static/music_step_4.png)
-
-
-Now you can come back to enjoying your music, but this time, when the music is selected it will be rated by the model (in case it was not rated by the user already) and therefore adjust the probability of it occurring in your playlist. If you want, you can also go back to the library tab and update music library again, that will effectively rate every song the model can in your library, although be ready that it may take some time.  
-
-Notice, that only *.mp3 format could be rated by the model automatically for now.
-
-To see how the algorithm works in details, please read this wiki page: [Music](wiki/music.md)
 
 ## Wiki
 The project has its own wiki that is integrated into the project itself, you might access it by running the project, or simply reading it as markdown files.
