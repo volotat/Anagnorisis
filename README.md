@@ -34,7 +34,7 @@ Recreate the Environment with following commands:
 
 Initialize your database with this command: 
 ```
-    flask --app app init-db
+    flask --app app db init
 ```
 This should create a new 'instance/project.db' file, that will store your preferences, that will be used later to fine-tune evaluation models.  
 
