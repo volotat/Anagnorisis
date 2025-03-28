@@ -1,4 +1,5 @@
-<script type="text/javascript" src="pages/images/js/main.js"></script>
+<script type="module" type="text/javascript" src="pages/images/js/main.js"></script>
+
 <link rel="stylesheet" href="/static/photoswipe/photoswipe.css">
 <script type="module">
   // Include Lightbox 
@@ -6,7 +7,7 @@
 
   const photoGalleryLightbox = new PhotoSwipeLightbox({
     // may select multiple "galleries"
-    gallery: '#images_grid_container',
+    gallery: '#file_grid_inner_container',
 
     // Elements within gallery (slides)
     children: '.pswp-gallery__item',

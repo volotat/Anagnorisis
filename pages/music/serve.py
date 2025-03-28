@@ -329,6 +329,9 @@ def init_socket_events(socketio, app=None, cfg=None):
         all_files = [file_path for _, file_path in sorted(zip(all_ratings, all_files), reverse=True)]
       # Sort music with recommendation engine 
       elif text_query.lower().strip() == "recommendation":
+        # Update the model ratings of all current files
+        update_model_ratings(all_files)
+        
         music_data = db_models.MusicLibrary.query.with_entities(
             db_models.MusicLibrary.hash,
             db_models.MusicLibrary.user_rating,
@@ -346,9 +349,9 @@ def init_socket_events(socketio, app=None, cfg=None):
       # Sort music by the text query
       else:
         show_search_status(f"Extracting embeddings")
-        embeds_img = MusicSearch.process_audio(all_files, callback=embedding_gathering_callback, media_folder=media_directory)
+        embeds_audio = MusicSearch.process_audio(all_files, callback=embedding_gathering_callback, media_folder=media_directory)
         embeds_text = MusicSearch.process_text(text_query)
-        scores = MusicSearch.compare(embeds_img, embeds_text)
+        scores = MusicSearch.compare(embeds_audio, embeds_text)
 
         # Create a list of indices sorted by their corresponding score
         show_search_status(f"Sorting by relevance")
@@ -390,19 +393,18 @@ def init_socket_events(socketio, app=None, cfg=None):
     
       user_rating = None
       model_rating = None
+      last_played = "Never"
 
       if file_hash in music_db_items_map:
         music_db_item = music_db_items_map[file_hash]
         user_rating = music_db_item.user_rating
         model_rating = music_db_item.model_rating
 
-      # convert datetime to string
-      if music_db_item.last_played:
-        last_played_timestamp = music_db_item.last_played.timestamp() if music_db_item.last_played else None
-        last_played = time_difference(last_played_timestamp, datetime.datetime.now().timestamp())
-      else:
-        last_played = "Never"
-
+        # convert datetime to string
+        if music_db_item.last_played:
+          last_played_timestamp = music_db_item.last_played.timestamp() if music_db_item.last_played else None
+          last_played = time_difference(last_played_timestamp, datetime.datetime.now().timestamp())
+          
       data = {
         "type": "file",
         "full_path": full_path,
@@ -423,6 +425,12 @@ def init_socket_events(socketio, app=None, cfg=None):
 
     # Extract subfolders structure from the path into a dict
     folders = file_manager.get_folder_structure(media_directory, cfg.music.media_formats)
+
+    # Return "No files in the directory" if the path not exist or empty.
+    if not folders:
+      show_search_status(f"No files in the directory.")
+      socketio.emit('emit_music_page_show_files', {"files_data": files_data, "folder_path": folder_path, "total_files": 0, "folders": folders, "all_files_paths": []})
+      return
 
     # Extract main folder name
     main_folder_name = os.path.basename(os.path.normpath(media_directory))

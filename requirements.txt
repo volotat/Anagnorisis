@@ -21,7 +21,6 @@ datasets
 pydub
 python-dateutil 
 tinytag 
-TTS 
 unidecode 
 mutagen
 moviepy

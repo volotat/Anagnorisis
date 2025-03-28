@@ -1,7 +1,8 @@
-import FolderViewComponent from '/pages/FolderView.js';
+import FolderViewComponent from '/pages/FolderViewComponent.js';
 import StarRatingComponent from '/pages/StarRating.js';
 import PlaylistManager from '/pages/music/js/PlaylistManager.js';
 import SongControlPanel from '/pages/music/js/SongControlPanel.js';
+import PaginationComponent from '/pages/PaginationComponent.js';
 
 // Create a closed scope to avoid any variable collisions  
 (function() {
@@ -94,6 +95,7 @@ import SongControlPanel from '/pages/music/js/SongControlPanel.js';
     });
 
     // Display files from the folder
+    let paginationComponent; // Declare paginationComponent in the scope 
     socket.on('emit_music_page_show_files', (data) => {
       console.log('emit_music_page_show_files', data);
 
@@ -388,35 +390,24 @@ import SongControlPanel from '/pages/music/js/SongControlPanel.js';
         //window.photoGalleryLightbox.init();
       });
 
-      // update the pagination
-      $(".pagination-list").empty();
-      let total_pages = Math.ceil(data["total_files"] / num_files_on_page);
+      // Update or Initialize Pagination Component
+      const paginationContainer = $('.pagination.is-rounded.level-left.mb-0 .pagination-list'); // Select pagination container
+      const urlParams = new URLSearchParams(window.location.search); // Get URL parameters for pattern
+      let urlPattern = `?page={page}`; // Base URL pattern
 
-      for (let i = 1; i <= total_pages; i++) {
-        // only include the first, one before, one after, and last pages
-        if (i == 1 || i == page - 1 || i == page || i == page + 1 || i == total_pages) {
-          //let link = `page=${i}`;
-          urlParams.set('page', i);
-          
-          if (text_query){
-            let encoded_text_query = encodeURIComponent(text_query);
-            //link = link + `&text_query=${encoded_text_query}`
-            urlParams.set('text_query', encoded_text_query);
-          }
-          console.log('urlParams', urlParams.toString());
+      if (urlParams.get('text_query')) { // Add text_query if present
+          urlPattern += `&text_query=${encodeURIComponent(urlParams.get('text_query'))}`;
+      }
 
-          let template = /*html*/`<li>
-            <a href="?${urlParams.toString()}" class="pagination-link ${i == page?'is-current':''}" aria-label="Goto page ${i}">${i}</a>
-          </li>`
-          $(".pagination-list").append(template);
-        }
-        // add ellipsis when there are skipped pages
-        else if (i == 2 && page > 3 || i == total_pages - 1 && page < total_pages - 2) {
-          let template = /*html*/`<li>
-            <span class="pagination-ellipsis">&hellip;</span>
-          </li>`
-          $(".pagination-list").append(template);
-        }
+      if (!paginationComponent) { // Instantiate PaginationComponent if it doesn't exist yet
+          paginationComponent = new PaginationComponent({
+              containerId: paginationContainer.closest('.pagination').get(0), // Pass the pagination nav element
+              currentPage: page,
+              totalPages: Math.ceil(data["total_files"] / num_files_on_page),
+              urlPattern: urlPattern,
+          });
+      } else { // Update existing PaginationComponent
+          paginationComponent.updatePagination(page, Math.ceil(data["total_files"] / num_images_on_page));
       }
 
       // Create folder representation from data["folders"] dictionary

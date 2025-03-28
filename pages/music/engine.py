@@ -269,8 +269,8 @@ class MusicSearch ():
     return text_embeds
 
   @staticmethod
-  def compare(embeds_audio, embeds_text):
-    print(embeds_audio.shape, embeds_text.shape)  
+  def compare(audio_embeds, text_embeds):
+    print(audio_embeds.shape, text_embeds.shape)  
     '''
     logits_per_text = torch.matmul(embeds_text, embeds_audio.t()) * MusicSearch.model.logit_scale.exp() + MusicSearch.model.logit_bias
     logits_per_audio = logits_per_text.t()
@@ -278,11 +278,15 @@ class MusicSearch ():
     probs = torch.sigmoid(logits_per_audio)
     '''
 
+    # normalized features
+    audio_embeds = audio_embeds / audio_embeds.norm(p=2, dim=-1, keepdim=True)
+    text_embeds = text_embeds / text_embeds.norm(p=2, dim=-1, keepdim=True)
+
     # cosine similarity as logits
     logit_scale_text = MusicSearch.model.logit_scale_t.exp()
     logit_scale_audio = MusicSearch.model.logit_scale_a.exp()
-    logits_per_text = torch.matmul(embeds_text, embeds_audio.t()) * logit_scale_text
-    logits_per_audio = torch.matmul(embeds_audio, embeds_text.t()) * logit_scale_audio
+    logits_per_text = torch.matmul(text_embeds, audio_embeds.t()) * logit_scale_text
+    logits_per_audio = torch.matmul(audio_embeds, text_embeds.t()) * logit_scale_audio
 
     logits_avg = (logits_per_text + logits_per_audio.t()) / 2.0
 

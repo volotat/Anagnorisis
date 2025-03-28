@@ -1,1 +1,0 @@
-This is an old version of the 'music' module. It is stored for reference purposes only in case I would need some feature from in the actual version of the module. It will probably be deleted when the transition to the new version is complete.

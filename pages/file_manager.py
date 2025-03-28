@@ -154,27 +154,31 @@ class CachedMetadata:
 
 
 def get_folder_structure(folder_path, image_extensions=None):
-  def count_images(folder):
-    return sum(1 for f in os.listdir(folder) if os.path.splitext(f)[1].lower() in image_extensions)
+    # Check if directory exists and return None if not
+    if not os.path.isdir(folder_path):
+        return None
+  
+    def count_files(folder):
+        return sum(1 for f in os.listdir(folder) if os.path.splitext(f)[1].lower() in image_extensions)
 
-  def build_structure(path):
-    folder_dict = {
-      'name': os.path.basename(path),
-      'num_files': count_images(path),
-      'total_files': 0,
-      'subfolders': {}
-    }
-    folder_dict['total_files'] = folder_dict['num_files']
-    
-    for subfolder in os.listdir(path):
-      subfolder_path = os.path.join(path, subfolder)
-      if os.path.isdir(subfolder_path):
-        subfolder_structure = build_structure(subfolder_path)
-        folder_dict['subfolders'][subfolder] = subfolder_structure
-        folder_dict['total_files'] += subfolder_structure['total_files']
-    
-    return folder_dict
-  return build_structure(folder_path)
+    def build_structure(path):
+        folder_dict = {
+        'name': os.path.basename(path),
+        'num_files': count_files(path),
+        'total_files': 0,
+        'subfolders': {}
+        }
+        folder_dict['total_files'] = folder_dict['num_files']
+        
+        for subfolder in os.listdir(path):
+            subfolder_path = os.path.join(path, subfolder)
+            if os.path.isdir(subfolder_path):
+                subfolder_structure = build_structure(subfolder_path)
+                folder_dict['subfolders'][subfolder] = subfolder_structure
+                folder_dict['total_files'] += subfolder_structure['total_files']
+        
+        return folder_dict
+    return build_structure(folder_path)
 
 import subprocess
 import sys

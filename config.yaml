@@ -109,3 +109,8 @@ videos:
   - .flv
   - .mkv
   - .ogv
+text:
+  media_directory: /media/alex/Expansion/Text/
+  media_formats:
+  - .txt
+  - .md

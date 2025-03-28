@@ -1,110 +1,5 @@
-// THIS METHODS SHOULD BE IMPORTED FROM utils.js
-
-class StarRatingComponent {
-  constructor({ initialRating = Name, callback = ()=>{} }) {
-    this.maxRating = 10;
-    this.rating = initialRating;
-    this.containers = [];
-    this.callback = callback;
-  }
-
-  issueNewHtmlComponent(params) {
-    const starRatingHTMLContainer = new StarRatingHTMLContainer(this, params);
-    this.containers.push(starRatingHTMLContainer);
-
-    return starRatingHTMLContainer.container;
-  }
-
-  updateAllContainers() {
-    this.containers.forEach(container => container.updateDisplay());
-  }
-}
-
-class StarRatingHTMLContainer {
-  constructor(starRatingObject, {containerType = 'div', size = 3, isActive = false, showPassiveAsNumber = true}) {
-    this.starRatingObject = starRatingObject;
-    this.isActive = isActive;
-    this.showPassiveAsNumber = showPassiveAsNumber;
-    this.symbolsList = [];
-    this.container = document.createElement(containerType);
-    
-    this.container.classList.add(`is-size-${size.toString()}`);
-    this.container.classList.add('is-gapless');
-    this.container.classList.add('has-text-centered');
-    this.container.classList.add('is-unselectable');
-  
-    this.updateDisplay();
-  }
-
-  generateStarDisplay() {
-    const starRatingObject = this.starRatingObject;
-
-    // Add the initial symbol based on the rating
-    const initialSymbol = document.createElement('span');
-    initialSymbol.textContent = starRatingObject.rating === null ? '◦' : '•';
-    this.container.appendChild(initialSymbol);
-    this.symbolsList.push(initialSymbol);
-  
-    // Create each star element
-    for (let i = 1; i <= starRatingObject.maxRating; i++) {
-      const star = document.createElement('span');
-      star.textContent = i <= starRatingObject.rating ? '★' : '☆';
-      star.classList.add('star');
-  
-      this.container.appendChild(star);
-      this.symbolsList.push(star);
-    }
-
-    if (this.isActive) {
-      for (let i = 0; i < this.symbolsList.length; i++) {
-        this.symbolsList[i].classList.add('is-clickable');
-
-        this.symbolsList[i].addEventListener('mouseover', () => {
-          this.updateDisplay(i); 
-        });
-
-        this.symbolsList[i].addEventListener('mouseout', () => {
-          this.updateDisplay(); 
-        });
-
-        this.symbolsList[i].addEventListener('click', () => {
-          starRatingObject.rating = i;
-          starRatingObject.callback(i);
-          starRatingObject.updateAllContainers();
-        });
-      }
-    }
-  }
-
-  updateDisplay(tmpRating = null) {
-    let rating = this.starRatingObject.rating;
-    const maxRating = this.starRatingObject.maxRating;
-
-    if (tmpRating != null) rating = tmpRating;
-
-    if (!this.isActive && this.showPassiveAsNumber) {
-      if (rating == null)
-        this.container.innerHTML = 'Not rated yet';
-      else
-        this.container.innerHTML = rating.toString() + '/' + maxRating.toString();
-
-      // Clear the symbols list in case it was previously active for some reason
-      this.symbolsList = [];
-    } else {
-      if (this.symbolsList.length == 0) {
-        this.generateStarDisplay();
-      }
-
-      this.symbolsList[0].textContent = rating === null ? '◦' : '•';
-      for (let j = 1; j <= maxRating; j++) {
-        this.symbolsList[j].textContent = j <= rating ? '★' : '☆';
-      }
-    }
-  }
-}
-
-
-
+import StarRatingComponent from '/pages/StarRating.js';
+import FileGridComponent from '/pages/FileGridComponent.js';
 
 // Create a closed scope to avoid any variable collisions  
 (function() {
@@ -124,6 +19,249 @@ class StarRatingHTMLContainer {
   path = decodeURIComponent(path);
   console.log('path', path);
   
+  function renderImagePreview(fileData) { // Function for Images module
+    const imageDataDiv = document.createElement('div');
+    imageDataDiv.className = 'cell has-background-light p-1 is-flex is-flex-direction-column is-justify-content-space-between';
+
+    const imageContainer = document.createElement('div');
+    imageContainer.className = 'pswp-gallery__item is-flex-direction-column mb-2'; // Replicated from original code
+    imageContainer.style.aspectRatio = '1'; // Replicated from original code
+    imageContainer.style.display = 'flex'; // Replicated from original code
+    imageContainer.style.justifyContent = 'center'; // Replicated from original code
+    imageContainer.style.alignItems = 'center'; // Replicated from original code
+
+    imageDataDiv.append(imageContainer);
+
+    // Create a new star rating component (need to be created here to be accessible in the closure)
+    const starRating = new StarRatingComponent({
+      callback: (rating) => {
+        console.log('New rating:', rating);
+        socket.emit('emit_images_page_set_image_rating', {
+          hash: fileData.hash,
+          file_path: fileData.file_path,
+          rating: rating,
+        });
+      },
+      initialRating: fileData.user_rating,
+    });
+  
+    // Create an object for holding the image data
+    const image = document.createElement('img');
+    image.src = 'image_files/'+fileData.file_path;
+    image.onload = function() {
+      // Create link to full image
+      const link = document.createElement('a');
+      // Align the image to the center of the a element
+      link.style.display = 'flex';
+      link.style.justifyContent = 'center';
+      link.style.alignItems = 'center';
+      link.style.width = '100%';
+      link.style.height = '100%';
+      // Set aspect ratio to maintain the square shape
+      link.style.aspectRatio = '1';
+  
+      link.href = 'image_files/'+fileData.file_path;
+      link.target = '_blank';
+      link.setAttribute('data-pswp-width', image.width);
+      link.setAttribute('data-pswp-height', image.height);
+  
+  
+      // Reduce the size of the image to reduce the load on the page
+      const reducedImage = resize_image(image, 400, 400);
+      reducedImage.style.maxWidth = '100%'; // Ensure the image takes the maximum amount of space
+      reducedImage.style.maxHeight = '100%'; // without exceeding the square's bounds
+      reducedImage.style.objectFit = 'contain'; // Maintain the aspect ratio    
+  
+      // Append the reduced image to the link
+      link.append(reducedImage);
+  
+      // Append the image to the beginning of div
+      imageContainer.prepend(link);
+  
+  
+      // Create a new div element
+      const hiddenCaptionDiv = document.createElement('div');
+      hiddenCaptionDiv.className = 'hidden-caption-content';
+  
+      // Set the innerHTML of the div to include the file path or any other HTML content
+      let starRatingDiv = starRating.issueNewHtmlComponent({
+        containerType: 'div',
+        //size:3, 
+        isActive: true
+      });
+      hiddenCaptionDiv.append(starRatingDiv);
+      // Append the div to the imageContainer
+      imageContainer.append(hiddenCaptionDiv);
+  
+      //$(imageContainer).append('<div class="hidden-caption-content">' + fileData.file_path + '</div>');
+      image.remove();
+    };
+
+    return imageDataDiv;
+  }
+
+  function renderCustomData(fileData) { // Create renderCustomData function
+    const dataContainer = document.createElement('div'); // Or any container element you used before
+  
+    const data = document.createElement('p'); // Or whatever element you used
+    data.style.wordBreak = 'break-all'; // Keep styling if you had it
+  
+    $(data).append('<b>Path:</b>&nbsp;' + fileData.file_path + '<br>'); // **Adapt data access to fileData**
+    $(data).append('<b>Hash:</b>&nbsp;' + fileData.hash + '<br>');
+  
+    // Create a new star rating component (need to be created here to be accessible in the closure)
+    const starRating = new StarRatingComponent({
+      initialRating: fileData.user_rating,
+    });
+
+    const StarRatingComponentObject = starRating.issueNewHtmlComponent({ // Use the *global* starRatingComponent
+      containerType: 'span',
+      //size:6,
+      isActive: false
+    })
+    $(data).append('<br><b>User rating:</b>&nbsp;&nbsp;');
+    $(data).append(StarRatingComponentObject)
+    $(data).append('<br>');
+  
+  
+    if (fileData.model_rating != null){
+      $(data).append('<b>Model rating:</b>&nbsp;' + fileData.model_rating.toFixed(2) + '/10<br>');
+    } else {
+      $(data).append('<b>Model rating:</b>&nbsp;N/A<br>');
+    }
+  
+    $(data).append('<b>File size:</b>&nbsp;' + fileData.file_size + '<br>');
+    $(data).append('<b>Resolution:</b>&nbsp;' + fileData.resolution + '<br><br>');
+  
+    dataContainer.appendChild(data); // Append data to the container
+  
+    return dataContainer; // Return the container with all info
+  }
+
+
+
+  let lastActivatedCheckbox = null; // Create a variable to store the last activated checkbox
+
+  // Add checkbox select method
+  function selectCheckbox(currentCheckbox, isChecked) {
+    currentCheckbox.checked = isChecked;
+    const filePath = $(currentCheckbox).data('file-path');
+    if (isChecked) {
+      if (!selected_files.includes(filePath)) {
+        selected_files.push(filePath);
+      }
+    } else {
+      selected_files = selected_files.filter(function(value) {
+        return value !== filePath;
+      });
+    }
+  }
+
+  function renderActions(fileData) { // Create renderActions function
+    const levelContainer = document.createElement('div'); // Or any container element you used before
+    levelContainer.className = 'level is-gapless mt-1'; // Add classes if you had them
+
+    // Create level-left container
+    const levelLeft = document.createElement('div');
+    levelLeft.className = 'level-left is-gapless';
+
+    // Create level-right container
+    const levelRight = document.createElement('div');
+    levelRight.className = 'level-right is-gapless';
+
+    // Add the level containers to the main level container
+    levelContainer.append(levelLeft); // Add the level containers to the actions container
+    levelContainer.append(levelRight); // Add the level containers to the actions container
+
+    // Create buttons for opening the file
+    const btn_open = document.createElement('button');
+    btn_open.className = 'button level-left is-gapless';
+    btn_open.innerHTML = '<span class="icon"><i class="fas fa-folder-open"></i></span><span>Open</span>';
+    btn_open.onclick = function() {
+      console.log('Open file in folder: ' + fileData.full_path);
+      socket.emit('emit_images_page_open_file_in_folder', fileData.full_path);
+    };
+    levelLeft.append(btn_open);
+
+    // Create a button for finding similar images
+    const btn_find_similar = document.createElement('button');
+    btn_find_similar.className = 'button level-left is-gapless';
+    btn_find_similar.innerHTML = '<span class="icon"><i class="fas fa-search"></i></span><span>Find similar</span>';
+    btn_find_similar.onclick = function() {
+      console.log('Find similar images for: ' + fileData.full_path);
+
+      let url = new URL(window.location.href);
+      let params = new URLSearchParams(url.search);
+      params.set('text_query', fileData.full_path);
+      params.set('page', 1);
+      url.search = params.toString();
+      window.location.href = url.toString();
+    };
+    levelLeft.append(btn_find_similar);
+
+    // Create a checkbox for selecting the file for further actions
+    const checkboxLabel = document.createElement('label');
+    checkboxLabel.className = 'b-checkbox checkbox is-large level-right mr-0 ';
+    checkboxLabel.innerHTML = /*html*/`<input type="checkbox" value="false">
+                          <span class="check is-success"></span>`;
+    const checkboxLabelInput = checkboxLabel.querySelector('input');
+    checkboxLabelInput.dataset.filePath = fileData.full_path;
+
+    // Handle the checkbox click event
+    checkboxLabelInput.onclick = function(event) {
+      //event.stopPropagation();
+      const isShiftPressed = event.shiftKey;
+      const checkboxes = $("input[type='checkbox']");
+      const isChecked = this.checked;
+
+      if (isShiftPressed) {
+        console.log('Shift is pressed');
+        
+        if (!isChecked) lastActivatedCheckbox = null;
+    
+        if (lastActivatedCheckbox === null) {
+          // No checkbox was activated before, select all checkboxes
+          checkboxes.each(function() {
+            selectCheckbox(this, isChecked);
+          });
+        } else {
+          // Select all checkboxes from last activated to current one
+          let start = checkboxes.index(lastActivatedCheckbox);
+          let end = checkboxes.index(this);
+          console.log('start', start, 'end', end);
+          if (start > end) [start, end] = [end, start]; // Ensure start is less than end
+
+          checkboxes.slice(start, end + 1).each(function() {
+            selectCheckbox(this, isChecked);
+          });
+        }
+      } else {
+        console.log('Shift is not pressed');
+        lastActivatedCheckbox = this.checked ? this : null;
+
+        // Check if the checkbox is activated
+        selectCheckbox(this, isChecked);
+      }
+
+      // Update the counter of selected files
+      let selectedCount = $("input[type='checkbox']:checked").length;
+      let msg = selectedCount + " file" + (selectedCount !== 1 ? "s" : "") + " selected";
+      $("#selected_files_counter").text(msg);
+
+      // Show files_actions window if there are selected files or hide it if there none
+      if ($("input[type='checkbox']:checked").length > 0){
+        $('#files_actions').show();
+      } else {
+        $('#files_actions').hide();
+        selected_files = [];
+      }
+
+      console.log('selected_files', selected_files);
+    };
+    levelRight.append(checkboxLabel);
+
+    return levelContainer; // Return the container with all info
+  }
 
   function resize_image(image, maxWidth, maxHeight) {
     const canvas = document.createElement('canvas');
@@ -224,279 +362,16 @@ class StarRatingHTMLContainer {
     socket.on('emit_images_page_show_files', (data) => {
       console.log('emit_images_page_show_files', data);
 
-      // Create a container for the images
-      let container = /*html*/`<div class="fixed-grid has-${num_images_in_row}-cols is-gap-0.5">
-        <div class="grid" id="images_grid_container">
-        </div>
-      </div>`;
-      // Add the container to the body (or another container)
-      $('#images_preview_container').append(container);
-
-      // Create a checkbox tracking variables
-      let lastActivatedCheckbox = null;
-
-      // Add checkbox select method
-      function selectCheckbox(currentCheckbox, isChecked) {
-        currentCheckbox.checked = isChecked;
-        const filePath = $(currentCheckbox).data('file-path');
-        if (isChecked) {
-          if (!selected_files.includes(filePath)) {
-            selected_files.push(filePath);
-          }
-        } else {
-          selected_files = selected_files.filter(function(value) {
-            return value !== filePath;
-          });
-        }
-      }
-
-      // Create a new div for each image
-      data["files_data"].forEach(item => {
-        const imageDataDiv = document.createElement('div');
-        imageDataDiv.className = 'cell has-background-light p-1 is-flex is-flex-direction-column is-justify-content-space-between';
-
-        const imageContainer = document.createElement('div');
-        imageContainer.classList.add('pswp-gallery__item', 'is-flex-direction-column');
-        // Make image container always square
-        imageContainer.style.aspectRatio = 1;
-        // Horizontally center the image
-        imageContainer.style.display = 'flex';
-        imageContainer.style.justifyContent = 'center'; 
-        $(imageContainer).addClass('mb-2');
-
-
-        imageDataDiv.append(imageContainer);
-
-        // Create a new star rating component
-        const callback = (rating) => {
-          console.log('New rating:', rating);
-          socket.emit('emit_images_page_set_image_rating', {
-            hash: item.hash,
-            file_path: item.file_path,
-            rating: rating,
-          });
-        }
-        const starRating = new StarRatingComponent({
-          callback: callback,
-          initialRating: item.user_rating, //parseInt(Math.random() * 11),
-        });
-
-        // Create an object for holding the image data
-        const image = document.createElement('img');
-        image.src = 'image_files/'+item.file_path;
-        image.onload = function() {
-          // Create link to full image
-          const link = document.createElement('a');
-          // Align the image to the center of the a element
-          link.style.display = 'flex';
-          link.style.justifyContent = 'center';
-          link.style.alignItems = 'center';
-          link.style.width = '100%';
-          link.style.height = '100%';
-          // Set aspect ratio to maintain the square shape
-          link.style.aspectRatio = '1';
-          
-          link.href = 'image_files/'+item.file_path;
-          link.target = '_blank';
-          link.setAttribute('data-pswp-width', image.width);
-          link.setAttribute('data-pswp-height', image.height);
-
-          // Reduce the size of the image to reduce the load on the page
-          reducedImage = resize_image(image, 400, 400);
-          reducedImage.style.maxWidth = '100%'; // Ensure the image takes the maximum amount of space
-          reducedImage.style.maxHeight = '100%'; // without exceeding the square's bounds
-          reducedImage.style.objectFit = 'contain'; // Maintain the aspect ratio    
-          
-          // Append the reduced image to the link
-          link.append(reducedImage);
-
-          // Append the image to the beginning of div
-          imageContainer.prepend(link);
-
-          
-          // Create a new div element
-          const hiddenCaptionDiv = document.createElement('div');
-          hiddenCaptionDiv.className = 'hidden-caption-content';
-
-          // Set the innerHTML of the div to include the file path or any other HTML content
-          let starRatingDiv = starRating.issueNewHtmlComponent({
-            containerType: 'div',
-            size:3, 
-            isActive: true
-          });
-          hiddenCaptionDiv.append(starRatingDiv);
-          // Append the div to the imageContainer
-          imageContainer.append(hiddenCaptionDiv);
-          
-
-          //$(imageContainer).append('<div class="hidden-caption-content">' + item.file_path + '</div>');
-          image.remove();
-        };
-
-        // Add name of the file to the div
-        const data = document.createElement('p');
-        data.style.wordBreak = 'break-all'; // break long words
-
-        $(data).append('<b>Path:</b>&nbsp;' + item.file_path + '<br>');
-        $(data).append('<b>Hash:</b>&nbsp;' + item.hash + '<br>');
-        
-
-        const StarRatingComponentObject = starRating.issueNewHtmlComponent({
-          containerType: 'span',
-          size:6, 
-          isActive: false
-        })
-        $(data).append('<br><b>User rating:</b>&nbsp;&nbsp;');
-        $(data).append(StarRatingComponentObject)
-        $(data).append('<br>');
-
-        if (item.model_rating != null){
-          $(data).append('<b>Model rating:</b>&nbsp;' + item.model_rating.toFixed(2) + '/10<br>');
-        } else {
-          $(data).append('<b>Model rating:</b>&nbsp;N/A<br>');
-        }
-        
-        $(data).append('<b>File size:</b>&nbsp;' + item.file_size + '<br>');
-        $(data).append('<b>Resolution:</b>&nbsp;' + item.resolution + '<br><br>');
-
-        imageDataDiv.append(data);
-
-        
-        /*data.innerHTML = '<b>Path:</b> ' + item.file_path;
-        data.innerHTML += '<br><b>Hash:</b> ' + item.hash;
-        data.innerHTML += '<br><b>User rating:</b> ' + starRating.issueNewHtmlComponent({
-          size:1, 
-          isActive: false
-        }).innerHTML; //+ item.user_rating;
-        data.innerHTML += '<br><b>Model rating:</b> ' + item.model_rating;
-        data.innerHTML += '<br><b>File size:</b> ' + item.file_size;
-        data.innerHTML += '<br><b>Resolution:</b> ' + item.resolution;
-        data.innerHTML += '<br><br>';*/
-
-        // Create a level container
-        const levelContainer = document.createElement('div');
-        levelContainer.className = 'level is-gapless';
-        imageDataDiv.append(levelContainer);
-
-        // Create level-left container
-        const levelLeft = document.createElement('div');
-        levelLeft.className = 'level-left is-gapless';
-
-        // Create level-right container
-        const levelRight = document.createElement('div');
-        levelRight.className = 'level-right is-gapless';
-
-        // Add the level containers to the level container
-        levelContainer.append(levelLeft);
-        levelContainer.append(levelRight);
-
-        // Create buttons for opening the file
-        const btn_open = document.createElement('button');
-        btn_open.className = 'button level-left is-gapless';
-        btn_open.innerHTML = '<span class="icon"><i class="fas fa-folder-open"></i></span><span>Open</span>';
-        btn_open.onclick = function() {
-          console.log('Open file in folder: ' + item.full_path);
-          socket.emit('emit_images_page_open_file_in_folder', item.full_path);
-        };
-        levelLeft.append(btn_open);
-
-        // Create a button for finding similar images
-        const btn_find_similar = document.createElement('button');
-        btn_find_similar.className = 'button level-left is-gapless';
-        btn_find_similar.innerHTML = '<span class="icon"><i class="fas fa-search"></i></span><span>Find similar</span>';
-        btn_find_similar.onclick = function() {
-          console.log('Find similar images for: ' + item.full_path);
-
-          let url = new URL(window.location.href);
-          let params = new URLSearchParams(url.search);
-          params.set('text_query', item.full_path);
-          params.set('page', 1);
-          url.search = params.toString();
-          window.location.href = url.toString();
-        };
-        levelLeft.append(btn_find_similar);
-
-        // Create a checkbox for selecting the file for further actions
-        const checkboxLabel = document.createElement('label');
-        checkboxLabel.className = 'b-checkbox checkbox is-large level-right mr-0 ';
-        checkboxLabel.innerHTML = /*html*/`<input type="checkbox" value="false">
-                              <span class="check is-success"></span>`;
-        checkboxLabelInput = checkboxLabel.querySelector('input');
-        checkboxLabelInput.dataset.filePath = item.full_path;
-
-        // Handle the checkbox click event
-        checkboxLabelInput.onclick = function(event) {
-          //event.stopPropagation();
-          const isShiftPressed = event.shiftKey;
-          const checkboxes = $("input[type='checkbox']");
-          const isChecked = this.checked;
-
-          if (isShiftPressed) {
-            console.log('Shift is pressed');
-            
-            if (!isChecked) lastActivatedCheckbox = null;
-        
-            if (lastActivatedCheckbox === null) {
-              // No checkbox was activated before, select all checkboxes
-              checkboxes.each(function() {
-                selectCheckbox(this, isChecked);
-              });
-            } else {
-              // Select all checkboxes from last activated to current one
-              let start = checkboxes.index(lastActivatedCheckbox);
-              let end = checkboxes.index(this);
-              console.log('start', start, 'end', end);
-              if (start > end) [start, end] = [end, start]; // Ensure start is less than end
-
-              checkboxes.slice(start, end + 1).each(function() {
-                selectCheckbox(this, isChecked);
-              });
-            }
-          } else {
-            console.log('Shift is not pressed');
-            lastActivatedCheckbox = this.checked ? this : null;
-
-            // Check if the checkbox is activated
-            selectCheckbox(this, isChecked);
-          }
-
-          // Update the counter of selected files
-          let selectedCount = $("input[type='checkbox']:checked").length;
-          let msg = selectedCount + " file" + (selectedCount !== 1 ? "s" : "") + " selected";
-          $("#selected_files_counter").text(msg);
-
-          // Show files_actions window if there are selected files or hide it if there none
-          if ($("input[type='checkbox']:checked").length > 0){
-            $('#files_actions').show();
-          } else {
-            $('#files_actions').hide();
-            selected_files = [];
-          }
-
-          console.log('selected_files', selected_files);
-        };
-        levelRight.append(checkboxLabel);
-
-
-        /*
-        // Create a button for deleting the file
-        btn_delete = document.createElement('button');
-        btn_delete.className = 'button is-pulled-right';
-        btn_delete.innerHTML = '<span class="icon"><i class="fas fa-trash"></i></span><span>Delete</span>';
-        btn_delete.onclick = function() {
-          console.log('Delete file: ' + item.full_path)
-          socket.emit('emit_images_page_send_file_to_trash', item.full_path);
-          // refresh page
-          location.reload();
-        };
-        data.append(btn_delete);
-        */
-
-        //name.className = 'has-text-centered';
-        
-
-        $('#images_grid_container').append(imageDataDiv);
-        //window.photoGalleryLightbox.init();
+      const fileGridComponent = new FileGridComponent({
+        containerId: '#images_preview_container',
+        filesData: data.files_data,
+        renderPreviewContent: renderImagePreview, // Use your customized renderImagePreview
+        renderCustomData: renderCustomData,
+        renderActions: renderActions,
+        handleFileClick: (fileData) => {
+          //window.photoGalleryLightbox.loadAndOpen(0, $('#images_grid_container div.cell').toArray())
+        },
+        numColumns: 6,
       });
 
       // update the pagination

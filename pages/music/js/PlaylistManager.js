@@ -88,6 +88,16 @@ class PlaylistManager {
         // Save current song hash and play time to localStorage
         localStorage.setItem("music_page_current_song_index", this.currentSongIndex);
     }
+
+    clearPlaylist(){
+        this.playlist = [];
+        this.currentSongIndex = 0;
+        this.updatePlaylistPanel();
+
+        // Remove current song hash and play time from localStorage
+        localStorage.removeItem("music_page_playlist");
+        localStorage.removeItem("music_page_current_song_index");
+    }
     
     nextSong(){
         if(this.playlist.length == 0) return;

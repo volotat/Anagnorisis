@@ -161,4 +161,5 @@ def import_database_csv(csv_data):
     print('Database has been imported successfully')
 
 #### RUNNING THE APPLICATION
-socketio.run(app, host=cfg.main.host, port=cfg.main.port)
+if __name__ == '__main__':
+  socketio.run(app, host=cfg.main.host, port=cfg.main.port, allow_unsafe_werkzeug=True)

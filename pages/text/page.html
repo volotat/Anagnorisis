@@ -1,0 +1,93 @@
+<script type="module" src="pages/text/js/main.js"></script>
+
+<div class="container is-fluid columns is-centered py-6 mb-6">
+  <aside class="column is-2 menu">
+    <p class="menu-label">Text Library</p>
+    <ul class="menu-list" id="folders_menu">
+      <!-- Folder structure will be loaded here by JavaScript -->
+    </ul>
+  </aside>
+
+  <div class="column">
+    <div class="field">
+      <p class="control">
+        <input class="input" type="text" placeholder="Search text files (not implemented yet)">
+      </p>
+    </div>
+
+    <!-- Pagination and status on top-->
+    <nav class="level mt-6">
+      <nav class="pagination is-rounded level-left mb-0" role="navigation" aria-label="pagination">    
+        <ul class="pagination-list">
+          <li>
+            <span class="pagination-ellipsis">&hellip;</span>
+          </li>
+        </ul>
+      </nav>
+      <div class="level-right">
+        <p class="search-status">...</p>
+      </div>
+    </nav>
+
+    <div id="text_files_grid_container"> 
+      <!-- Text files will be listed here -->
+    </div>
+
+    <!-- Pagination and status on bottom-->
+    <nav class="pagination is-rounded mt-6" role="navigation" aria-label="pagination">
+      <nav class="pagination is-rounded level-left mb-0" role="navigation" aria-label="pagination">    
+        <ul class="pagination-list">
+          <li>
+            <span class="pagination-ellipsis">&hellip;</span>
+          </li>
+        </ul>
+      </nav>
+      <div class="level-right">
+        <p class="search-status">...</p>
+      </div>
+    </nav>
+  </div>
+</div>
+
+<!-- Modal for Text File Viewer/Editor -->
+<div class="modal" id="text_file_modal">
+  <div class="modal-background modal-close-action"></div>
+  <div class="modal-card" style="width: 80%; max-width: 960px;">
+    <header class="modal-card-head">
+      <p class="modal-card-title" id="text_file_modal_title">File Content</p>
+      <button class="delete modal-close modal-close-action" aria-label="close"></button>
+    </header>
+    <section class="modal-card-body">
+      <div class="tabs is-toggle is-fullwidth is-medium">
+        <ul>
+          <li class="is-active" data-tab="raw">
+            <a><span>Raw Text</span></a>
+          </li>
+          <li data-tab="markdown">
+            <a><span>Markdown</span></a>
+          </li>
+          <li data-tab="html">
+            <a><span>HTML</span></a>
+          </li>
+        </ul>
+      </div>
+      <div id="text_viewer_raw" class="tab-content">
+        <textarea class="textarea" id="text_content_textarea" placeholder="File content..." style="min-height: 400px;"></textarea>
+      </div>
+      <div id="text_viewer_markdown" class="tab-content" style="display: none;">
+        <div class="content" id="text_content_markdown" style="min-height: 400px; border: 1px solid var(--bulma-border-color); padding: 10px; overflow-y: auto;">
+          <!-- Markdown content will be rendered here -->
+        </div>
+      </div>
+      <div id="text_viewer_html" class="tab-content" style="display: none;">
+        <div class="content" id="text_content_html" style="min-height: 400px; border: 1px solid var(--bulma-border-color); padding: 10px; overflow-y: auto;">
+          <!-- HTML content will be rendered here -->
+        </div>
+      </div>
+    </section>
+    <footer class="modal-card-foot">
+      <button class="button is-success modal-save-action">Save changes</button>
+      <button class="button modal-close-action">Cancel</button>
+    </footer>
+  </div>
+</div>

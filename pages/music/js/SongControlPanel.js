@@ -155,7 +155,13 @@ class SongControlPanel {
           })
           .catch((error) => {
             console.error("Failed to fetch song details:", error);
-            this.songLabelElement.text("Error loading song details.");
+            this.songLabelElement.text("Error loading song details. Clearing playlist...");
+
+            // Clean playlist and refresh the page.
+            setTimeout(() => {
+                this.playlistManager.clearPlaylist();
+                location.reload();
+            }, 3000);
           });
     }
 

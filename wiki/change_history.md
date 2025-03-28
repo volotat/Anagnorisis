@@ -48,14 +48,23 @@ Find a way for more optimal embeddings storage in the DB.
 Separate the file-management part of the project into separate scripts.  
 Implement automatic model downloading at the fresh start of the project.
 
-### Tests
-Create an automatic creation of the environment and launch a project to see it is always runnable from the clean start.
-
-
 ## Important fixes before 0.2.0 release
 Create a working docker environment to easily run the project.  
 
 ## Versions History
+
+### Version 0.1.7 (29.03.2025)
+* Added a Docker-based test (`tests/test_docker_build.sh`) to automatically verify project installation and startup in a clean environment.
+* Removed the old `_music_v0.1.1` module code, outdated research folders, and documentation. Removed the `TTS` dependency from `requirements.txt`.
+* Added initial `text` configuration section to `config.yaml`.
+* Created a reusable `FileGridComponent.js` for displaying file grids and integrated it into the 'Images', 'Music', and 'Text' modules for consistency.
+* Created a reusable `PaginationComponent.js` for pagination and integrated it into the 'Music', and 'Text' modules.
+* Method `show_search_status` separated into a `CommonSocketEvents` and now targeted for each folder separately. This approach will later be used for almost all socket events.
+* In `Music` module the playlist now is automatically cleaned up in case any error occurs during the playback. This should prevent the playlist being not accessible after the error.
+*   **New 'Text' Module:** Introduced a new 'Text' module for viewing and editing `.txt` and `.md` files:
+    *   Includes folder navigation and file grid display.
+    *   Features a modal window for viewing content with Raw/Markdown/HTML tabs (Markdown/HTML rendering not yet implemented).
+    *   Allows basic text editing and saving.
 
 ### Version 0.1.6 (01.03.2025)
 * Implemented control of music playback (play/pause, next/previous track) through browser's `navigator.mediaSession` API. This allows control from external devices and browser UI elements that support media sessions (like media keys on keyboards, lock screen controls, and some bluetooth devices).
