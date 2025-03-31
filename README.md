@@ -36,7 +36,7 @@ Initialize your database with this command:
 ```
     flask --app app db init
 ```
-This should create a new 'instance/project.db' file, that will store your preferences, that will be used later to fine-tune evaluation models.  
+This should create a new 'instance/project.db' file, that will store your preferences, that will be used later to fine-tune evaluation models. Do not forget to activate your virtual environment when executing this command.
 
 
 Then run the project with command:
