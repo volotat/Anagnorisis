@@ -12,6 +12,24 @@ To read more about the ideas behind the project you can read these articles:
 [Anagnorisis. Part 2: The Music Recommendation Algorithm.](https://medium.com/@AlexeyBorsky/anagnorisis-part-2-the-music-recommendation-algorithm-ba5ce7a0fa30)  
 [Anagnorisis. Part 3: Why Should You Go Local?](https://medium.com/@AlexeyBorsky/anagnorisis-part-3-why-should-you-go-local-b68e2b99ff53)  
 
+## General
+Here is the main pipeline of working with the project:  
+1. You rate some data such as text, audio, images, video or anything else on the scale from 0 to 10 and all of this is stored in the project database.  
+2. When you acquire some amount of such rated data points you go to the 'Train' page and start the fine-tuning of the model so it could rate the data AS IF it was rated by you.  
+3. New model is used to sort new data by rates from the model and if you do not agree with the scores the model gave, you simply change it.  
+
+You repeat these steps again and again, getting each time model that better and better aligns to your preferences.  
+
+## Music Module
+Please watch this video to see presentation of 'Music' module usage:  
+[![Watch the video](https://i3.ytimg.com/vi/vux7mDaRCeY/hqdefault.jpg?1)](https://youtu.be/vux7mDaRCeY)  
+To see how the algorithm works in details, please read this wiki page: [Music](wiki/music.md)
+
+## Images Module
+Please watch this video to see presentation of 'Images' module usage:  
+[![Watch the video](https://i3.ytimg.com/vi/S70Lp0oL7aQ/hqdefault.jpg?1)](https://youtu.be/S70Lp0oL7aQ)   
+Or you can read the guide at the [Images wiki](wiki/images.md) page.
+
 ## Running from Docker
 The preferred way to run the project is from Docker. This should be much more stable than running it from the local environment, especially on Windows. But be aware that all paths in the projects would be relative the `DATA_PATH` folder that you mount to the container. 
 
@@ -77,24 +95,6 @@ To make audio and visual search possible the project uses these models:
 [Google/SigLIP](https://arxiv.org/pdf/2303.15343)  
 
 All embedding models are downloaded automatically when the project is started for the first time. This might take some time depending on the internet connection. You can see the progress inside `container_log.txt` file that will appear in the project's root folder if you run the project from the Docker container.
-
-## General
-Here is the main pipeline of working with the project:  
-1. You rate some data such as text, audio, images, video or anything else on the scale from 0 to 10 and all of this is stored in the project database.  
-2. When you acquire some amount of such rated data points you go to the 'Train' page and start the fine-tuning of the model so it could rate the data AS IF it was rated by you.  
-3. New model is used to sort new data by rates from the model and if you do not agree with the scores the model gave, you simply change it.  
-
-You repeat these steps again and again, getting each time model that better and better aligns to your preferences.  
-
-## Music Module
-Please watch this video to see presentation of 'Music' module usage:  
-[![Watch the video](https://i3.ytimg.com/vi/vux7mDaRCeY/hqdefault.jpg?1)](https://youtu.be/vux7mDaRCeY)  
-To see how the algorithm works in details, please read this wiki page: [Music](wiki/music.md)
-
-## Images Module
-Please watch this video to see presentation of 'Images' module usage:  
-[![Watch the video](https://i3.ytimg.com/vi/S70Lp0oL7aQ/hqdefault.jpg?1)](https://youtu.be/S70Lp0oL7aQ)   
-Or you can read the guide at the [Images wiki](wiki/images.md) page.
 
 ## Wiki
 The project has its own wiki that is integrated into the project itself, you might access it by running the project, or simply reading it as markdown files.
