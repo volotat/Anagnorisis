@@ -5,15 +5,9 @@
  
 ### Music 
 Add a way to change the rest of the metadata of the song.  
-Add volume control.  
-Add a message if there are new unindexed media files.  
+Add volume control.   
 Move the "edit" button to the song list element.  
 Add "Chain Mode" where each song is selected as the most similar to a previous song.  
-Add a way to restart the radio session.  
-Explore ways to optimize the music library update process.  
-In radio mode add an "Open file destination" button to be able to move or remove bad music if found.  
-
-Add training evaluation model to the Music module.
 
 ### Images 
 Implement some sort of effective resolution estimation technique.   
@@ -38,20 +32,24 @@ After training is complete or canceled reload the evaluation models.
 ### General
 Add some sort of a control panel that is active on all pages (may be hidden) and shows current GPU memory load by the system and console output.  
 Create an extension that provides recent Arxiv papers (https://arxiv.org/list/cs.LG/recent).    
-Add a way to export the current database as .csv and import it back.  
 Implement usage of FAISS library for fast vector search.  
 Update main readme.md file and write about 'images' page, also need to add a way to download SigLIP model.  
-When the folder name contains '[' and ']' symbols it is not correctly read by python scripts for some reason.  
-Redo music page representation to more closely resemble images page and apply its improvements file hash cashing and metadata search.  
+When the folder name contains '[' and ']' symbols it is not correctly read by python scripts for some reason.   
 Add automatic database backup generation from time to time to prevent loss of data in case of a failure.  
 Find a way for more optimal embeddings storage in the DB.  
-Separate the file-management part of the project into separate scripts.  
 Implement automatic model downloading at the fresh start of the project.
 
-## Important fixes before 0.2.0 release
-Create a working docker environment to easily run the project.  
-
 ## Versions History
+
+### Version 0.2.0 (04.04.2025)
+* Docker container for running the project configured and extensively tested to make running the project easier.
+* Database is now automatically created if it doesn't exist, and migrations are applied on application startup, removing the need for manual `flask db` commands.
+* Introduced `DATA_PATH` environment variable and `--data-folder` argument to manage all user-specific data (database, models, config as well as user's personal data) in a central location (defaults to `./project_data`).
+* Implemented a system where user settings in `{DATA_PATH}/Anagnorisis-app/config.yaml` override the base `config.yaml` for proper configuration personalization that do not get overwritten after the `git pull`. The user config is created automatically from the default if it doesn't exist.
+* Required embedding models (`SigLIP`, `CLAP`) are now downloaded automatically on first use if not found in the configured `models_path`.
+* Revised `README.md` with updated setup instructions (including Docker) and adjusted `run.sh`/`run.bat` for the new data folder structure and automatic migrations.
+* Changed default host to `0.0.0.0` for it to be compatible with Docker. 
+* Added `huggingface-hub` to `requirements.txt` (necessary for automatic models download).
 
 ### Version 0.1.7 (29.03.2025)
 * Added a Docker-based test (`tests/test_docker_build.sh`) to automatically verify project installation and startup in a clean environment.

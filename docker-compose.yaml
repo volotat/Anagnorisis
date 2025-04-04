@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  anagnorisis:
+    build: .
+    image: anagnorisis-app:latest
+    container_name: anagnorisis-app
+    ports:
+      - "${EXTERNAL_PORT:-5001}:5001" # Map the external port to the internal port
+    volumes:
+      - .:/app  # Mount the source code directory
+      - ${DATA_PATH:-./project_data}:/app/project_data # Mount your data directory
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - RUNNING_IN_DOCKER=true

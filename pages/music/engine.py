@@ -15,6 +15,7 @@ import imageio
 import torchaudio
 from tinytag import TinyTag
 import base64
+from huggingface_hub import snapshot_download 
 
 import src.scoring_models
 import pages.music.db_models as db_models
@@ -118,21 +119,54 @@ class MusicSearch ():
   is_busy = False
 
   @staticmethod
-  def initiate():
-    if MusicSearch.model is not None:
-      return
+  def initiate(models_folder='./models', cache_folder='./cache'):
+      if MusicSearch.model is not None:
+          return
     
-    MusicSearch.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    MusicSearch.model = ClapModel.from_pretrained("./models/clap-htsat-fused", local_files_only=True).to(MusicSearch.device)
-    MusicSearch.processor = ClapProcessor.from_pretrained("./models/clap-htsat-fused", local_files_only=True)
-    MusicSearch.feature_extractor = AutoFeatureExtractor.from_pretrained("./models/clap-htsat-fused", local_files_only=True)
+      model_name = "laion/clap-htsat-fused"
+      local_model_path = os.path.join(models_folder, model_name.split("/")[-1]) # e.g., ./models/clap-htsat-fused
 
-    MusicSearch.model_hash = MusicSearch.get_model_hash()
-    MusicSearch.embedding_dim = MusicSearch.model.config.text_config.projection_dim
+      # Ensure base models directory exists
+      os.makedirs(models_folder, exist_ok=True)
+      
+      # Check if model exists locally, if not, download it
+      if not os.path.exists(local_model_path):
+          print(f"Model '{model_name}' not found locally. Downloading to '{local_model_path}'...")
+          try:
+              snapshot_download(
+                  repo_id=model_name,
+                  local_dir=local_model_path,
+                  local_dir_use_symlinks=False # Download actual files
+              )
+              print(f"Model '{model_name}' downloaded successfully.")
+          except Exception as e:
+              print(f"ERROR: Failed to download model '{model_name}'. Please check your internet connection and permissions.")
+              print(f"Error details: {e}")
+              raise RuntimeError(f"Failed to download required model: {model_name}") from e
+      else:
+            print(f"Found existing model '{model_name}' at '{local_model_path}'.")
 
-    MusicSearch.cached_file_list = file_manager.CachedFileList('cache/music_file_list.pkl')
-    MusicSearch.cached_file_hash = file_manager.CachedFileHash('cache/music_file_hash.pkl')
-    MusicSearch.cached_metadata = file_manager.CachedMetadata('cache/music_metadata.pkl', get_audiofile_data)
+      # Now load the model and processor from the guaranteed local path
+      try:
+          MusicSearch.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+          MusicSearch.model = ClapModel.from_pretrained(local_model_path, local_files_only=True).to(MusicSearch.device)
+          MusicSearch.processor = ClapProcessor.from_pretrained(local_model_path, local_files_only=True)
+          MusicSearch.feature_extractor = AutoFeatureExtractor.from_pretrained(local_model_path, local_files_only=True)
+
+          MusicSearch.model_hash = MusicSearch.get_model_hash()
+          MusicSearch.embedding_dim = MusicSearch.model.config.text_config.projection_dim # Adjust based on CLAP model config if needed
+      except Exception as e:
+          print(f"ERROR: Failed to load model '{model_name}' from '{local_model_path}'. The download might be incomplete or corrupted.")
+          print(f"Error details: {e}")
+          raise RuntimeError(f"Failed to load required model: {model_name}") from e
+
+      # --- Initialize Caches ---
+      # Ensure cache directory exists
+      os.makedirs(cache_folder, exist_ok=True)
+      MusicSearch.cached_file_list = file_manager.CachedFileList(os.path.join(cache_folder,'music_file_list.pkl'))
+      MusicSearch.cached_file_hash = file_manager.CachedFileHash(os.path.join(cache_folder,'music_file_hash.pkl'))
+      MusicSearch.cached_metadata = file_manager.CachedMetadata(os.path.join(cache_folder,'music_metadata.pkl'), get_audiofile_data)
+
 
   '''_instance = None
   def __new__(self, *args, **kwargs):
@@ -146,6 +180,9 @@ class MusicSearch ():
 
   @staticmethod
   def get_model_hash():
+    if MusicSearch.model is None: 
+        raise Exception("Model is not initialized")
+    
     state_dict = MusicSearch.model.state_dict()
     buffer = io.BytesIO()
     torch.save(state_dict, buffer)

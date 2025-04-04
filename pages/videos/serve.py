@@ -106,8 +106,8 @@ def generate_preview(video_path, preview_path):
     print(f"Error generating preview for {video_path}: {e}")
 
 
-def init_socket_events(socketio, app=None, cfg=None):
-  media_directory = cfg.videos.media_directory
+def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data'):
+  media_directory = os.path.join(data_folder, cfg.videos.media_directory)
 
   def show_search_status(status):
     socketio.emit('emit_videos_page_show_search_status', status)

@@ -160,6 +160,7 @@ cython_debug/
 #.idea/
 
 
+project_data/
 datasets/
 instance/
 migrations/
@@ -169,3 +170,5 @@ static/tmp/
 static/discarded/
 experiments/
 old_code/
+
+container_log.txt

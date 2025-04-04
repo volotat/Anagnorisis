@@ -20,15 +20,79 @@ from importlib import import_module
 
 from src.db_models import db
 
-cfg = OmegaConf.load("config.yaml")
+# Add after your imports, before loading config
+import argparse
+import os
+import shutil
 
+def parse_arguments():
+    parser = argparse.ArgumentParser(description='Anagnorisis Application')
+    parser.add_argument('--data-folder', type=str, default='/project_data', help='Path to data folder')
+    return parser.parse_args()
+
+# Get data folder from command line
+args = parse_arguments()
+data_folder = str(args.data_folder)
+script_folder = os.path.dirname(os.path.abspath(__file__))
+print(f"Script folder: {script_folder}")
+
+# Check if running in a Docker container
+if os.environ.get('RUNNING_IN_DOCKER') == 'true':
+    print("Running in Docker container")
+    # If running in Docker, use the data folder from the environment variable
+    if data_folder.startswith('/'):
+        # If it's an absolute path, make it relative to /app
+        data_folder = os.path.join('/app', data_folder[1:])
+    else:
+        # If it's already relative, just prepend /app
+        data_folder = os.path.join('/app', data_folder)
+
+print(f"Using data folder: {data_folder}")
+
+# Load default configuration
+config_path = os.path.join(script_folder, 'config.yaml')
+cfg = OmegaConf.load(config_path)
+
+# Load local configuration if it exists
+local_config_path = os.path.join(data_folder, 'Anagnorisis-app', 'config.yaml')
+
+
+if os.path.exists(local_config_path):
+    print(f"Loading configuration from: {local_config_path}")
+    local_cfg = OmegaConf.load(local_config_path)
+    cfg = OmegaConf.merge(cfg, local_cfg) # Merge local overrides into default
+else:
+    # Copy the default config to the data folder if it doesn't exist
+    print(f"Copying default config to: {local_config_path}")
+    os.makedirs(os.path.dirname(local_config_path), exist_ok=True)
+    shutil.copyfile(config_path, local_config_path)
+    # Load the copied config
+    print(f"Loading configuration from: {local_config_path}")
+    cfg = OmegaConf.load(local_config_path)
+
+# Ensure database path is properly set up
+# If the database path is relative, make it absolute within the data folder
+if not os.path.isabs(cfg.main.database_path):
+    database_path = os.path.join(script_folder, cfg.main.database_path)
+else:
+    database_path = cfg.main.database_path
+
+print(f"Database path set to: {database_path}")
+
+# Ensure database directory exists
+db_dir = os.path.dirname(database_path)
+if db_dir and not os.path.exists(db_dir):
+    print(f"Creating database directory: {db_dir}")
+    os.makedirs(db_dir, exist_ok=True)
+
+# Now initialize the Flask app with the properly configured database path
 app = Flask(__name__, template_folder='pages', static_folder='static')
-#app.debug = True
-
 app.config['SECRET_KEY'] = cfg.main.flask_secret_key
-app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{cfg.main.database_path}"
+app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{database_path}"
 
-socketio = SocketIO(app, cors_allowed_origins="*")
+
+# Set the socketio parameters
+socketio = SocketIO(app, cors_allowed_origins="*", path="/socket.io")
 
 # List all folders in the extensions directory
 extension_names = [entry.name for entry in os.scandir('pages') if entry.is_dir()]
@@ -36,20 +100,20 @@ extension_names = [entry for entry in extension_names if not entry.startswith('_
 
 # Import models from each extension
 for extension_name in extension_names:
-  # Check if the extension has a db_models.py file
-  if not os.path.exists(f'pages/{extension_name}/db_models.py'):
-    continue
+    # Check if the extension has a db_models.py file
+    if not os.path.exists(f'pages/{extension_name}/db_models.py'):
+        continue
 
-  # Import the module
-  module = import_module(f'pages.{extension_name}.db_models')
+    # Import the module
+    module = import_module(f'pages.{extension_name}.db_models')
 
-  # Get the attributes of the module
-  for attr_name in dir(module):
-    attr = getattr(module, attr_name)
+    # Get the attributes of the module
+    for attr_name in dir(module):
+        attr = getattr(module, attr_name)
 
-    # If the attribute is a SQLAlchemy model, add it to the SQLAlchemy instance
-    if isinstance(attr, db.Model):
-      db.Model.metadata.tables[attr.__tablename__] = attr.__table__
+        # If the attribute is a SQLAlchemy model, add it to the SQLAlchemy instance
+        if isinstance(attr, db.Model):
+            db.Model.metadata.tables[attr.__tablename__] = attr.__table__
 
 # Initialize Flask-Migrate
 db.init_app(app)
@@ -66,27 +130,27 @@ markdown_extensions = [
 #### MAIN PAGE FUNCTIONALITY
 @app.route('/')
 def index():
-  # Read the Markdown file and convert it to HTML
-  with open('README.md', 'r') as file:
-    markdown_text = file.read()
-    html = markdown.markdown(markdown_text, extensions=markdown_extensions)
+    # Read the Markdown file and convert it to HTML
+    with open('README.md', 'r') as file:
+        markdown_text = file.read()
+        html = markdown.markdown(markdown_text, extensions=markdown_extensions)
 
-  return render_template('wiki.html', content=html, cfg=cfg, pages=extension_names, current_page='wiki')
+    return render_template('wiki.html', content=html, cfg=cfg, pages=extension_names, current_page='wiki')
 
 #### WIKI PAGE FUNCTIONALITY
 @app.route('/wiki/<page_name>')
 def page_wiki(page_name):
-  # Assume your Markdown files are in a folder named 'wiki'
-  file_path = os.path.join('wiki', f'{page_name}')
+    # Assume your Markdown files are in a folder named 'wiki'
+    file_path = os.path.join('wiki', f'{page_name}')
 
-  if os.path.exists(file_path):
-    with open(file_path, 'r') as file:
-      markdown_text = file.read()
-      html = markdown.markdown(markdown_text, extensions=markdown_extensions)
-  else:
-    # Handle the case where the file doesn't exist
-    html = '<p>Page not found</p>'
-  return render_template('wiki.html', content=html, cfg=cfg, pages=extension_names, current_page='wiki')
+    if os.path.exists(file_path):
+        with open(file_path, 'r') as file:
+            markdown_text = file.read()
+            html = markdown.markdown(markdown_text, extensions=markdown_extensions)
+    else:
+        # Handle the case where the file doesn't exist
+        html = '<p>Page not found</p>'
+    return render_template('wiki.html', content=html, cfg=cfg, pages=extension_names, current_page='wiki')
 
 
 #### SERVING FILES FROM PAGES FOLDER, TO MAKE EXTENSIONS FILES ACCESSIBLE
@@ -117,7 +181,7 @@ for extension_name in extension_names:
     try:
         module = import_module(serve_module_path)
         if hasattr(module, 'init_socket_events') and callable(module.init_socket_events):
-            module.init_socket_events(socketio, app=app, cfg=cfg)
+            module.init_socket_events(socketio, app=app, cfg=cfg, data_folder=data_folder)
 
             # Create a route for the extension
             app.add_url_rule(f'/{extension_name}', f'{extension_name}_route', create_route(extension_name))
@@ -160,6 +224,71 @@ def import_database_csv(csv_data):
     src.db_models.import_db_from_csv(db.session, csv_data)
     print('Database has been imported successfully')
 
+def create_db_if_not_exists():
+    """Create database tables if they don't exist"""
+    db_path = database_path
+
+    # If the path is relative, make it absolute
+    if not os.path.isabs(db_path):
+        db_path = os.path.join(script_folder, db_path)
+
+    # Get the directory of the database file
+    db_dir = os.path.dirname(db_path)
+    
+    # Create directory if it doesn't exist
+    if db_dir and not os.path.exists(db_dir):
+        os.makedirs(db_dir)
+    
+    # Check if database file exists
+    if not os.path.exists(db_path):
+        print(f"Database not found at {db_path}. Creating database...")
+        with app.app_context():
+            db.create_all()
+        print("Database created successfully.")
+    else:
+        print(f"Database found at {db_path}.")
+
+def migrate_database():
+    """Run database migrations if needed"""
+    from flask_migrate import upgrade, migrate, init
+    import os.path
+
+    mg_path = cfg.main.migrations_path
+    migrations_dir = os.path.join(script_folder, mg_path)
+    print(f"Using migrations directory: {migrations_dir}")
+
+    # Configure Flask-Migrate to use the custom directory
+    migrate.directory = migrations_dir
+    
+    with app.app_context():
+        # Check if migrations directory exists
+        if not os.path.exists(migrations_dir):
+            print("Initializing migrations...")
+            init(directory=migrations_dir)
+            
+        # Generate migration
+        print("Generating migrations...")
+        migrate(directory=migrations_dir)
+        
+        # Apply migrations
+        print("Applying migrations...")
+        upgrade(directory=migrations_dir)
+        
+        print("Database migration completed successfully.")  
+
 #### RUNNING THE APPLICATION
 if __name__ == '__main__':
-  socketio.run(app, host=cfg.main.host, port=cfg.main.port, allow_unsafe_werkzeug=True)
+    print("Starting the application...")
+
+    # Initialize the database
+    create_db_if_not_exists()
+
+    # Migrate the database if necessary
+    migrate_database()
+
+    # Run the application
+    socketio.run(app, 
+                host=cfg.main.host, 
+                port=cfg.main.port, 
+                allow_unsafe_werkzeug=True, 
+                )

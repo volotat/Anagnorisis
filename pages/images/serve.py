@@ -88,12 +88,12 @@ def get_folder_structure(folder_path, image_extensions=None):
     return folder_dict
   return build_structure(folder_path)
 
-def init_socket_events(socketio, app=None, cfg=None):
-  media_directory = cfg.images.media_directory
-  ImageSearch.initiate()
+def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data'):
+  media_directory = os.path.join(data_folder, cfg.images.media_directory)
+  ImageSearch.initiate(models_folder=cfg.main.models_path, cache_folder=cfg.main.cache_path)
 
   image_evaluator = ImageEvaluator() #src.scoring_models.Evaluator(embedding_dim=768)
-  image_evaluator.load('./models/image_evaluator.pt')
+  image_evaluator.load(os.path.join(cfg.main.models_path, 'image_evaluator.pt'))
 
   def show_search_status(status):
     socketio.emit('emit_images_page_show_search_status', status)
@@ -491,19 +491,21 @@ def init_socket_events(socketio, app=None, cfg=None):
   @socketio.on('emit_images_page_get_path_to_media_folder')
   def get_path_to_media_folder():
     nonlocal media_directory
-    socketio.emit('emit_images_page_show_path_to_media_folder', media_directory)
+    socketio.emit('emit_images_page_show_path_to_media_folder', cfg.images.media_directory)
 
   @socketio.on('emit_images_page_update_path_to_media_folder')
   def update_path_to_media_folder(new_path):
     nonlocal media_directory
+    print('Update path to media folder:', new_path)
+    
     cfg.images.media_directory = new_path
 
     # Update the configuration file
-    with open('config.yaml', 'w') as file:
+    with open(os.path.join(data_folder, 'Anagnorisis-app', 'config.yaml'), 'w') as file:
       OmegaConf.save(cfg, file)
 
-    media_directory = cfg.images.media_directory
-    socketio.emit('emit_images_page_show_path_to_media_folder', media_directory)
+    media_directory = os.path.join(data_folder, cfg.images.media_directory)
+    socketio.emit('emit_images_page_show_path_to_media_folder', cfg.images.media_directory)
 
     # Show files in new folder
     #get_files({})

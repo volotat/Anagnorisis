@@ -12,6 +12,7 @@ import io
 import time
 import cv2
 import imageio
+from huggingface_hub import snapshot_download
 
 import src.scoring_models
 import pages.images.db_models as db_models
@@ -42,19 +43,56 @@ class ImageSearch:
   is_busy = False
 
   @staticmethod
-  def initiate():
+  def initiate(models_folder='./models', cache_folder='./cache'):
     if ImageSearch.model is not None:
       return
     
-    ImageSearch.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    ImageSearch.model = AutoModel.from_pretrained("./models/siglip-base-patch16-224", local_files_only=True).to(ImageSearch.device)
-    ImageSearch.processor = AutoProcessor.from_pretrained("./models/siglip-base-patch16-224", local_files_only=True)
-    ImageSearch.model_hash = ImageSearch.get_model_hash()
-    ImageSearch.embedding_dim = ImageSearch.model.config.text_config.hidden_size
+    model_name = "google/siglip-base-patch16-224"
+    local_model_path = os.path.join(models_folder, model_name.split("/")[-1]) # e.g., ./models/siglip-base-patch16-224
 
-    ImageSearch.cached_file_list = file_manager.CachedFileList('cache/images_file_list.pkl')
-    ImageSearch.cached_file_hash = file_manager.CachedFileHash('cache/images_file_hash.pkl')
-    ImageSearch.cached_metadata = file_manager.CachedMetadata('cache/images_metadata.pkl', get_image_metadata)
+    # Ensure base models directory exists
+    os.makedirs(models_folder, exist_ok=True)
+    
+    # Check if model exists locally, if not, download it
+    if not os.path.exists(local_model_path):
+        print(f"Model '{model_name}' not found locally. Downloading to '{local_model_path}'...")
+        try:
+            snapshot_download(
+                repo_id=model_name,
+                local_dir=local_model_path,
+                local_dir_use_symlinks=False # Download actual files, not symlinks
+            )
+            print(f"Model '{model_name}' downloaded successfully.")
+        except Exception as e:
+            print(f"ERROR: Failed to download model '{model_name}'. Please check your internet connection and permissions.")
+            print(f"Error details: {e}")
+            # Decide how to handle failure: exit, raise exception, or proceed without model?
+            # For now, let's raise an exception to make the failure obvious.
+            raise RuntimeError(f"Failed to download required model: {model_name}") from e
+    else:
+        print(f"Found existing model '{model_name}' at '{local_model_path}'.")
+
+    # Now load the model and processor from the guaranteed local path
+    try:
+        ImageSearch.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        # Load from the specific local path, ensuring local_files_only=True
+        ImageSearch.model = AutoModel.from_pretrained(local_model_path, local_files_only=True).to(ImageSearch.device)
+        ImageSearch.processor = AutoProcessor.from_pretrained(local_model_path, local_files_only=True)
+        ImageSearch.model_hash = ImageSearch.get_model_hash()
+        ImageSearch.embedding_dim = ImageSearch.model.config.text_config.hidden_size # Safely access config
+    except Exception as e:
+        print(f"ERROR: Failed to load model '{model_name}' from '{local_model_path}'. The download might be incomplete or corrupted.")
+        print(f"Error details: {e}")
+        # Handle loading failure
+        raise RuntimeError(f"Failed to load required model: {model_name}") from e
+
+    # --- Initialize Caches ---
+    # Ensure cache directory exists
+    os.makedirs(cache_folder, exist_ok=True)
+    ImageSearch.cached_file_list = file_manager.CachedFileList(os.path.join(cache_folder,'images_file_list.pkl'))
+    ImageSearch.cached_file_hash = file_manager.CachedFileHash(os.path.join(cache_folder,'images_file_hash.pkl'))
+    ImageSearch.cached_metadata = file_manager.CachedMetadata(os.path.join(cache_folder,'images_metadata.pkl'), get_image_metadata)
+
 
   '''_instance = None
   def __new__(self, *args, **kwargs):
@@ -68,6 +106,9 @@ class ImageSearch:
 
   @staticmethod
   def get_model_hash():
+    if ImageSearch.model is None: 
+      raise Exception("Model is not initialized")
+    
     state_dict = ImageSearch.model.state_dict()
     buffer = io.BytesIO()
     torch.save(state_dict, buffer)

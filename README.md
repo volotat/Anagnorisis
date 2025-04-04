@@ -12,81 +12,71 @@ To read more about the ideas behind the project you can read these articles:
 [Anagnorisis. Part 2: The Music Recommendation Algorithm.](https://medium.com/@AlexeyBorsky/anagnorisis-part-2-the-music-recommendation-algorithm-ba5ce7a0fa30)  
 [Anagnorisis. Part 3: Why Should You Go Local?](https://medium.com/@AlexeyBorsky/anagnorisis-part-3-why-should-you-go-local-b68e2b99ff53)  
 
+## Running from Docker
+The preferred way to run the project is from Docker. This should be much more stable than running it from the local environment, especially on Windows. But be aware that all paths in the projects would be relative the `DATA_PATH` folder that you mount to the container. 
 
-## Installation
-Notice that the project has only been tested on Ubuntu 22.04, there is no guarantee that it will work on any other platforms. 
+1. Make sure that you have Docker installed. In case it is not go to [Docker installation page](https://www.docker.com/get-started/) and install it. 
+2. Clone this repository:
+    ```bash
+        git clone https://github.com/yourusername/Anagnorisis.git
+        cd Anagnorisis
+    ```
+3. Launch the application
+    ```bash
+        DATA_PATH=/path/to/your/data EXTERNAL_PORT=5001 docker-compose up -d
+    ```
+    Note: if you are using Docker Desktop you have to explicitly provide access to `/path/to/your/data` folder in the Docker settings. Otherwise, you will not be able to access it from the container. To do so, go to Docker Desktop settings, then to Resources -> File Sharing and add the path to your data folder.
+4. Access the application at http://localhost:5001 (or whichever port you configured) in your web browser.
 
+## Running from the local environment
+In case you do not want to use Docker, you can also install the project manually with this commands. Notice that the project has only been tested on Ubuntu 22.04 with Python 3.10, there is no guarantee that it will work on any other platforms or different version of Python. For Windows users I highly recommend to use Docker as there might be some unexpected issues.
 
-Recreate the Environment with following commands: 
-``` 
-    # For Linux
-    python3 -m venv .env  # recreate the virtual environment
-    source .env/bin/activate  # activate the virtual environment
-    pip install -r requirements.txt  # install the required packages
-```
-```
-    # For Windows
-    python -m venv .env  # recreate the virtual environment
-    .env\Scripts\activate # activate the virtual environment
-    pip install -r requirements.txt # install the required packages
-```
+1. Clone this repository:
+    ```bash
+        git clone https://github.com/yourusername/Anagnorisis.git
+        cd Anagnorisis
+    ```
 
+2. Recreate the Environment with following commands: 
+    ```bash 
+        # For Linux
+        python3 -m venv .env  # recreate the virtual environment
+        source .env/bin/activate  # activate the virtual environment
+        pip install -r requirements.txt  # install the required packages
+        # For Windows
+        python -m venv .env  # recreate the virtual environment
+        .env\Scripts\activate  # activate the virtual environment
+        pip install -r requirements.txt  # install the required packages
+    ```
 
-Initialize your database with this command: 
-```
-    flask --app app db init
-```
-This should create a new 'instance/project.db' file, that will store your preferences, that will be used later to fine-tune evaluation models. Do not forget to activate your virtual environment when executing this command.
+3. Then run the project with command:
+    ```bash  
+        # For Linux
+        DATA_PATH=/path/to/your/data bash run.sh
+        # For Windows
+        DATA_PATH=/path/to/your/data bash run.bat
+    ```
+4. Access the application at http://localhost:5001 (or whichever port you configured) in your web browser.
 
+## Additional notes for installation
+The Docker container includes Ubuntu 20.04, CUDA drives and several large machine learning models and dependencies, which results in a significant storage footprint. After the container is built it will take about 45GB of storage on your disk. If you want to avoid that, consider running the project from the local environment.
 
-Then run the project with command:
-```  
-    # For Linux
-    bash run.sh
-```
-```  
-    # For Windows
-    ./run.bat
-```
-The project should be up and running on http://127.0.0.1:5001/  
+If `DATA_PATH` is not provided, `/project_data` folder in the project root will be used. 
 
-## Downloading the models
-To make audio and visual search possible the project uses the models that are based on these works:  
+After initializing the project, you will find new `Anagnorisis-app` folder inside of `DATA_PATH` folder. In this folder project's database, migrations, models and configuration file will be stored. After running the project for the first time, `{DATA_PATH}/Anagnorisis-app/database/project.db` file will be crated. That DB will store your preferences, that will be used later to fine-tune evaluation models. Try to make backups of this file from time to time, as it contains all of your preferences, and some additional data, such as playback history.
+
+Running the project from the local environment should be somewhat more efficient as there is no Docker overhead when reading the data. 
+
+If you have a lot of data in your data folder, for the first time hash cache and embedding cache will be gathered. Please be patient, as it may take a while. The percentage of the progress will be shown in the status bar.
+
+The project requires GPU to run properly. When running the project inside the Docker container, make sure that `NVIDIA Container Toolkit` is installed for Linux and `WSL2` for Windows.
+
+## Embedding models
+To make audio and visual search possible the project uses these models:  
 [LAION-AI/CLAP](https://github.com/LAION-AI/CLAP)  
 [Google/SigLIP](https://arxiv.org/pdf/2303.15343)  
 
-First of all make sure you have git-lfs installed (https://git-lfs.com).  
-Then go to 'models' folder with  
-```cd models```
-
-**Music embedder: laion/clap-htsat-fused**  
-```git clone https://huggingface.co/laion/clap-htsat-fused```  
-
-Note that not all files from the repository are necessary. If you like, you can download only the files that are needed by hand and place them in the 'models/clap-htsat-fused' folder. Here is the list of files that are necessary:  
-```
-    config.json
-    merges.txt
-    preprocessor_config.json
-    pytorch_model.bin
-    special_tokens_map.json
-    tokenizer_config.json
-    tokenizer.json
-    vocab.json
-```
-
-**Image embedder: google/siglip-base-patch16-224**  
-```git clone https://huggingface.co/google/siglip-base-patch16-224```
-
-Same thing here, not all files are necessary. Here is the list of files that are essential:  
-```
-    config.json
-    model.safetensors
-    preprocessor_config.json
-    special_tokens_map.json
-    spiece.model
-    tokenizer_config.json
-```
-
+All embedding models are downloaded automatically when the project is started for the first time. This might take some time depending on the internet connection. You can see the progress inside `container_log.txt` file that will appear in the project's root folder if you run the project from the Docker container.
 
 ## General
 Here is the main pipeline of working with the project:  

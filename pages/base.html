@@ -25,7 +25,9 @@
 
 <body>
   <script type="text/javascript">
-    let socket = io.connect("http://{{cfg.main.host}}:{{cfg.main.port}}")
+    let socket = io.connect(window.location.origin, {
+      path: '/socket.io'
+    });
 
     $("document").ready(function(){
       socket.on('emit_llm_engine_start_processing', function(){

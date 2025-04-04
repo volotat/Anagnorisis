@@ -31,7 +31,7 @@ import pages.images.train
 import time
 
 
-def init_socket_events(socketio, cfg=None, app=None):
+def init_socket_events(socketio, cfg=None, app=None, data_folder='./project_data'):
     '''data = {
         'train_loss_hist': self.train_loss_hist,
         'eval_loss_hist': self.eval_loss_hist,
@@ -61,8 +61,8 @@ def init_socket_events(socketio, cfg=None, app=None):
             }
         socketio.emit("emit_train_page_display_train_data", data)
 
-    @socketio.on("emit_train_page_start_audio_evaluator_training")
-    def handle_emit_start_audio_evaluator_training():
+    @socketio.on("emit_train_page_start_music_evaluator_training")
+    def handle_emit_start_music_evaluator_training():
         nonlocal train_accuracy_hist, test_accuracy_hist # Access the outer scope variables
         train_accuracy_hist = []
         test_accuracy_hist = []
@@ -77,7 +77,7 @@ def init_socket_events(socketio, cfg=None, app=None):
 
         pages.images.train.train_image_evaluator(cfg, callback)
 
-    @socketio.on("emit_train_page_export_audio_dataset")
+    '''@socketio.on("emit_train_page_export_audio_dataset")
     def handle_emit_export_audio_dataset():
         return None
     
@@ -110,4 +110,4 @@ def init_socket_events(socketio, cfg=None, app=None):
 
         df = pd.DataFrame(data)
         df.to_csv("audio_scores_dataset.csv", index=False)
-        print("Dataset has been generated and exported as 'audio_scores_dataset.csv'!")
+        print("Dataset has been generated and exported as 'audio_scores_dataset.csv'!")'''

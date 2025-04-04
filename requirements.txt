@@ -12,7 +12,8 @@ torchaudio
 send2trash 
 Pillow 
 requests 
-transformers 
+transformers
+huggingface-hub 
 tqdm
 opencv-python 
 imageio

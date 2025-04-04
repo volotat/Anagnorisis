@@ -59,16 +59,17 @@ def compute_distances_batched(embeds_img, batch_size=1024 * 24):
   
   return distances  # Convert to a NumPy
 
-def init_socket_events(socketio, app=None, cfg=None):
-  media_directory = cfg.music.media_directory
+def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data'):
+  media_directory = os.path.join(data_folder, cfg.music.media_directory)
+  print('Music media_directory:', media_directory)
 
-  MusicSearch.initiate()
+  MusicSearch.initiate(models_folder=cfg.main.models_path, cache_folder=cfg.main.cache_path)
   cached_file_list = MusicSearch.cached_file_list
   cached_file_hash = MusicSearch.cached_file_hash
   cached_metadata = MusicSearch.cached_metadata
 
   music_evaluator = MusicEvaluator(embedding_dim=MusicSearch.embedding_dim) #src.scoring_models.Evaluator(embedding_dim=768)
-  music_evaluator.load('./models/music_evaluator.pt')
+  music_evaluator.load(os.path.join(cfg.main.models_path, 'music_evaluator.pt'))
 
   def show_search_status(status):
     socketio.emit('emit_music_page_show_search_status', status)
@@ -507,7 +508,7 @@ def init_socket_events(socketio, app=None, cfg=None):
   @socketio.on('emit_music_page_get_path_to_media_folder')
   def get_path_to_media_folder():
     nonlocal media_directory
-    socketio.emit('emit_music_page_show_path_to_media_folder', media_directory)
+    socketio.emit('emit_music_page_show_path_to_media_folder', cfg.music.media_directory)
 
   @socketio.on('emit_music_page_update_path_to_media_folder')
   def update_path_to_media_folder(new_path):
@@ -515,11 +516,11 @@ def init_socket_events(socketio, app=None, cfg=None):
     cfg.music.media_directory = new_path
 
     # Update the configuration file
-    with open('config.yaml', 'w') as file:
+    with open(os.path.join(data_folder, 'Anagnorisis-app', 'config.yaml'), 'w') as file:
       OmegaConf.save(cfg, file)
 
-    media_directory = cfg.music.media_directory
-    socketio.emit('emit_music_page_show_path_to_media_folder', media_directory)
+    media_directory = os.path.join(data_folder, cfg.music.media_directory)
+    socketio.emit('emit_music_page_show_path_to_media_folder', cfg.music.media_directory)
 
   @socketio.on('emit_music_page_open_file_in_folder')
   def open_file_in_folder(file_path):

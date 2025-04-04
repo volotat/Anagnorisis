@@ -29,8 +29,8 @@ def resolve_media_path(media_directory, path):
         return media_directory
     return os.path.abspath(os.path.join(media_directory, '..', path))
 
-def init_socket_events(socketio, app=None, cfg=None):
-    media_directory = cfg.text.media_directory # Assuming you add 'text:' to config.yaml
+def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data'):
+    media_directory = os.path.join(data_folder, cfg.text.media_directory)
 
     cached_file_list = file_manager.CachedFileList('cache/text_file_list.pkl')
     cached_file_hash = file_manager.CachedFileHash('cache/text_file_hash.pkl')
