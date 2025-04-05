@@ -6,7 +6,7 @@ services:
     image: anagnorisis-app:latest
     container_name: anagnorisis-app
     ports:
-      - "${EXTERNAL_PORT:-5001}:5001" # Map the external port to the internal port
+      - "127.0.0.1:${EXTERNAL_PORT:-5001}:5001" # Map the external port to the internal port
     volumes:
       - .:/app  # Mount the source code directory
       - ${DATA_PATH:-./project_data}:/app/project_data # Mount your data directory
