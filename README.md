@@ -77,7 +77,7 @@ In case you do not want to use Docker, you can also install the project manually
 4. Access the application at http://localhost:5001 (or whichever port you configured) in your web browser.
 
 ## Additional notes for installation
-The Docker container includes Ubuntu 20.04, CUDA drives and several large machine learning models and dependencies, which results in a significant storage footprint. After the container is built it will take about 45GB of storage on your disk. If you want to avoid that, consider running the project from the local environment.
+The Docker container includes Ubuntu 22.04, CUDA drives and several large machine learning models and dependencies, which results in a significant storage footprint. After the container is built it will take about 45GB of storage on your disk. If you want to avoid that, consider running the project from the local environment.
 
 If `DATA_PATH` is not provided, `/project_data` folder in the project root will be used. 
 
