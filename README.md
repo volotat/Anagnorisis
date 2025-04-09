@@ -89,6 +89,9 @@ If you have a lot of data in your data folder, for the first time hash cache and
 
 The project requires GPU to run properly. When running the project inside the Docker container, make sure that `NVIDIA Container Toolkit` is installed for Linux and `WSL2` for Windows.
 
+## Security notes
+When running the project in a local environment, the default address is set to 0.0.0.0 (this setting is necessery for proper work inside the Docker container). This configuration means the application listens on all available network interfaces, making it accessible from any device on your local network (i.e., any computer connected to the same router). However, this does not automatically expose the service to the internet. Access from outside your local network will depend on your firewall settings and router configuration.
+
 ## Embedding models
 To make audio and visual search possible the project uses these models:  
 [LAION-AI/CLAP](https://github.com/LAION-AI/CLAP)  
