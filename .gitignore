@@ -171,4 +171,6 @@ static/discarded/
 experiments/
 old_code/
 
-container_log.txt
+docker-compose-k.yaml
+*_log.txt
+docker_commands.sh

@@ -23,7 +23,7 @@ from omegaconf import OmegaConf
 import src.scoring_models
 from pages.utils import convert_size
 from pages.utils import SortingProgressCallback, EmbeddingGatheringCallback
-
+from pages.socket_events import CommonSocketEvents
 import pages.file_manager as file_manager
 
 def compute_distances_batched(embeds_img, batch_size=1024 * 24):
@@ -89,7 +89,12 @@ def get_folder_structure(folder_path, image_extensions=None):
   return build_structure(folder_path)
 
 def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data'):
-  media_directory = os.path.join(data_folder, cfg.images.media_directory)
+  if cfg.images.media_directory is None:
+    print("Images media folder is not set.")
+    media_directory = None
+  else:
+    media_directory = os.path.join(data_folder, cfg.images.media_directory)
+  
   ImageSearch.initiate(models_folder=cfg.main.models_path, cache_folder=cfg.main.cache_path)
 
   image_evaluator = ImageEvaluator() #src.scoring_models.Evaluator(embedding_dim=768)
@@ -191,6 +196,11 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
   @socketio.on('emit_images_page_get_files')
   def get_files(input_data):
     nonlocal media_directory
+
+    if media_directory is None:
+      show_search_status("Images media folder is not set.")
+      return
+
     start_time = time.time()
 
     path = input_data.get('path', '')

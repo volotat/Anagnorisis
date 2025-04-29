@@ -2,17 +2,29 @@
 
 <div class="container is-fluid columns is-centered py-6 mb-6">
   <aside class="column is-2 menu">
-    <p class="menu-label">Text Library</p>
-    <ul class="menu-list" id="folders_menu">
-      <!-- Folder structure will be loaded here by JavaScript -->
-    </ul>
+    <p class="menu-label">Path to local text library</p>
+    <div class="field has-addons">
+      <div class="control is-expanded">
+        <input class="input is-fullwidth" id="path_to_media_folder" type="text" placeholder="Write folder path here">
+      </div>
+      <div class="control">
+        <button class="button is-info" id="update_path_to_media_folder">Save</button>
+      </div>
+    </div>
   </aside>
 
   <div class="column">
-    <div class="field">
-      <p class="control">
-        <input class="input" type="text" placeholder="Search text files (not implemented yet)">
-      </p>
+    <!-- Search bar, image input, and filter dropdown -->
+    <div class="field has-addons">
+      <div class="control is-expanded">
+        <input class="input is-fullwidth" id="search_input" type="text" placeholder="Write your search query or place a path to text file to find similar ones." 
+              ondragover="event.preventDefault()" 
+              ondrop="handleDrop(event)"
+              onkeydown="if (event.key === 'Enter') document.getElementById('search_button').click()">
+      </div>
+      <div class="control">
+        <button class="button is-info" id="search_button">Search</button>
+      </div>
     </div>
 
     <!-- Pagination and status on top-->
@@ -52,12 +64,12 @@
 <!-- Modal for Text File Viewer/Editor -->
 <div class="modal" id="text_file_modal">
   <div class="modal-background modal-close-action"></div>
-  <div class="modal-card" style="width: 80%; max-width: 960px;">
+  <div class="modal-card" style="width: 80%; max-width: 960px; height: 90vh; display: flex; flex-direction: column;">
     <header class="modal-card-head">
       <p class="modal-card-title" id="text_file_modal_title">File Content</p>
       <button class="delete modal-close modal-close-action" aria-label="close"></button>
     </header>
-    <section class="modal-card-body">
+    <section class="modal-card-body" style="flex: 1; display: flex; flex-direction: column; padding-bottom: 0;">
       <div class="tabs is-toggle is-fullwidth is-medium">
         <ul>
           <li class="is-active" data-tab="raw">
@@ -71,16 +83,21 @@
           </li>
         </ul>
       </div>
-      <div id="text_viewer_raw" class="tab-content">
-        <textarea class="textarea" id="text_content_textarea" placeholder="File content..." style="min-height: 400px;"></textarea>
+      <div id="text_viewer_raw" class="tab-content" style="flex: 1; display: flex; flex-direction: column;">
+        <textarea class="textarea" id="text_content_textarea" placeholder="File content..." 
+          style="flex-grow: 1;
+                 min-height: 0;
+                 font-family: 'Courier New', monospace;
+                 resize: none;
+                 max-height: -webkit-fill-available;"></textarea>
       </div>
-      <div id="text_viewer_markdown" class="tab-content" style="display: none;">
-        <div class="content" id="text_content_markdown" style="min-height: 400px; border: 1px solid var(--bulma-border-color); padding: 10px; overflow-y: auto;">
+      <div id="text_viewer_markdown" class="tab-content" style="display: none; flex: 1;">
+        <div class="content" id="text_content_markdown" style="height: 100%; border: 1px solid var(--bulma-border-color); padding: 10px; overflow-y: auto;">
           <!-- Markdown content will be rendered here -->
         </div>
       </div>
-      <div id="text_viewer_html" class="tab-content" style="display: none;">
-        <div class="content" id="text_content_html" style="min-height: 400px; border: 1px solid var(--bulma-border-color); padding: 10px; overflow-y: auto;">
+      <div id="text_viewer_html" class="tab-content" style="display: none; flex: 1;">
+        <div class="content" id="text_content_html" style="height: 100%; border: 1px solid var(--bulma-border-color); padding: 10px; overflow-y: auto;">
           <!-- HTML content will be rendered here -->
         </div>
       </div>

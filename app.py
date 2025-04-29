@@ -19,11 +19,13 @@ from flask_sqlalchemy import SQLAlchemy
 from importlib import import_module
 
 from src.db_models import db
+from src.config_loader import load_config
 
 # Add after your imports, before loading config
 import argparse
 import os
 import shutil
+
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description='Anagnorisis Application')
@@ -54,7 +56,18 @@ config_path = os.path.join(script_folder, 'config.yaml')
 cfg = OmegaConf.load(config_path)
 
 # Load local configuration if it exists
-local_config_path = os.path.join(data_folder, 'Anagnorisis-app', 'config.yaml')
+project_config_folder_name = os.environ.get('PROJECT_CONFIG_FOLDER_NAME', 'Anagnorisis-app')
+
+local_config_path = os.path.join(data_folder, project_config_folder_name, 'config.yaml')
+database_path = os.path.join(data_folder, project_config_folder_name, 'database', 'project.db')
+migrations_path = os.path.join(data_folder, project_config_folder_name, 'database', 'migrations')
+models_path = os.path.join(data_folder, project_config_folder_name, 'models')
+cache_path = 'cache'
+
+cfg.main.database_path = database_path
+cfg.main.migrations_path = migrations_path
+cfg.main.models_path = models_path
+cfg.main.cache_path = cache_path
 
 
 if os.path.exists(local_config_path):
@@ -72,10 +85,10 @@ else:
 
 # Ensure database path is properly set up
 # If the database path is relative, make it absolute within the data folder
-if not os.path.isabs(cfg.main.database_path):
-    database_path = os.path.join(script_folder, cfg.main.database_path)
-else:
-    database_path = cfg.main.database_path
+#if not os.path.isabs(cfg.main.database_path):
+#    database_path = os.path.join(script_folder, cfg.main.database_path)
+#else:
+#    database_path = cfg.main.database_path
 
 print(f"Database path set to: {database_path}")
 

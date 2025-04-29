@@ -60,7 +60,12 @@ def compute_distances_batched(embeds_img, batch_size=1024 * 24):
   return distances  # Convert to a NumPy
 
 def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data'):
-  media_directory = os.path.join(data_folder, cfg.music.media_directory)
+  if cfg.music.media_directory is None:
+    print("Music media folder is not set.")
+    media_directory = None
+  else:
+    media_directory = os.path.join(data_folder, cfg.music.media_directory)
+
   print('Music media_directory:', media_directory)
 
   MusicSearch.initiate(models_folder=cfg.main.models_path, cache_folder=cfg.main.cache_path)
@@ -172,6 +177,11 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
   @socketio.on('emit_music_page_get_files')
   def get_files(input_data):
     nonlocal media_directory
+
+    if media_directory is None:
+      show_search_status("Music media folder is not set.")
+      return
+
     start_time = time.time()
 
     path = input_data.get('path', '')

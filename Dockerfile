@@ -40,4 +40,4 @@ COPY run.sh /app/
 RUN chmod +x /app/run.sh
 
 # Set the default command to run the script with proper working directory
-CMD ["bash", "-c", "/app/run.sh > /app/container_log.txt 2>&1"]
+CMD ["bash", "-c", "/app/run.sh > /app/$(echo ${CONTAINER_NAME:-container})_log.txt 2>&1"]

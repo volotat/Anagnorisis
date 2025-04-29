@@ -8,6 +8,13 @@ import pages.utils
 import pages.file_manager as file_manager # or pages.utils if you put get_folder_structure there
 from pages.socket_events import CommonSocketEvents
 
+import numpy as np
+
+from pages.text.engine import TextSearch #, TextEvaluator
+from pages.utils import SortingProgressCallback, EmbeddingGatheringCallback
+
+from omegaconf import OmegaConf
+
 
 def get_text_preview(file_path):
     preview_text = '' # Default no preview
@@ -30,11 +37,20 @@ def resolve_media_path(media_directory, path):
     return os.path.abspath(os.path.join(media_directory, '..', path))
 
 def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data'):
-    media_directory = os.path.join(data_folder, cfg.text.media_directory)
+    if cfg.text.media_directory is None:
+        print("Text media folder is not set.")
+        media_directory = None
+    else:
+        media_directory = os.path.join(data_folder, cfg.text.media_directory)
 
-    cached_file_list = file_manager.CachedFileList('cache/text_file_list.pkl')
-    cached_file_hash = file_manager.CachedFileHash('cache/text_file_hash.pkl')
+    TextSearch.initiate(cfg, models_folder=cfg.main.models_path, cache_folder=cfg.main.cache_path)
+    cached_file_list = TextSearch.cached_file_list
+    cached_file_hash = TextSearch.cached_file_hash
+    cached_metadata = TextSearch.cached_metadata
+
     common_socket_events = CommonSocketEvents(socketio)
+
+    embedding_gathering_callback = EmbeddingGatheringCallback(common_socket_events.show_search_status)
 
     @socketio.on('emit_text_page_get_folders')  
     def get_folders(data):
@@ -55,6 +71,11 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
     @socketio.on('emit_text_page_get_files')
     def get_files(data):
         nonlocal media_directory
+
+        if media_directory is None:
+            common_socket_events.show_search_status("Text media folder is not set.")
+            return
+
         start_time = time.time()
 
         path = data.get('path', '')
@@ -72,9 +93,8 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
 
         
         all_files = []
-        
-        # Walk with cache 1.5s for 66k files
         all_files = cached_file_list.get_all_files(current_path, cfg.text.media_formats)
+        
         print(f"Found {len(all_files)} files in {current_path}")
         common_socket_events.show_search_status(f"Gathering hashes for {len(all_files)} files.")
         
@@ -92,6 +112,47 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
             all_hashes.append(cached_file_hash.get_file_hash(file_path))
 
         cached_file_hash.save_hash_cache()
+
+
+        # Sort files by text or file query
+        common_socket_events.show_search_status(f"Sorting music files by {text_query}")
+        if text_query and len(text_query) > 0:
+            # If there is a file path in the query, sort files by similarity to that file
+            if os.path.isfile(text_query) and text_query.lower().endswith(tuple(cfg.music.media_formats)):
+                pass
+            # Sort music by file size
+            elif text_query.lower().strip() == "file size":
+                common_socket_events.show_search_status(f"Gathering file sizes for sorting...") # Initial status message
+                all_files = sorted(all_files, key=os.path.getsize)
+            # Sort music by length
+            elif text_query.lower().strip() == "length":
+                common_socket_events.show_search_status(f"Gathering resolutions for sorting...") # Initial status message
+                pass
+            # Sort music by duplicates
+            elif text_query.lower().strip() == "similarity":
+                pass
+            # Sort music randomly
+            elif text_query.lower().strip() == "random":
+                np.random.shuffle(all_files)
+            # Sort music by rating
+            elif text_query.lower().strip() == "rating": 
+                pass
+            # Sort music with recommendation engine 
+            elif text_query.lower().strip() == "recommendation":
+                pass 
+            # Sort files by the text query
+            else:
+                common_socket_events.show_search_status(f"Extracting embeddings")
+                embeds_files = TextSearch.process_files(all_files, cfg, callback=embedding_gathering_callback)
+                embeds_text = TextSearch.process_text(text_query, cfg)
+                scores = TextSearch.compare(embeds_files, embeds_text)
+
+                # Create a list of indices sorted by their corresponding score
+                common_socket_events.show_search_status(f"Sorting by relevance")
+                sorted_indices = sorted(range(len(scores)), key=scores.__getitem__, reverse=True)
+
+                # Use the sorted indices to sort all_files
+                all_files = [all_files[i] for i in sorted_indices]
         
         # Truncate the list of hashes to the current pagination
         page_files = all_files[pagination:limit]
@@ -174,3 +235,20 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
         except Exception as e:
             print(f"Error saving file: {full_path}: {e}") # Log error
             # Optionally emit error event to frontend
+
+    @socketio.on('emit_text_page_get_path_to_media_folder')
+    def get_path_to_media_folder():
+        nonlocal media_directory
+        socketio.emit('emit_text_page_show_path_to_media_folder', cfg.text.media_directory)
+
+    @socketio.on('emit_text_page_update_path_to_media_folder')
+    def update_path_to_media_folder(new_path):
+        nonlocal media_directory
+        cfg.text.media_directory = new_path
+
+        # Update the configuration file
+        with open(os.path.join(data_folder, 'Anagnorisis-app', 'config.yaml'), 'w') as file:
+            OmegaConf.save(cfg, file)
+
+        media_directory = os.path.join(data_folder, cfg.text.media_directory)
+        socketio.emit('emit_text_page_show_path_to_media_folder', cfg.text.media_directory)

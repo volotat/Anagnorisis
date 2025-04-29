@@ -7,6 +7,9 @@ Status: Completed.
 ## Text recommendation module
 Develop a text recommendation module to complement the existing image and music modules. Implement text embedding, search, and recommendation features, expanding the platform’s capabilities to textual data. Implement highlighting of the most relevant parts of the text in the document.
 
+## Project refactoring and reorganization
+Refactor the codebase to improve organization and maintainability. Also, as a result the text search from the file names+metadata should be possible in all modules with some ability to perform text-based search/sematic search or both depending on the user needs at the moment.
+
 ## Video recommendation module
 Introduce a new module for video data, enabling efficient embedding, search, and recommendation capabilities. Implement UI features for video search, rating, and filtering to enhance user experience and platform functionality.
 

@@ -1,5 +1,5 @@
 
-from flask import Flask, render_template, send_from_directory
+from flask import Flask, render_template, send_from_directory, Response, stream_with_context
 import os
 import sys
 import glob
@@ -16,6 +16,11 @@ import gc
 import send2trash
 import time
 from moviepy.editor import VideoFileClip
+
+import threading
+import uuid
+import tempfile
+import shutil
 
 def convert_size(size_bytes):
   if size_bytes == 0:
@@ -107,7 +112,11 @@ def generate_preview(video_path, preview_path):
 
 
 def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data'):
-  media_directory = os.path.join(data_folder, cfg.videos.media_directory)
+  if cfg.videos.media_directory is None:
+      print("Videos media folder is not set.")
+      media_directory = None
+  else:
+      media_directory = os.path.join(data_folder, cfg.videos.media_directory)
 
   def show_search_status(status):
     socketio.emit('emit_videos_page_show_search_status', status)
@@ -121,6 +130,11 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
   @socketio.on('emit_videos_page_get_files')
   def get_files(input_data):
     nonlocal media_directory
+
+    if media_directory is None:
+      show_search_status("Video media folder is not set.")
+      return
+    
     start_time = time.time()
 
     path = input_data.get('path', '')
@@ -146,6 +160,12 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
     # Filter the list to only include files of certain types
     all_files = [f for f in all_files if f.lower().endswith(tuple(cfg.videos.media_formats))]
 
+    # Sort image by text or image query
+    show_search_status(f"Sorting images by {text_query}")
+    if text_query and len(text_query) > 0:
+      if text_query.lower().strip() == "random":
+        np.random.shuffle(all_files)
+        
     '''
     # Sort image by text or image query
     show_search_status(f"Sorting images by {text_query}")
@@ -304,3 +324,241 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
         subprocess.run(["gio", "trash", file_path], check=True)'''
     else:
       print("Error: File does not exist.")  
+
+
+
+  # ----------------------------------------
+  # HSL Streaming test
+  # ----------------------------------------
+
+  # This section requires a lot of refactoring and rethinking, for now it just works somehow
+  
+
+  # Store active transcoding processes
+  active_transcodings = {}
+
+  @app.route('/stream/<stream_id>/master.m3u8')
+  def stream_video(stream_id):
+    """Stream a video with the given stream_id"""
+    if stream_id not in active_transcodings:
+        return "Stream not found", 404
+        
+    # If stream is already set up, just serve the playlist
+    if 'temp_dir' in active_transcodings[stream_id]:
+        master_playlist = os.path.join(active_transcodings[stream_id]['temp_dir'], "master.m3u8")
+        if os.path.exists(master_playlist):
+            return send_from_directory(active_transcodings[stream_id]['temp_dir'], "master.m3u8")
+    
+    # Otherwise, set up the stream
+    video_path = active_transcodings[stream_id]['path']
+    print(f"Starting stream for {stream_id} from {video_path}")
+    
+    # Create a temp directory for HLS files
+    temp_dir = tempfile.mkdtemp()
+    active_transcodings[stream_id]['temp_dir'] = temp_dir
+    
+    # Create master playlist path
+    master_playlist = os.path.join(temp_dir, "master.m3u8")
+    
+    # Get video duration and other metadata
+    try:
+        metadata_cmd = [
+            'ffprobe', 
+            '-v', 'error', 
+            '-show_entries', 'format=duration', 
+            '-of', 'json', 
+            video_path
+        ]
+        metadata_output = subprocess.check_output(metadata_cmd).decode('utf-8').strip()
+        import json
+        metadata = json.loads(metadata_output)
+        duration = float(metadata['format']['duration'])
+        print(f"Video duration: {duration} seconds")
+        active_transcodings[stream_id]['duration'] = duration
+    except Exception as e:
+        print(f"Error getting video metadata: {e}")
+        duration = 0
+    
+    # Build FFmpeg command for HLS with optimized settings
+    cmd = [
+        'ffmpeg',
+        '-i', video_path,
+        '-c:v', 'libx264',       # Video codec
+        '-preset', 'ultrafast',  # Faster encoding
+        '-tune', 'zerolatency',  # Reduce latency
+        '-c:a', 'aac',           # Audio codec
+        '-ar', '44100',          # Audio sample rate
+        '-ac', '2',              # Stereo audio
+        '-b:a', '128k',          # Audio bitrate
+        '-f', 'hls',             # HLS format
+        '-hls_time', '2',        # 2-second segments
+        '-hls_list_size', '0',   # Keep all segments
+        '-hls_flags', 'independent_segments+split_by_time+append_list',
+        '-hls_segment_type', 'mpegts',
+        '-hls_playlist_type', 'event',
+        '-force_key_frames', 'expr:gte(t,n_forced*2)', # Keyframe every 2s
+        '-g', '48',              # GOP size
+        '-start_number', '0',    # Start segment numbering at 0
+        '-hls_segment_filename', os.path.join(temp_dir, f'segment_%03d.ts'),
+        master_playlist
+    ]
+    
+    print(f"Running command: {' '.join(cmd)}")
+    
+    process = subprocess.Popen(
+        cmd, 
+        stdout=subprocess.PIPE, 
+        stderr=subprocess.PIPE
+    )
+    
+    # Store the process
+    active_transcodings[stream_id]['process'] = process
+    
+    # Wait for the master playlist to be created (with a timeout)
+    start_time = time.time()
+    while not os.path.exists(master_playlist) and time.time() - start_time < 10:
+        time.sleep(0.1)
+        # Check if process died
+        if process.poll() is not None:
+            stderr_output = process.stderr.read().decode('utf-8')
+            return f"Error starting stream: FFmpeg exited with code {process.returncode}", 500
+    
+    if not os.path.exists(master_playlist):
+        return "Timeout waiting for playlist to be created", 500
+    
+    # Add EXT-X-START tag to master playlist to force start at beginning
+    with open(master_playlist, 'r') as f:
+        content = f.read()
+    
+    # Add EXT-X-START tag after header if not present
+    if '#EXT-X-START:' not in content:
+        content = content.replace('#EXT-X-VERSION:', 
+                                '#EXT-X-START:TIME-OFFSET=0,PRECISE=YES\n#EXT-X-VERSION:')
+        with open(master_playlist, 'w') as f:
+            f.write(content)
+    
+    # Wait for initial buffer segments to be created before serving
+    segments_ready = 0
+    segment_pattern = os.path.join(temp_dir, "segment_*.ts")
+    while segments_ready < 3 and time.time() - start_time < 10:  # Wait for 10 segments (20s) or 30s max
+        segments_ready = len(glob.glob(segment_pattern))
+        if segments_ready >= 3:
+            break
+        time.sleep(0.2)
+        if process.poll() is not None:
+            stderr_output = process.stderr.read().decode('utf-8')
+            return f"Error starting stream: FFmpeg exited with code {process.returncode}", 500
+
+    print(f"Starting playback with {segments_ready} segments ready")
+    
+    # Serve the m3u8 file
+    return send_from_directory(temp_dir, "master.m3u8")
+
+  @app.route('/stream/<stream_id>/<path:filename>')
+  def stream_segment(stream_id, filename):
+      """Serve HLS segment files"""
+      if stream_id not in active_transcodings or 'temp_dir' not in active_transcodings[stream_id]:
+          return "Stream not found", 404
+      
+      temp_dir = active_transcodings[stream_id]['temp_dir']
+      return send_from_directory(temp_dir, filename)
+
+  @socketio.on('emit_videos_page_start_streaming')
+  def start_streaming(file_path):
+      """Start streaming a video file"""
+      # Make file_path absolute if it's not already
+      if not os.path.isabs(file_path):
+          file_path = os.path.join(media_directory, file_path)
+      
+      # Verify file exists
+      if not os.path.isfile(file_path):
+          print(f"Error: File not found at {file_path}")
+          return {"error": "File not found"}
+          
+      # Generate unique stream ID
+      stream_id = str(uuid.uuid4())
+      
+      # Store info about the stream
+      active_transcodings[stream_id] = {
+          'path': file_path,
+          'process': None,
+          'start_time': time.time()
+      }
+      
+      # Return stream URL to client
+      return {
+          'stream_id': stream_id,
+          'stream_url': f'/stream/{stream_id}/master.m3u8'
+      }
+  
+  @socketio.on('emit_videos_page_stop_streaming')
+  def stop_streaming(stream_id):
+      """Stop streaming a video file and clean up resources"""
+      if stream_id in active_transcodings:
+          print(f"Stopping stream {stream_id}")
+          
+          # Clean up the resources
+          cleanup_transcoding(stream_id)
+          
+          return {"status": "success", "message": "Stream stopped and resources cleaned up"}
+      else:
+          print(f"Stream {stream_id} not found or already stopped")
+          return {"status": "error", "message": "Stream not found"}
+
+  def cleanup_transcoding(stream_id):
+    """Clean up temporary files and processes"""
+    if stream_id in active_transcodings:
+        print(f"Cleaning up transcoding for stream {stream_id}")
+        
+        # Terminate the process
+        if 'process' in active_transcodings[stream_id] and active_transcodings[stream_id]['process']:
+            try:
+                active_transcodings[stream_id]['process'].terminate()
+                print(f"Process for stream {stream_id} terminated")
+            except Exception as e:
+                print(f"Error terminating process: {e}")
+        
+        # Close error log file
+        if 'error_log' in active_transcodings[stream_id]:
+            try:
+                active_transcodings[stream_id]['error_log'].close()
+            except:
+                pass
+        
+        # Remove temp directory
+        if 'temp_dir' in active_transcodings[stream_id]:
+            try:
+                shutil.rmtree(active_transcodings[stream_id]['temp_dir'])
+                print(f"Removed temp directory for stream {stream_id}")
+            except Exception as e:
+                print(f"Error removing temp directory: {e}")
+        
+        # Remove from active transcodings
+        del active_transcodings[stream_id]
+        print(f"Stream {stream_id} completely cleaned up")
+  
+  # Cleanup old transcodings periodically
+  def cleanup_old_transcodings():
+      """Periodically check for and clean up old transcoding processes"""
+      while True:  # Continuous loop
+          try:
+              # Print some debug info
+              print(f"Cleanup thread running, active streams: {len(active_transcodings)}")
+              
+              current_time = time.time()
+              for stream_id in list(active_transcodings.keys()):
+                  # Check if the stream has been active for more than 1 hour
+                  if current_time - active_transcodings[stream_id]['start_time'] > 3600:  # 1 hour timeout
+                      print(f"Cleaning up expired stream: {stream_id}")
+                      cleanup_transcoding(stream_id)
+                      
+              # Sleep for a specified interval before checking again
+              time.sleep(300)  # Check every 5 minutes
+          except Exception as e:
+              print(f"Error in cleanup thread: {e}")
+              time.sleep(60)  # If there's an error, wait a bit before retrying
+              
+  # Start cleanup thread
+  cleanup_thread = threading.Thread(target=cleanup_old_transcodings)
+  cleanup_thread.daemon = True
+  cleanup_thread.start()

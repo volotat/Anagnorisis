@@ -26,22 +26,33 @@ function replaceNewLinesWithBreaks(text) {
 
 function renderTextPreview(fileData) { // Function for Text module preview
     const previewText = document.createElement('p');
-    previewText.className = 'text-preview'; // Add class for styling (optional)
+    previewText.className = 'text-preview'; // Add class for styling
     previewText.textContent = fileData.preview_text || 'No preview available';
-    previewText.style.overflow = 'hidden'; // basic text styling for preview
+    
+    // Set basic styling
+    previewText.style.overflow = 'hidden';
     previewText.style.textOverflow = 'ellipsis';
-    //previewText.style.whiteSpace = 'nowrap';
     previewText.style.maxWidth = '100%';
     previewText.style.wordBreak = 'break-word';
-    previewText.style.textAlign = 'justify';
     previewText.style.whiteSpace = 'break-spaces';
+    previewText.style.fontFamily = "'Courier New', monospace";
+    
+    // Set line height in em or px
+    const lineHeight = 1.5; // 1.5em line height
+    previewText.style.lineHeight = `${lineHeight}em`;
+    
+    // Set max height based on number of lines
+    const maxLines = 12; // Show maximum 10 lines of text
+    previewText.style.maxHeight = `${maxLines * lineHeight}em`;
+    
     return previewText;
 }
 
 function renderCustomData(fileData) { // Function for custom data rendering
     const dataContainer = document.createElement('div');
     dataContainer.className = 'file-custom-data';
-
+    dataContainer.style.wordBreak = 'break-word';
+    
     // File Path
     const filePathElement = document.createElement('p');
     filePathElement.className = 'file-info file-path';
@@ -99,7 +110,7 @@ $(document).ready(function() {
     // --- Folder View ---
     socket.on('emit_text_page_show_folders', (data) => { // NEW event handler for folders
         const folderView = new FolderViewComponent(data.folders, data.folder_path);
-        $('.menu').html(folderView.getDOMElement());
+        $('.menu').append(folderView.getDOMElement());
     });
 
     // --- File List ---
@@ -184,5 +195,39 @@ $(document).ready(function() {
     // Display current search status
     socket.on('emit_show_search_status', (status) => {
         $('.search-status').html(status);
+    });
+
+    // Show current media folder path
+    socket.on('emit_text_page_show_path_to_media_folder', (current_path) => {
+        $('#path_to_media_folder').val(current_path);
+    });
+
+    // Set search query in input 
+    $('#search_input').val(text_query);
+
+    // Search for text files
+    $('#search_button').click(function() {
+        let text_query = $('#search_input').val();
+        let url = new URL(window.location.href);
+        let params = new URLSearchParams(url.search);
+        params.set('text_query', text_query);
+        params.set('page', 1);
+        url.search = params.toString();
+        window.location.href = url.toString();
+    });
+
+    // Set search query from tags
+    $('.set_search').click(function() {
+        $('#search_input').val($(this).text());
+        $('#search_button').click();
+    });
+
+    // Update path to the media folder
+    $('#update_path_to_media_folder').click(function() {
+        socket.emit('emit_text_page_update_path_to_media_folder', $('#path_to_media_folder').val());
+        // refresh page after a short delay
+        setTimeout(function() {
+            location.reload();
+        }, 500);
     });
 });

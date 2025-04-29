@@ -1,4 +1,5 @@
 <script type="text/javascript" src="pages/videos/js/main.js"></script>
+<script type="text/javascript"src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
 
 <!-- PAGE MAIN CONTENT -->
 <div class="container is-fluid columns is-centered py-6">
@@ -42,14 +43,14 @@
     <!-- Field with helper tags for search -->
     <div class="field is-grouped is-grouped-multiline mt-4" id="tags_container">
       <b>Special keywords:</b>
-      <button class="tag is-light set_search">recommendation</button>
-      <button class="tag is-light set_search">rating</button>
+      <!--<button class="tag is-light set_search">recommendation</button>
+      <button class="tag is-light set_search">rating</button>-->
       <button class="tag is-info is-light set_search">random</button>
-      <button class="tag is-info is-light set_search">file size</button>
+      <!--<button class="tag is-info is-light set_search">file size</button>
       <button class="tag is-info is-light set_search">resolution</button>
       <button class="tag is-light set_search">effective resolution</button>
       <button class="tag is-light set_search">rating</button>
-      <button class="tag is-info is-light set_search">similarity</button>
+      <button class="tag is-info is-light set_search">similarity</button>-->
     </div>
 
     <!-- Pagination and status on top-->
@@ -83,5 +84,33 @@
         <p class="image-search-status">...</p>
       </div>
     </nav>
+  </div>
+
+  <!-- Modal container -->
+  <div class="modal" id="video-modal">
+    <div class="modal-background"></div>
+    
+    <!-- Modal content that takes up most of the screen -->
+    <div class="modal-content" style="width: 95vw; max-height: 95vh; margin: 0 auto; display: flex; align-items: center; justify-content: center;">
+      <!-- Video container with responsive sizing -->
+      <figure class="image is-16by9" style="width: 100%; max-height: 100%;">
+        <video 
+          id="modal-video-player"
+          class="has-ratio" 
+          controls
+          preload="metadata"
+          playsinline>
+          <source src="" type="video/mp4">
+          Your browser does not support the video tag.
+        </video>
+      </figure>
+    </div>
+
+    <!--<div id="loading-indicator" style="display:none; position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); background:rgba(0,0,0,0.7); color:white; padding:10px; border-radius:5px; z-index:10;">
+      Loading video...
+    </div>-->
+    
+    <!-- Close button -->
+    <button class="modal-close is-large" aria-label="close"></button>
   </div>
 <div>

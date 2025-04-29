@@ -18,7 +18,8 @@ Add a way to create new folders in the UI.
 Add a way to copy path to a folder trough the UI.  
 Make start rating bar sensitive to fractional value to allow more fine-tuned user rating.  
 Make number of images per page adjustable via config.yaml file.  
-Make number of columns of images presented dependent on the screen size.  
+Make number of columns of images presented dependent on the screen size. 
+Add BRISQUE score filter for simple image quality assessment. 
 
 ### Train page
 Disable the start button if fine-tuning has already started.  
@@ -40,6 +41,38 @@ Find a way for more optimal embeddings storage in the DB.
 Implement automatic model downloading at the fresh start of the project.
 
 ## Versions History
+
+### Version 0.2.1 (29.04.2025)
+*   **Docker Enhancements & Security:**
+    *   Changed default Docker port mapping (`docker-compose.yaml`) to bind to `127.0.0.1` (localhost) instead of all interfaces (`0.0.0.0`), enhancing default security by preventing accidental exposure on the local network. Users wanting broader network access will need to modify the `docker-compose.yaml` file.
+    *   Made the container log file name dynamic in the `Dockerfile` (using `CONTAINER_NAME` environment variable, defaulting to `container_log.txt`), allowing for easier identification if running multiple instances. Corresponding changes made in `.gitignore`.
+*   **Configuration Flexibility:**
+    *   Introduced `PROJECT_CONFIG_FOLDER_NAME` environment variable (defaulting to `Anagnorisis-app`) to allow customization of the sub-directory within the main `DATA_PATH` where project-specific data (database, models, config) is stored (`app.py`).
+    *   Removed now-redundant path configurations (`database_path`, `migrations_path`, `models_path`, `cache_path`) from the default `config.yaml` as they are derived programmatically in `app.py`.
+    *   Changed default `media_directory` values in `config.yaml` from empty strings (`''`) to `null` for clearer indication when a path is not set.
+*   **Text Module Major Update:**
+    *   Integrated the `TextSearch` engine (`pages/text/engine.py`) for embedding generation using the configured `embedding_model` (e.g., `jinaai/jina-embeddings-v3`).
+    *   Implemented backend logic (`pages/text/serve.py`) for semantic search based on text queries and file content embeddings.
+    *   Added database model (`pages/text/db_models.py`) for storing text file information and chunk embeddings.
+    *   Significantly updated the UI (`pages/text/page.html`, `pages/text/js/main.js`):
+        *   Added folder view navigation.
+        *   Implemented file grid display using `FileGridComponent`.
+        *   Added search bar functionality.
+        *   Integrated pagination using `PaginationComponent`.
+        *   Improved modal viewer with tabs (Raw, Markdown, HTML) and better layout.
+        *   Added logic for saving edited text content.
+        *   Added controls for setting the media path.
+*   **Video Module Streaming:**
+    *   Implemented experimental **HLS (HTTP Live Streaming)** support for video playback (`pages/videos/serve.py`, `pages/videos/js/main.js`, `pages/videos/page.html`).
+    *   Uses `ffmpeg` on the server for **on-the-fly transcoding** of video files into HLS format (.m3u8 playlist and .ts segments).
+    *   Added backend logic to manage transcoding processes and serve HLS files.
+    *   Integrated `hls.js` on the frontend for playing HLS streams in the video modal.
+    *   Includes basic stream management (start/stop) and automatic cleanup of old transcoding processes.
+*   **Module Robustness:**
+    *   Added checks in `Images`, `Music`, `Text`, and `Video` backend (`serve.py`) to handle cases where the respective `media_directory` is not set (`null` in config), preventing errors and showing appropriate status messages.
+*   **Dependencies:**
+    *   Added `sentence-transformers` and `einops` to `requirements.txt`.
+    *   Specified `numpy<2` in `requirements.txt` for compatibility with `jinaai/jina-embeddings-v3` model.
 
 ### Version 0.2.0 (04.04.2025)
 * Docker container for running the project configured and extensively tested to make running the project easier.

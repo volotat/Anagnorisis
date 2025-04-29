@@ -93,9 +93,10 @@ The project requires GPU to run properly. When running the project inside the Do
 When running the project in a local environment, the default address is set to 0.0.0.0 (this setting is necessery for proper work inside the Docker container). This configuration means the application listens on all available network interfaces, making it accessible from any device on your local network (i.e., any computer connected to the same router). However, this does not automatically expose the service to the internet. Access from outside your local network will depend on your firewall settings and router configuration.
 
 ## Embedding models
-To make audio and visual search possible the project uses these models:  
+To make audio, visual and text search possible the project uses these models:  
 [LAION-AI/CLAP](https://github.com/LAION-AI/CLAP)  
 [Google/SigLIP](https://arxiv.org/pdf/2303.15343)  
+[JinaAI/jina-embeddings-v3](https://huggingface.co/jinaai/jina-embeddings-v3)
 
 All embedding models are downloaded automatically when the project is started for the first time. This might take some time depending on the internet connection. You can see the progress inside `container_log.txt` file that will appear in the project's root folder if you run the project from the Docker container.
 

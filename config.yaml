@@ -1,18 +1,14 @@
 main:
   host: 0.0.0.0
   port: 5001
-  flask_secret_key: secret!123
-  database_path: project_data/Anagnorisis-app/database/project.db
-  migrations_path: project_data/Anagnorisis-app/database/migrations
-  models_path: project_data/Anagnorisis-app/models
-  cache_path: cache
+  flask_secret_key: secret!123 # Does not matter when Flask is run locally
 music:
-  media_directory: ''
+  media_directory: null
   media_formats:
   - .mp3
   - .flac
 images:
-  media_directory: ''
+  media_directory: null
   media_formats:
   - .jpg
   - .jpeg
@@ -22,7 +18,7 @@ images:
   - .webp
   - .tiff
 videos:
-  media_directory: ''
+  media_directory: null
   media_formats:
   - .mp4
   - .webm
@@ -33,7 +29,12 @@ videos:
   - .mkv
   - .ogv
 text:
-  media_directory: ''
+  media_directory: null
   media_formats:
   - .txt
   - .md
+  # Added for text embedding and search
+  embedding_model: "jinaai/jina-embeddings-v3" # Or a specific v3 model ID
+  chunk_size: 512 # Max tokens per chunk
+  chunk_overlap: 128 # Overlap between chunks
+  embedding_dimension: 1024 # Dimension to truncate to (Optional, match Matryoshka)
