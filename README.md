@@ -51,7 +51,7 @@ In case you do not want to use Docker, you can also install the project manually
 
 1. Clone this repository:
     ```bash
-        git clone https://github.com/yourusername/Anagnorisis.git
+        git clone https://github.com/volotat/Anagnorisis.git
         cd Anagnorisis
     ```
 
