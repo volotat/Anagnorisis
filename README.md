@@ -36,7 +36,7 @@ The preferred way to run the project is from Docker. This should be much more st
 1. Make sure that you have Docker installed. In case it is not go to [Docker installation page](https://www.docker.com/get-started/) and install it. 
 2. Clone this repository:
     ```bash
-        git clone https://github.com/yourusername/Anagnorisis.git
+        git clone https://github.com/volotat/Anagnorisis.git
         cd Anagnorisis
     ```
 3. Launch the application
