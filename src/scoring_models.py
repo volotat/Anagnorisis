@@ -12,6 +12,8 @@ import hashlib
 
 import torch.nn.functional as F
 
+from src.model_manager import ModelManager
+
 
 # Create scoring model class
 class Evaluator():
@@ -39,7 +41,7 @@ class Evaluator():
         x = self.fc3(x)
         return x
 
-    self.model = Net().to(self.device)
+    self.model = ModelManager(Net(), device=self.device)
     self.criterion = nn.CrossEntropyLoss()
     self.optimizer = torch.optim.Adam(self.model.parameters())
 

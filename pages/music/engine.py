@@ -21,6 +21,8 @@ import src.scoring_models
 import pages.music.db_models as db_models
 import pages.file_manager as file_manager
 
+from src.model_manager import ModelManager
+
 files_embeds_fast_cache = {}
 
 
@@ -149,7 +151,8 @@ class MusicSearch ():
       # Now load the model and processor from the guaranteed local path
       try:
           MusicSearch.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-          MusicSearch.model = ClapModel.from_pretrained(local_model_path, local_files_only=True).to(MusicSearch.device)
+          MusicSearch.model = ModelManager(ClapModel.from_pretrained(local_model_path, local_files_only=True, device_map="cpu"), device=MusicSearch.device)
+          #ClapModel.from_pretrained(local_model_path, local_files_only=True).to(MusicSearch.device)
           MusicSearch.processor = ClapProcessor.from_pretrained(local_model_path, local_files_only=True)
           MusicSearch.feature_extractor = AutoFeatureExtractor.from_pretrained(local_model_path, local_files_only=True)
 

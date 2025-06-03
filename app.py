@@ -26,6 +26,8 @@ import argparse
 import os
 import shutil
 
+import traceback
+
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description='Anagnorisis Application')
@@ -204,6 +206,7 @@ for extension_name in extension_names:
         print(f"Warning: Could not import module {serve_module_path}: {e}")
     except Exception as e:
         print(f"Error initializing extension {extension_name}: {e}")
+        print(traceback.format_exc())
 
 #### EXPORT DATABASE TO CSV FUNCTIONALITY
 import src.db_models

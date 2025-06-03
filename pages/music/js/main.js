@@ -431,7 +431,7 @@ import PaginationComponent from '/pages/PaginationComponent.js';
     $('#search_input').val(text_query);
 
     // Search for images
-    $('#seach_button').click(function() {
+    $('#search_button').click(function() {
       let text_query = $('#search_input').val();
       let url = new URL(window.location.href);
       let params = new URLSearchParams(url.search);
@@ -444,7 +444,7 @@ import PaginationComponent from '/pages/PaginationComponent.js';
     // Set search query in input
     $('.set_search').click(function() {
       $('#search_input').val($(this).text());
-      $('#seach_button').click();
+      $('#search_button').click();
     });
 
     // Update path to the media folder

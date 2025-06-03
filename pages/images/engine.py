@@ -18,6 +18,7 @@ import src.scoring_models
 import pages.images.db_models as db_models
 import pages.file_manager as file_manager
 
+from src.model_manager import ModelManager
 
 images_embeds_fast_cache = {}
 
@@ -76,7 +77,8 @@ class ImageSearch:
     try:
         ImageSearch.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         # Load from the specific local path, ensuring local_files_only=True
-        ImageSearch.model = AutoModel.from_pretrained(local_model_path, local_files_only=True).to(ImageSearch.device)
+        ImageSearch.model = ModelManager(AutoModel.from_pretrained(local_model_path, local_files_only=True, device_map="cpu"), device = ImageSearch.device)
+        #AutoModel.from_pretrained(local_model_path, local_files_only=True).to(ImageSearch.device)
         ImageSearch.processor = AutoProcessor.from_pretrained(local_model_path, local_files_only=True)
         ImageSearch.model_hash = ImageSearch.get_model_hash()
         ImageSearch.embedding_dim = ImageSearch.model.config.text_config.hidden_size # Safely access config

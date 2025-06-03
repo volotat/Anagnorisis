@@ -42,6 +42,20 @@ Implement automatic model downloading at the fresh start of the project.
 
 ## Versions History
 
+### Version 0.2.2 (04.06.2025)
+*   **Core Architecture Refactoring:**
+    *   Introduced a `BaseSearchEngine` abstract class (`src/base_search_engine.py`) to encapsulate common functionality for embedding models (initialization, model downloading, caching, file processing flow).
+    *   Refactored the `TextSearch` (`pages/text/engine.py`) class to inherit from the `BaseSearchEngine`, eliminating significant code duplication and improving code structure and maintainability. For each engine test cases were also created to ensure the correctness of the code. Test might be run with these commands:
+        *   `python3 -m pages.text.engine`  
+    ( All other engines, such as `ImageSearch` (`pages/images/engine.py`) and `MusicSearch` (`pages/music/engine.py`) are yet to be refactored. )
+    *   Data for testing `TextSearch`, `ImageSearch`, and `MusicSearch` engines has been added to the respective `engine_test_data` folders.
+*   **Improved Model Management:**
+    *   Integrated the `ModelManager` into the `Evaluator` classes (`src/scoring_models.py`) and the refactored Search Engines (via the `BaseSearchEngine`), enabling lazy loading and automatic unloading of models from GPU/CPU memory when idle, leading to more efficient resource usage.
+*   **Configuration & Minor Fixes:**
+    *   Ensured the `embedding_model` configuration setting is consistently present in `config.yaml` for `music` and `images` modules.
+    *   Corrected a minor typo in the music module's JavaScript (`#seach_button` to `#search_button`).
+    *   `Dockerfile` configuration has been updated to use the latest `jinaai/jina-embeddings-v3` model (it temporally uses non-local files, with `local_files_only=False, trust_remote_code=True` as I cannot yet find a way to run the updated model without it).
+
 ### Version 0.2.1 (29.04.2025)
 *   **Docker Enhancements & Security:**
     *   Changed default Docker port mapping (`docker-compose.yaml`) to bind to `127.0.0.1` (localhost) instead of all interfaces (`0.0.0.0`), enhancing default security by preventing accidental exposure on the local network. Users wanting broader network access will need to modify the `docker-compose.yaml` file.

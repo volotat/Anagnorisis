@@ -3,11 +3,13 @@ main:
   port: 5001
   flask_secret_key: secret!123 # Does not matter when Flask is run locally
 music:
+  embedding_model: "laion/clap-htsat-fused" 
   media_directory: null
   media_formats:
   - .mp3
   - .flac
 images:
+  embedding_model: "google/siglip-base-patch16-224" 
   media_directory: null
   media_formats:
   - .jpg

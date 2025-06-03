@@ -43,10 +43,16 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
     else:
         media_directory = os.path.join(data_folder, cfg.text.media_directory)
 
-    TextSearch.initiate(cfg, models_folder=cfg.main.models_path, cache_folder=cfg.main.cache_path)
-    cached_file_list = TextSearch.cached_file_list
-    cached_file_hash = TextSearch.cached_file_hash
-    cached_metadata = TextSearch.cached_metadata
+    text_search_engine = TextSearch(cfg=cfg)
+    text_search_engine.initiate(models_folder=cfg.main.models_path, cache_folder=cfg.main.cache_path)
+    cached_file_list = text_search_engine.cached_file_list
+    cached_file_hash = text_search_engine.cached_file_hash
+    cached_metadata = text_search_engine.cached_metadata
+
+    #TextSearch.initiate(cfg, models_folder=cfg.main.models_path, cache_folder=cfg.main.cache_path)
+    #cached_file_list = TextSearch.cached_file_list
+    #cached_file_hash = TextSearch.cached_file_hash
+    #cached_metadata = TextSearch.cached_metadata
 
     common_socket_events = CommonSocketEvents(socketio)
 
@@ -143,9 +149,9 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
             # Sort files by the text query
             else:
                 common_socket_events.show_search_status(f"Extracting embeddings")
-                embeds_files = TextSearch.process_files(all_files, cfg, callback=embedding_gathering_callback)
-                embeds_text = TextSearch.process_text(text_query, cfg)
-                scores = TextSearch.compare(embeds_files, embeds_text)
+                embeds_files = text_search_engine.process_files(all_files, callback=embedding_gathering_callback, media_folder=media_directory)
+                embeds_text = text_search_engine.process_text(text_query)
+                scores = text_search_engine.compare(embeds_files, embeds_text)
 
                 # Create a list of indices sorted by their corresponding score
                 common_socket_events.show_search_status(f"Sorting by relevance")
