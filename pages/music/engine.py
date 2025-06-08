@@ -1,4 +1,4 @@
-from PIL import Image
+from PIL import Image # Still used for get_audiofile_data if it extracts cover art
 import requests
 from transformers import AutoFeatureExtractor, ClapConfig, ClapModel, ClapProcessor
 import torch
@@ -15,334 +15,333 @@ import imageio
 import torchaudio
 from tinytag import TinyTag
 import base64
-from huggingface_hub import snapshot_download 
+# from huggingface_hub import snapshot_download # Moved to BaseSearchEngine
 
 import src.scoring_models
 import pages.music.db_models as db_models
 import pages.file_manager as file_manager
-
-from src.model_manager import ModelManager
-
-files_embeds_fast_cache = {}
-
+from src.base_search_engine import BaseSearchEngine # Import the base class
+from src.model_manager import ModelManager # Still needed for MusicEvaluator
 
 def get_audiofile_data(file_path):
-  """
-  tag.album         # album as string
-  tag.albumartist   # album artist as string
-  tag.artist        # artist name as string
-  tag.audio_offset  # number of bytes before audio data begins
-  tag.bitdepth      # bit depth for lossless audio
-  tag.bitrate       # bitrate in kBits/s
-  tag.comment       # file comment as string
-  tag.composer      # composer as string 
-  tag.disc          # disc number
-  tag.disc_total    # the total number of discs
-  tag.duration      # duration of the song in seconds
-  tag.filesize      # file size in bytes
-  tag.genre         # genre as string
-  tag.samplerate    # samples per second
-  tag.title         # title of the song
-  tag.track         # track number as string
-  tag.track_total   # total number of tracks as string
-  tag.year          # year or date as string
-  """
+    """
+    Extracts metadata from an audio file using TinyTag.
+    Also attempts to extract album art and convert it to base64.
+    """
+    metadata = {}
+    try:
+        tag = TinyTag.get(file_path, image=True)
 
-  metadata = {
-    'file_path': file_path,
-    #'url_path': url_path,
-    #'hash': calculate_audiodata_hash(file_path),
-  }
+        metadata['title'] = tag.title or "N/A"
+        metadata['artist'] = tag.artist or "N/A"
+        metadata['album'] = tag.album or "N/A"
+        metadata['track_num'] = tag.track if tag.track else "N/A"
+        metadata['genre'] = tag.genre if tag.genre else "N/A"
+        metadata['date'] = str(tag.year) if tag.year else "N/A"
 
-  
+        metadata['duration'] = tag.duration # seconds
+        metadata['bitrate'] = tag.bitrate # kbps
 
-  #audiofile = eyed3.load(file_path)
+        metadata['lyrics'] = tag.extra.get('lyrics', "")
 
-  tag = TinyTag.get(file_path, image=True)
-
-  metadata['title'] = tag.title or "N/A"
-  metadata['artist'] = tag.artist or "N/A"
-  metadata['album'] = tag.album or "N/A"
-  metadata['track_num'] = tag.track if tag.track else "N/A"
-  metadata['genre'] = tag.genre if tag.genre else "N/A"
-  metadata['date'] = str(tag.year) if tag.year else "N/A"
-
-  metadata['duration'] = tag.duration #(seconds)
-  metadata['bitrate'] = tag.bitrate #(kbps)
-
-  metadata['lyrics'] = tag.extra.get('lyrics', "")
-
-  img = tag.get_image()
-  if img is not None:
-    base64_image = base64.b64encode(img).decode('utf-8')
-
-    #buffer = io.BytesIO()
-    #img.save(buffer, format='PNG')
-    #buffer.seek(0)
-    
-    #data_uri = base64.b64encode(buffer.read()).decode('ascii')
-    metadata['image'] = f"data:image/png;base64,{base64_image}"
-  else:
-    metadata['image'] = None
-
-    # Get all available tags and their values as a dictionary
-    #tag_dict = audiofile.tag.frame_set
-
-    # If there are multiple artists, they will be stored in a list
-    #if audiofile.tag.artist:
-    #    print("Artists:", ", ".join(audiofile.tag.artist))
-
-    # If there are multiple genres, they will be stored in a list
-    #if audiofile.tag.genre:
-    #    print("Genres:", ", ".join(audiofile.tag.genre))
-
-    # You can access other tag fields in a similar way
-
-    # To print all tags and their values, you can iterate through them
-    #for tag in audiofile.tag.frame_set:
-    #    print(tag, ":", audiofile.tag.frame_set[tag][0])
-
-    # If you want to access additional metadata, you can use audiofile.tag.file_info
-    #print("Sample Width (bits):", audiofile.tag.file_info.sample_width)
-    #print("Channel Mode:", audiofile.tag.file_info.mode)
-
-    # To print the entire tag as a dictionary
-    #print("Tag Dictionary:", audiofile.tag.frame_set)
-
-    #for frame in audiofile.tag.frameiter(["TXXX"]):
-    #  print(f"{frame.description}: {frame.text}")
-  
-  return metadata
-
-class MusicSearch ():
-  device = None
-  model = None
-  processor = None
-  is_busy = False
-
-  @staticmethod
-  def initiate(models_folder='./models', cache_folder='./cache'):
-      if MusicSearch.model is not None:
-          return
-    
-      model_name = "laion/clap-htsat-fused"
-      local_model_path = os.path.join(models_folder, model_name.split("/")[-1]) # e.g., ./models/clap-htsat-fused
-
-      # Ensure base models directory exists
-      os.makedirs(models_folder, exist_ok=True)
-      
-      # Check if model exists locally, if not, download it
-      if not os.path.exists(local_model_path):
-          print(f"Model '{model_name}' not found locally. Downloading to '{local_model_path}'...")
-          try:
-              snapshot_download(
-                  repo_id=model_name,
-                  local_dir=local_model_path,
-                  local_dir_use_symlinks=False # Download actual files
-              )
-              print(f"Model '{model_name}' downloaded successfully.")
-          except Exception as e:
-              print(f"ERROR: Failed to download model '{model_name}'. Please check your internet connection and permissions.")
-              print(f"Error details: {e}")
-              raise RuntimeError(f"Failed to download required model: {model_name}") from e
-      else:
-            print(f"Found existing model '{model_name}' at '{local_model_path}'.")
-
-      # Now load the model and processor from the guaranteed local path
-      try:
-          MusicSearch.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-          MusicSearch.model = ModelManager(ClapModel.from_pretrained(local_model_path, local_files_only=True, device_map="cpu"), device=MusicSearch.device)
-          #ClapModel.from_pretrained(local_model_path, local_files_only=True).to(MusicSearch.device)
-          MusicSearch.processor = ClapProcessor.from_pretrained(local_model_path, local_files_only=True)
-          MusicSearch.feature_extractor = AutoFeatureExtractor.from_pretrained(local_model_path, local_files_only=True)
-
-          MusicSearch.model_hash = MusicSearch.get_model_hash()
-          MusicSearch.embedding_dim = MusicSearch.model.config.text_config.projection_dim # Adjust based on CLAP model config if needed
-      except Exception as e:
-          print(f"ERROR: Failed to load model '{model_name}' from '{local_model_path}'. The download might be incomplete or corrupted.")
-          print(f"Error details: {e}")
-          raise RuntimeError(f"Failed to load required model: {model_name}") from e
-
-      # --- Initialize Caches ---
-      # Ensure cache directory exists
-      os.makedirs(cache_folder, exist_ok=True)
-      MusicSearch.cached_file_list = file_manager.CachedFileList(os.path.join(cache_folder,'music_file_list.pkl'))
-      MusicSearch.cached_file_hash = file_manager.CachedFileHash(os.path.join(cache_folder,'music_file_hash.pkl'))
-      MusicSearch.cached_metadata = file_manager.CachedMetadata(os.path.join(cache_folder,'music_metadata.pkl'), get_audiofile_data)
-
-
-  '''_instance = None
-  def __new__(self, *args, **kwargs):
-    if not self._instance:
-      self._instance = super().__new__(self)
-      
-    return self._instance
-    
-  def __init__(self) -> None:
-    pass'''
-
-  @staticmethod
-  def get_model_hash():
-    if MusicSearch.model is None: 
-        raise Exception("Model is not initialized")
-    
-    state_dict = MusicSearch.model.state_dict()
-    buffer = io.BytesIO()
-    torch.save(state_dict, buffer)
-    buffer.seek(0)
-    model_hash = hashlib.md5(buffer.read()).hexdigest()
-    return model_hash
-  
-  @staticmethod
-  def read_audio(audio_path):
-    # Implement audio reading and preprocessing here
-    # For example, using torchaudio to read the audio file
-    import torchaudio
-    waveform, sample_rate = torchaudio.load(audio_path)
-    return waveform, sample_rate
-
-  @staticmethod
-  def process_audio(audio_files, batch_size=32, callback=None, media_folder=None):
-    MusicSearch.initiate()
-
-    # Check if the MusicSearch is busy processing another request
-    if MusicSearch.is_busy: 
-      raise Exception("MusicSearch is busy")
-    
-    # Set the busy flag to prevent multiple calls
-    MusicSearch.is_busy = True
-
-    all_audio_embeds = []
-    new_items = []
-
-    for ind, audio_path in enumerate(tqdm(audio_files)):
-      try:
-        # Compute the hash of the audio file
-        audio_hash = MusicSearch.cached_file_hash.get_file_hash(audio_path)
-        
-        # If the cache file exists, load the embeddings from it
-        if audio_hash in files_embeds_fast_cache:
-          audio_embeds = files_embeds_fast_cache[audio_hash]
+        img = tag.get_image()
+        if img is not None:
+            base64_image = base64.b64encode(img).decode('utf-8')
+            metadata['image'] = f"data:image/png;base64,{base64_image}" # Assuming PNG, adjust if needed
         else:
-          # Check if the embedding exists in the database
-          audio_record = db_models.MusicLibrary.query.filter_by(hash=audio_hash).first()
+            metadata['image'] = None
+    except Exception as e:
+        print(f"Error extracting metadata from {file_path}: {e}")
+        # Populate with N/A or None on error for consistency
+        for key in ['title', 'artist', 'album', 'track_num', 'genre', 'date', 'duration', 'bitrate', 'lyrics', 'image']:
+            if key not in metadata: metadata[key] = None
+        if metadata['duration'] is None: metadata['duration'] = 0 # Ensure duration is numeric for sorting
 
-          if audio_record and audio_record.embedding:
-            # Load the embeddings from the database
-            audio_embeds = pickle.loads(audio_record.embedding)
-            # Save the embeddings to the fast cache (RAM)
-            files_embeds_fast_cache[audio_hash] = audio_embeds
-          else:
-            # Process the audio and generate embeddings
-            waveform, sample_rate = MusicSearch.read_audio(audio_path)
-            
-            if waveform is None: 
-              raise Exception(f"Error reading audio file: {audio_path}")
+    return metadata
 
-            # convert waveform to 48kHz if not
-            if sample_rate != 48000:
-              waveform = torchaudio.transforms.Resample(orig_freq=sample_rate, new_freq=48000)(waveform)
-              sample_rate = 48000
+class MusicSearch(BaseSearchEngine):
+    def __init__(self, cfg=None):
+        super().__init__(cfg) # Call base class __init__
+        self.cfg = cfg # Store cfg for reading parameters
+        self.tokenizer = None # Will be set in _load_model_and_processor
 
-            # comvert to mono if not
+    @property
+    def model_name(self) -> str:
+        # Use cfg.music.embedding_model for dynamic model selection
+        if self.cfg is None or not hasattr(self.cfg, 'music') or not hasattr(self.cfg.music, 'embedding_model'):
+            raise ValueError("Music embedding model not specified in config.")
+        return self.cfg.music.embedding_model # e.g., "laion/clap-htsat-fused"
+    
+    @property
+    def cache_prefix(self) -> str:
+        return 'music'
+        
+    def _get_metadata_function(self):
+        return get_audiofile_data
+
+    def _get_db_model_class(self):
+        return db_models.MusicLibrary
+
+    def _load_model_and_processor(self, local_model_path: str):
+        """
+        Loads the CLAP model and processor from the local path.
+        Ensures the model is loaded to CPU before being wrapped by ModelManager.
+        """
+        try:
+            self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+            print(f"MusicSearch: Loading model to CPU first...")
+            self.model = ClapModel.from_pretrained(local_model_path, local_files_only=True).cpu() # Load to CPU
+            self.processor = ClapProcessor.from_pretrained(local_model_path, local_files_only=True)
+            self.feature_extractor = AutoFeatureExtractor.from_pretrained(local_model_path, local_files_only=True)
+            self.embedding_dim = self.model.config.text_config.projection_dim # CLAP's projection dim
+
+        except Exception as e:
+            print(f"ERROR: Failed to load CLAP model from '{local_model_path}'. The download might be incomplete or corrupted.")
+            print(f"Error details: {e}")
+            raise RuntimeError(f"Failed to load required model: {self.model_name}") from e
+
+    def _process_single_file(self, file_path: str, **kwargs) -> torch.Tensor:
+        """
+        Reads and preprocesses a single audio file, then generates its embedding.
+        """
+        waveform, sample_rate = self._read_audio(file_path)
+        if waveform is None: 
+            raise Exception(f"Failed to read audio file: {file_path}")
+
+        # Convert waveform to 48kHz if not (required by CLAP)
+        if sample_rate != 48000:
+            waveform = torchaudio.transforms.Resample(orig_freq=sample_rate, new_freq=48000)(waveform)
+            sample_rate = 48000
+
+        # Convert to mono if not
+        if waveform.shape[0] > 1: # If stereo or multi-channel
             waveform = waveform.mean(dim=0, keepdim=False)
-            
-            # Use the waveform directly with the processor
-            #inputs_audio = MusicSearch.processor(audios=[waveform], sampling_rate=sample_rate, return_tensors="pt").to(MusicSearch.device)
+        
+        # Use the wrapped model (self.model is now ModelManager instance)
+        model_instance = self.model
+        
+        inputs_audio = self.feature_extractor(waveform, sampling_rate=sample_rate, return_tensors="pt").to(model_instance._device)
+        
+        with torch.no_grad():
+            outputs = model_instance.get_audio_features(**inputs_audio)
 
-            # Get the audio embeddings
-            with torch.no_grad():
-                inputs_audio = MusicSearch.feature_extractor(waveform, sampling_rate=sample_rate, return_tensors="pt").to(MusicSearch.device)
-                outputs = MusicSearch.model.get_audio_features(**inputs_audio)
-
-            # Get the audio embeddings
-            audio_embeds = outputs
-
-            # Save the embeddings to the database
-            if audio_record:
-              audio_record.embedding = pickle.dumps(audio_embeds)
-              audio_record.embedder_hash = MusicSearch.model_hash
-            else:
-              # This require knowledge of the media folder to find the relative path
-              if media_folder:
-                audio_data = {
-                  'hash': audio_hash,
-                  'file_path': os.path.relpath(audio_path, media_folder),
-                  'embedding': pickle.dumps(audio_embeds),
-                  'embedder_hash': MusicSearch.model_hash
-                }
-                new_items.append(db_models.MusicLibrary(**audio_data))
-
-            # Save the embeddings to the fast cache (RAM)
-            files_embeds_fast_cache[audio_hash] = audio_embeds
-      except Exception as e:
-        print(f"Error processing audio: {audio_path}: {e}")
-        audio_embeds = torch.zeros(1, MusicSearch.embedding_dim).to(MusicSearch.device)
-
-      all_audio_embeds.append(audio_embeds)
-      if callback: callback(ind + 1, len(audio_files))
-
-    # Save the embeddings to the database
-    if new_items: db_models.db.session.bulk_save_objects(new_items)
-    db_models.db.session.commit()
-
-    # Concatenate all embeddings
-    all_audio_embeds = torch.cat(all_audio_embeds, dim=0)
-
-    # Reset the busy flag
-    MusicSearch.is_busy = False
-
-    return all_audio_embeds
+        # CLAP audio features are typically normalized by default but can be re-normalized if needed
+        audio_embeds = outputs # Assume CLAP returns normalized features or handle here if not
+        
+        return audio_embeds
   
-  @staticmethod
-  def process_text(text):
-    MusicSearch.initiate()
-    
-    inputs_text = MusicSearch.processor(text=text, padding=True, return_tensors="pt").to(MusicSearch.device)
+    def _read_audio(self, audio_path: str):
+        """Helper method to read audio files using torchaudio."""
+        try:
+            waveform, sample_rate = torchaudio.load(audio_path)
+            return waveform, sample_rate
+        except Exception as e:
+            print(f"Error reading audio file {audio_path}: {e}")
+            return None, None
 
-    with torch.no_grad():
-      outputs = MusicSearch.model.get_text_features(**inputs_text)
+    def process_audio(self, audio_files: list[str], callback=None, media_folder: str = None) -> torch.Tensor:
+        """
+        Public method for audio processing, now calls the base class's logic.
+        Kept for backward compatibility.
+        """
+        return super().process_files(audio_files, callback=callback, media_folder=media_folder)
+  
+    def process_text(self, text: str) -> torch.Tensor:
+        """
+        Processes a text query to generate its embedding using the CLAP text encoder.
+        """
+        if self._model_manager is None:
+            raise RuntimeError(f"{self.__class__.__name__} not initialized. Call initiate() first.")
 
-    # get the text embeddings
-    text_embeds = outputs
-    
-    return text_embeds
+        model_instance = self.model # Triggers loading to GPU if needed
+        
+        inputs_text = self.processor(text=text, padding=True, return_tensors="pt").to(model_instance._device)
 
-  @staticmethod
-  def compare(audio_embeds, text_embeds):
-    print(audio_embeds.shape, text_embeds.shape)  
-    '''
-    logits_per_text = torch.matmul(embeds_text, embeds_audio.t()) * MusicSearch.model.logit_scale.exp() + MusicSearch.model.logit_bias
-    logits_per_audio = logits_per_text.t()
+        with torch.no_grad():
+            outputs = model_instance.get_text_features(**inputs_text)
 
-    probs = torch.sigmoid(logits_per_audio)
-    '''
+        # CLAP text features are typically normalized by default but can be re-normalized if needed
+        text_embeds = outputs # Assume CLAP returns normalized features or handle here if not
+        
+        # TODO: Find out why .squeeze(0) is needed here, it was working without it before refactoring
+        return text_embeds.squeeze(0)  # Return as 1D tensor
 
-    # normalized features
-    audio_embeds = audio_embeds / audio_embeds.norm(p=2, dim=-1, keepdim=True)
-    text_embeds = text_embeds / text_embeds.norm(p=2, dim=-1, keepdim=True)
-
-    # cosine similarity as logits
-    logit_scale_text = MusicSearch.model.logit_scale_t.exp()
-    logit_scale_audio = MusicSearch.model.logit_scale_a.exp()
-    logits_per_text = torch.matmul(text_embeds, audio_embeds.t()) * logit_scale_text
-    logits_per_audio = torch.matmul(audio_embeds, text_embeds.t()) * logit_scale_audio
-
-    logits_avg = (logits_per_text + logits_per_audio.t()) / 2.0
-
-    probs = torch.sigmoid(logits_avg)[0]
-    return probs.cpu().detach().numpy() 
+  # The 'compare' method from the original MusicSearch is largely handled by BaseSearchEngine.compare now.
+  # CLAP's compare has specific logit scales, so BaseSearchEngine.compare handles this.
 
 # Create scoring model singleton class so it easily accessible from other modules
 class MusicEvaluator(src.scoring_models.Evaluator):
-  _instance = None
+    _instance = None
 
-  def __new__(cls, *args, **kwargs):
-    if cls._instance is None:
-      cls._instance = super(MusicEvaluator, cls).__new__(cls)
-    return cls._instance
+    def __new__(cls, *args, **kwargs):
+        if cls._instance is None:
+            cls._instance = super(MusicEvaluator, cls).__new__(cls)
+        return cls._instance
 
-  def __init__(self, embedding_dim=768, rate_classes=11):
-    if not hasattr(self, '_initialized'):
-      super(MusicEvaluator, self).__init__(embedding_dim, rate_classes)
-      self._initialized = True
+    def __init__(self, embedding_dim=768, rate_classes=11):
+        if not hasattr(self, '_initialized'):
+            super(MusicEvaluator, self).__init__(embedding_dim, rate_classes)
+            self._initialized = True
+
+
+# --- Testing Section (add this to the end of pages/music/engine.py for local tests) ---
+if __name__ == "__main__":
+    from omegaconf import OmegaConf
+    import tempfile
+    import glob
+    import colorama
+    
+    colorama.init()
+
+    print("--- Running MusicSearch Engine Test ---")
+
+    # Create a dummy config for testing
+    dummy_cfg_dict = {
+        'main': {
+            'models_path': './models',
+            'cache_path': './cache'
+        },
+        'music': {
+            'embedding_model': "laion/clap-htsat-fused",
+            'media_formats': ['.mp3', '.wav']
+        }
+    }
+    cfg = OmegaConf.create(dummy_cfg_dict)
+
+    os.makedirs(cfg.main.models_path, exist_ok=True)
+    os.makedirs(cfg.main.cache_path, exist_ok=True)
+
+    # Create dummy audio files for testing (requires pydub and tinytag)
+    path = os.path.dirname(os.path.abspath(__file__))
+    test_audio_dir = os.path.join(path, "engine_test_data")
+    os.makedirs(test_audio_dir, exist_ok=True)
+    
+    # Generate a simple 5-second sine wave audio file
+    import soundfile as sf
+    samplerate_test = 48000 # CLAP prefers 48kHz
+    duration_test = 5 # seconds
+    frequency_test_1 = 440 # Hz
+    frequency_test_2 = 880 # Hz
+    
+    t = np.linspace(0., duration_test, int(samplerate_test * duration_test), endpoint=False)
+    waveform1 = 0.5 * np.sin(2. * np.pi * frequency_test_1 * t)
+    waveform2 = 0.5 * np.sin(2. * np.pi * frequency_test_2 * t)
+    
+    dummy_audio_path1 = os.path.join(test_audio_dir, "262274__the_sound_side__abide-with-me-opera-vocals.wav")
+    dummy_audio_path2 = os.path.join(test_audio_dir, "643360__duisterwho__she-has-lost-her-mind-vocal.wav")
+    dummy_audio_path3 = os.path.join(test_audio_dir, "717297__curtiswcole__cardinal-white-noise.wav")
+    dummy_audio_path4 = os.path.join(test_audio_dir, "803535__clod111__baby-daughter-crying.wav")
+
+    # --- Initialize the model ---
+    try:
+        print("\nInitializing MusicSearch engine...")
+        music_search_engine = MusicSearch(cfg=cfg)
+        music_search_engine.initiate(models_folder=cfg.main.models_path, cache_folder=cfg.main.cache_path)
+        print(f"MusicSearch engine initialized. Model hash: {music_search_engine.model_hash}")
+        print(f"Model on device: {music_search_engine.model.device}")
+    except Exception as e:
+        print(f"FATAL: MusicSearch engine initiation failed: {e}")
+        import traceback
+        traceback.print_exc()
+        exit(1)
+
+    # --- Test file processing ---
+    print("\n--- Test file processing (embedding generation and caching) ---")
+    test_files = [dummy_audio_path1, dummy_audio_path2, dummy_audio_path3, dummy_audio_path4]
+    
+    def test_callback(num_processed, num_total):
+        print(f"Processed {num_processed}/{num_total} files...")
+
+    try:
+        print(f"{colorama.Fore.CYAN}Processing files for the first time (should generate embeddings):{colorama.Style.RESET_ALL}")
+        embeddings = music_search_engine.process_audio(
+            test_files, 
+            callback=test_callback, 
+            media_folder=test_audio_dir
+        )
+        print(f"Generated embeddings shape: {embeddings.shape}")
+        assert embeddings.shape[0] == 4, f"Expected 3 embeddings, got {embeddings.shape[0]}"
+        assert embeddings.shape[1] == music_search_engine.embedding_dim, f"Expected embedding dim {music_search_engine.embedding_dim}, got {embeddings.shape[1]}"
+        print(f"{colorama.Fore.GREEN}First processing successful.{colorama.Style.RESET_ALL}")
+
+        print(f"\n{colorama.Fore.CYAN}Processing files again (should use cache):{colorama.Style.RESET_ALL}")
+        music_search_engine._fast_cache = {} 
+        embeddings_cached = music_search_engine.process_audio(
+            test_files, 
+            callback=test_callback, 
+            media_folder=test_audio_dir
+        )
+        print(f"Generated embeddings shape (cached): {embeddings_cached.shape}")
+        assert torch.allclose(embeddings, embeddings_cached), "Cached embeddings do not match original"
+        print(f"{colorama.Fore.GREEN}Cached processing successful.{colorama.Style.RESET_ALL}")
+
+    except Exception as e:
+        print(f"{colorama.Fore.RED}File processing test FAILED: {e}{colorama.Style.RESET_ALL}")
+        import traceback
+        traceback.print_exc()
+
+    # --- Test text processing and comparison ---
+    print("\n--- Test text processing and comparison ---")
+    try:
+        # Define realistic search queries
+        search_queries = [
+            "woman singing a song acapella",
+            "baby crying",
+            "white noise",
+            #"radio host talking clearly",
+            "she lost her mind",
+        ]
+
+        for query in search_queries:
+            print(f"\nProcessing query: '{query}'")
+            query_embedding = music_search_engine.process_text(query)
+            print(f"Query embedding shape: {query_embedding.shape}")
+            
+            scores_data = music_search_engine.compare(embeddings, query_embedding)
+            
+            print(f"Scores for '{query}'")
+
+            # Combine file paths with their scores
+            results = []
+            for i, file_path in enumerate(test_files):
+                file_name = os.path.basename(file_path)
+                score = scores_data[i] if i < len(scores_data) else 0.0
+                results.append((file_name, score))
+
+            # Sort results by score in descending order
+            results.sort(key=lambda item: item[1], reverse=True)
+
+            # Print sorted results
+            for file_name, score in results:
+                print(f"  {file_name}: {score:.4f}")
+
+    except Exception as e:
+        print(f"{colorama.Fore.RED}Text processing or comparison test FAILED: {e}{colorama.Style.RESET_ALL}")
+        import traceback
+        traceback.print_exc()
+
+    # --- Test ModelManager lazy loading/unloading ---
+    print("\n--- Testing ModelManager lazy loading ---")
+    print(f"Model manager loaded: {music_search_engine.model._loaded}")
+    print(f"Model device: {music_search_engine.model._model.device}")
+    assert music_search_engine.model._loaded and music_search_engine.model._model.device.type == 'cuda', "Model not loaded to GPU after use."
+    
+    print("Waiting for idle timeout (120 seconds + 30s cleanup check)...")
+    time.sleep(160)
+    
+    print(f"Model manager loaded after idle: {music_search_engine.model._loaded}")
+    assert not music_search_engine.model._loaded, "Model was not unloaded after idle period."
+    print(f"{colorama.Fore.GREEN}ModelManager unloading test successful.{colorama.Style.RESET_ALL}")
+
+    print("\nRe-using model to trigger reload...")
+    dummy_text = "This is a test text to trigger model reloading."
+    query_embedding = music_search_engine.process_text(dummy_text)
+
+    print(f"Model manager loaded after re-use: {music_search_engine.model._loaded}")
+    print(f"Model device after re-use: {music_search_engine.model._model.device}")
+    assert music_search_engine.model._loaded and music_search_engine.model._model.device.type == 'cuda', "Model did not reload to GPU on re-use."
+    print(f"{colorama.Fore.GREEN}ModelManager reloading test successful.{colorama.Style.RESET_ALL}")
+
+    # Shut down ModelManager gracefully at the end of tests
+    ModelManager.shutdown()
+    print("\n--- MusicSearch Engine Test Completed ---")

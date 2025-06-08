@@ -39,8 +39,26 @@ When the folder name contains '[' and ']' symbols it is not correctly read by py
 Add automatic database backup generation from time to time to prevent loss of data in case of a failure.  
 Find a way for more optimal embeddings storage in the DB.  
 Implement automatic model downloading at the fresh start of the project.
+Add display of the current version of the project into the header. 
+Add pop-up messages about new version of the project available to download and some button that allows to download it directly from the UI and restart the server.
+When starting the Docker container, if the provided path to the share folder does not exists the error should be displayed and the container should not start.
 
 ## Versions History
+
+### Version 0.2.3 (09.06.2025)
+*   **Core Architecture Enhancements:**
+    *   Refactored the `ImageSearch` (`pages/images/engine.py`) and `MusicSearch` (`pages/music/engine.py`) classes to inherit from the `BaseSearchEngine`, following the pattern established in the `TextSearch` class. This further reduces code duplication and enhances maintainability. To test the correctness of the code, test cases were created for both engines, which can be run with the command:
+        *   `python3 -m pages.images.engine`  
+        *   `python3 -m pages.music.engine`
+*   **Video Module Improvements:**
+    *   Implemented 'recommendation' based sorting for videos, leveraging the existing recommendation logic and preparing the `VideosLibrary` database model to track user ratings, model ratings, play/skip counts, and `last_played` timestamps. For now only the `last_played` timestamp is used for the recommendation, but the rest of the fields are prepared for future use.
+    *   Fixed a critical issue where video transcoding might get stuck, preventing the video from being played because incorrect error handling was implemented. Now the transcoding process is properly monitored, and if it fails, the logs get information about it yet the transcoding process continues.
+    *   Fixed an issue when videos might get started from 4-5 seconds mark instead of the beginning. Now videos always starts from the beginning as expected.
+    *   Updated the video module frontend (`pages/videos/js/main.js`, `pages/videos/page.html`) to utilize the shared `FileGridComponent` and `FolderViewComponent` for a consistent and robust user interface.
+*   **Minor Fixes & Enhancements:**
+    *   The database export functionality (`/export_database_csv`) now correctly excludes `chunk_embeddings` (from the Text module) to prevent issues with large binary data during export.
+    *   User ratings in the `Images` module are now consistently stored as floating-point numbers in the database, allowing for more precise user input (e.g., 8.5 out of 10).
+    *   `config.yaml` has been updated for consistency and clarity, explicitly adding `embedding_model: null` for the `videos` section as no embedding model is currently used for videos.
 
 ### Version 0.2.2 (04.06.2025)
 *   **Core Architecture Refactoring:**
@@ -50,7 +68,7 @@ Implement automatic model downloading at the fresh start of the project.
     ( All other engines, such as `ImageSearch` (`pages/images/engine.py`) and `MusicSearch` (`pages/music/engine.py`) are yet to be refactored. )
     *   Data for testing `TextSearch`, `ImageSearch`, and `MusicSearch` engines has been added to the respective `engine_test_data` folders.
 *   **Improved Model Management:**
-    *   Integrated the `ModelManager` into the `Evaluator` classes (`src/scoring_models.py`) and the refactored Search Engines (via the `BaseSearchEngine`), enabling lazy loading and automatic unloading of models from GPU/CPU memory when idle, leading to more efficient resource usage.
+    *   Integrated the `ModelManager` into the `Evaluator` classes (`src/scoring_models.py`) and the refactored Search Engines (via the `BaseSearchEngine`), enabling lazy loading and automatic unloading of models from GPU memory when idle, leading to more efficient resource usage.
 *   **Configuration & Minor Fixes:**
     *   Ensured the `embedding_model` configuration setting is consistently present in `config.yaml` for `music` and `images` modules.
     *   Corrected a minor typo in the music module's JavaScript (`#seach_button` to `#search_button`).

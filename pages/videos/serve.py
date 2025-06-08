@@ -15,12 +15,18 @@ import torch
 import gc
 import send2trash
 import time
+import datetime
 from moviepy.editor import VideoFileClip
 
 import threading
 import uuid
 import tempfile
 import shutil
+
+import pages.file_manager as file_manager
+import pages.videos.db_models as db_models
+from pages.videos.engine import VideoSearch, VideoEvaluator
+from pages.recommendation_engine import sort_files_by_recommendation
 
 def convert_size(size_bytes):
   if size_bytes == 0:
@@ -118,6 +124,11 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
   else:
       media_directory = os.path.join(data_folder, cfg.videos.media_directory)
 
+      # Check if media_directory exists, if not, print a warning and set to None
+      if not os.path.isdir(media_directory):
+          print(f"Warning: Videos media directory '{os.path.join(data_folder, cfg.videos.media_directory)}' does not exist. Setting media folder to None.")
+          media_directory = None
+
   def show_search_status(status):
     socketio.emit('emit_videos_page_show_search_status', status)
 
@@ -126,6 +137,13 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
   def serve_video_files(filename):
     nonlocal media_directory
     return send_from_directory(media_directory, filename)
+  
+  video_search_engine = VideoSearch(cfg=cfg)
+  video_search_engine.initiate(models_folder=cfg.main.models_path, cache_folder=cfg.main.cache_path) # Needs actual models path
+  
+  # For now, cached_file_list and cached_file_hash can be from the base search engine
+  cached_file_list = video_search_engine.cached_file_list
+  cached_file_hash = video_search_engine.cached_file_hash
 
   @socketio.on('emit_videos_page_get_files')
   def get_files(input_data):
@@ -155,17 +173,66 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
     show_search_status(f"Searching for images in '{folder_path}'.")
 
       
-    all_files = glob.glob(os.path.join(current_path, '**/*'), recursive=True)
+    # all_files = glob.glob(os.path.join(current_path, '**/*'), recursive=True)
 
-    # Filter the list to only include files of certain types
-    all_files = [f for f in all_files if f.lower().endswith(tuple(cfg.videos.media_formats))]
+    # # Filter the list to only include files of certain types
+    # all_files = [f for f in all_files if f.lower().endswith(tuple(cfg.videos.media_formats))]
+
+    all_files = cached_file_list.get_all_files(current_path, cfg.videos.media_formats)
+
+    show_search_status(f"Gathering hashes for {len(all_files)} files.")
+    
+    # Initialize the last shown time
+    last_shown_time = 0
+
+    # Get the hash of each file
+    all_hashes = []
+    for ind, file_path in enumerate(all_files):
+      current_time = time.time()
+      if current_time - last_shown_time >= 1:
+        show_search_status(f"Gathering hashes for {ind+1}/{len(all_files)} files.")
+        last_shown_time = current_time
+      
+      # Get file hash, use dummy if file not found
+      try:
+          all_hashes.append(cached_file_hash.get_file_hash(file_path))
+      except FileNotFoundError:
+          all_hashes.append("file_not_found_hash_" + str(uuid.uuid4())) # Unique dummy hash
+
+    cached_file_hash.save_hash_cache()
+
 
     # Sort image by text or image query
     show_search_status(f"Sorting images by {text_query}")
     if text_query and len(text_query) > 0:
       if text_query.lower().strip() == "random":
         np.random.shuffle(all_files)
+      elif text_query.lower().strip() == "recommendation":
+        # For now, we only need basic info from DB for sorting.
+        # Model ratings update logic can be added later if needed.
+        video_data = db_models.VideosLibrary.query.with_entities(
+            db_models.VideosLibrary.hash,
+            db_models.VideosLibrary.user_rating,
+            db_models.VideosLibrary.model_rating,
+            db_models.VideosLibrary.full_play_count,
+            db_models.VideosLibrary.skip_count,
+            db_models.VideosLibrary.last_played
+        ).filter(db_models.VideosLibrary.hash.in_(all_hashes)).all()
+
+        keys = ['hash', 'user_rating', 'model_rating', 'full_play_count', 'skip_count', 'last_played']
+        video_data_dict = [dict(zip(keys, row)) for row in video_data]
         
+        # Create a map from hash to db_data for quick lookup
+        hash_to_db_data = {item['hash']: item for item in video_data_dict}
+        
+        # Create a list of dictionaries with all necessary fields for sort_files_by_recommendation
+        full_video_data_for_sorting = []
+        for file_path, file_hash in zip(all_files, all_hashes):
+            full_video_data_for_sorting.append(hash_to_db_data.get(file_hash, {
+                'hash': file_hash, 'user_rating': None, 'model_rating': None, 'full_play_count': 0, 'skip_count': 0, 'last_played': None
+            }))
+        all_files, scores = sort_files_by_recommendation(all_files, full_video_data_for_sorting)
+
     '''
     # Sort image by text or image query
     show_search_status(f"Sorting images by {text_query}")
@@ -239,49 +306,113 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
     # Extracting metadata for relevant batch of videos
     show_search_status(f"Extracting metadata for relevant batch of videos")
     page_files = all_files[pagination:limit]
+    page_files_hashes = [cached_file_hash.get_file_hash(f) for f in page_files]
     
-    for full_path in page_files:
+    # Fetch DB data for the relevant batch of videos
+    video_db_items = db_models.VideosLibrary.query.filter(db_models.VideosLibrary.hash.in_(page_files_hashes)).all()
+    video_db_items_map = {item.hash: item for item in video_db_items}
+
+    for ind, full_path in enumerate(page_files):
       basename = os.path.basename(full_path)
       preview_path = os.path.join(os.path.dirname(full_path), basename + ".preview.png")
       
-      #with open(full_path, "rb") as f:
-      #  bytes = f.read() # read entire file as bytes
-      #  file_size = len(bytes) # Get the file size in bytes
-      #  hash = hashlib.md5(bytes).hexdigest() # Compute the hash of the file
+      # #with open(full_path, "rb") as f:
+      # #  bytes = f.read() # read entire file as bytes
+      # #  file_size = len(bytes) # Get the file size in bytes
+      # #  hash = hashlib.md5(bytes).hexdigest() # Compute the hash of the file
 
-        #Use BytesIO to create a file-like object from bytes and get resolution with Pillow
-        #image = Image.open(BytesIO(bytes))
-        #resolution = image.size  # Returns a tuple (width, height)
-    
+      #   #Use BytesIO to create a file-like object from bytes and get resolution with Pillow
+      #   #image = Image.open(BytesIO(bytes))
+      #   #resolution = image.size  # Returns a tuple (width, height)
+
+      video_file_hash = page_files_hashes[ind]
+      
       # Generate preview if it does not exist
       if not os.path.exists(preview_path):
-        generate_preview(full_path, preview_path)
+        show_search_status(f"Generating preview for {basename}...")
+        try:
+          generate_preview(full_path, preview_path)
+          show_search_status(f"Generated preview for {basename}.")
+        except Exception as e:
+          print(f"Error generating preview for {basename}: {e}")
+          show_search_status(f"Failed to generate preview for {basename}. Using placeholder.")
 
+      # data = {
+      #   "type": "file",
+      #   "full_path": full_path,
+      #   "file_path": os.path.relpath(full_path, media_directory),
+      #   "preview_path": os.path.relpath(preview_path, media_directory),
+      #   "base_name": basename,
+      #   "hash": "", #hash,
+      #   "user_rating": "...",
+      #   "model_rating": "...",
+      #   "file_size": "...", #convert_size(file_size),
+      #   "resolution": "...", #f"{resolution[0]}x{resolution[1]}",
+      # }
+      # files_data.append(data)
+
+      file_size = os.path.getsize(full_path)
+
+      user_rating = None
+      model_rating = None
+      last_played = "Never"
+
+      from pages.utils import time_difference
+      
+      # Fetch data from DB for the current video
+      video_db_item = video_db_items_map.get(video_file_hash)
+      if video_db_item:
+        user_rating = video_db_item.user_rating
+        model_rating = video_db_item.model_rating
+        if video_db_item.last_played:
+            last_played_timestamp = video_db_item.last_played.timestamp()
+            last_played = time_difference(last_played_timestamp, datetime.datetime.now().timestamp())
+        
       data = {
         "type": "file",
         "full_path": full_path,
-        "file_path": os.path.relpath(full_path, media_directory),
-        "preview_path": os.path.relpath(preview_path, media_directory),
+        "file_path": os.path.relpath(full_path, media_directory), # Relative path for serving
+        "preview_path": os.path.relpath(preview_path, media_directory), # Relative path for serving preview
         "base_name": basename,
-        "hash": "", #hash,
-        "user_rating": "...",
-        "model_rating": "...",
-        "file_size": "...", #convert_size(file_size),
-        "resolution": "...", #f"{resolution[0]}x{resolution[1]}",
+        "hash": video_file_hash,
+        "user_rating": user_rating,
+        "model_rating": model_rating,
+        "file_size": convert_size(file_size),
+        "resolution": "N/A", # Placeholder, implement proper metadata extraction later (e.g., using ffprobe)
+        "length": "N/A",     # Placeholder, implement proper metadata extraction later (e.g., using ffprobe)
+        "last_played": last_played,
       }
       files_data.append(data)
     
                  
     # Extract subfolders structure from the path into a dict
-    folders = get_folder_structure(media_directory)
+    #folders = get_folder_structure(media_directory)
+    folders = file_manager.get_folder_structure(media_directory, cfg.videos.media_formats)
+
+    # Return "No files in the directory" if the path not exist or empty.
+    if not folders:
+      show_search_status(f"No files in the directory.")
+      socketio.emit('emit_videos_page_show_files', {"files_data": files_data, "folder_path": folder_path, "total_files": 0, "folders": folders, "all_files_paths": []})
+      return
 
     # Extract main folder name
     main_folder_name = os.path.basename(os.path.normpath(media_directory))
-    folders = {main_folder_name: folders}
-    
-    socketio.emit('emit_videos_page_show_files', {"files_data": files_data, "folder_path": folder_path, "total_files": len(all_files), "folders": folders})
+    folders['name'] = main_folder_name
 
-    show_search_status(f'{len(all_files)} videos processed in {time.time() - start_time:.4f} seconds.')
+    all_files_paths = [os.path.relpath(file_path, media_directory) for file_path in all_files]
+    
+    socketio.emit('emit_videos_page_show_files', {"files_data": files_data, "folder_path": folder_path, "total_files": len(all_files), "folders": folders, "all_files_paths": all_files_paths})
+
+    show_search_status(f'{len(all_files)} files processed in {time.time() - start_time:.4f} seconds.')
+
+
+    # # Extract main folder name
+    # main_folder_name = os.path.basename(os.path.normpath(media_directory))
+    # folders = {main_folder_name: folders}
+    
+    # socketio.emit('emit_videos_page_show_files', {"files_data": files_data, "folder_path": folder_path, "total_files": len(all_files), "folders": folders})
+
+    # show_search_status(f'{len(all_files)} videos processed in {time.time() - start_time:.4f} seconds.')
 
   @socketio.on('emit_videos_page_open_file_in_folder')
   def open_file_in_folder(file_path):
@@ -325,13 +456,34 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
     else:
       print("Error: File does not exist.")  
 
+  @socketio.on('emit_videos_page_video_start_playing')
+  def video_start_playing(video_hash):
+    """
+    Updates the last_played timestamp for a video in the database.
+    """
+    print(f"Updating last_played for video: {video_hash}")
+    video = db_models.VideosLibrary.query.filter_by(hash=video_hash).first()
+    if video:
+        video.last_played = datetime.datetime.now()
+        # Also, increment full_play_count if needed, or handle skip here based on player events.
+        # For now, just last_played as requested.
+        db_models.db.session.commit()
+    else:
+        # Create a minimal record in the database if video not found
+        print(f"Video with hash {video_hash} not found in DB, creating minimal record.")
+        new_video = db_models.VideosLibrary(
+            hash=video_hash,
+            last_played=datetime.datetime.now()
+        )
+        db_models.db.session.add(new_video)
+        db_models.db.session.commit()
 
 
   # ----------------------------------------
   # HSL Streaming test
   # ----------------------------------------
 
-  # This section requires a lot of refactoring and rethinking, for now it just works somehow
+  # This section requires a lot of refactoring and rethinking, for now it just works, somehow
   
 
   # Store active transcoding processes
@@ -382,6 +534,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
     # Build FFmpeg command for HLS with optimized settings
     cmd = [
         'ffmpeg',
+        '-loglevel', 'error',
         '-i', video_path,
         '-c:v', 'libx264',       # Video codec
         '-preset', 'ultrafast',  # Faster encoding
@@ -393,7 +546,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
         '-f', 'hls',             # HLS format
         '-hls_time', '2',        # 2-second segments
         '-hls_list_size', '0',   # Keep all segments
-        '-hls_flags', 'independent_segments+split_by_time+append_list',
+        '-hls_flags', 'independent_segments+split_by_time+append_list', # append_list might be redundant with vod but often harmless
         '-hls_segment_type', 'mpegts',
         '-hls_playlist_type', 'event',
         '-force_key_frames', 'expr:gte(t,n_forced*2)', # Keyframe every 2s
@@ -407,7 +560,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
     
     process = subprocess.Popen(
         cmd, 
-        stdout=subprocess.PIPE, 
+        stdout=subprocess.DEVNULL, 
         stderr=subprocess.PIPE
     )
     
@@ -420,34 +573,37 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
         time.sleep(0.1)
         # Check if process died
         if process.poll() is not None:
-            stderr_output = process.stderr.read().decode('utf-8')
+            stderr_output = ""
+            if process.stderr: # Check if stderr is available
+                try:
+                    stderr_output = process.stderr.read().decode('utf-8', errors='ignore')
+                except Exception as e:
+                    print(f"Error reading ffmpeg stderr: {e}")
+            # You might want to log stderr_output here if it contains useful error info
+            # print(f"FFmpeg stderr: {stderr_output}") 
             return f"Error starting stream: FFmpeg exited with code {process.returncode}", 500
     
     if not os.path.exists(master_playlist):
         return "Timeout waiting for playlist to be created", 500
     
-    # Add EXT-X-START tag to master playlist to force start at beginning
-    with open(master_playlist, 'r') as f:
-        content = f.read()
-    
-    # Add EXT-X-START tag after header if not present
-    if '#EXT-X-START:' not in content:
-        content = content.replace('#EXT-X-VERSION:', 
-                                '#EXT-X-START:TIME-OFFSET=0,PRECISE=YES\n#EXT-X-VERSION:')
-        with open(master_playlist, 'w') as f:
-            f.write(content)
-    
     # Wait for initial buffer segments to be created before serving
     segments_ready = 0
     segment_pattern = os.path.join(temp_dir, "segment_*.ts")
-    while segments_ready < 3 and time.time() - start_time < 10:  # Wait for 10 segments (20s) or 30s max
+    while segments_ready < 3 and time.time() - start_time < 10:  # Wait for 3 segments or 10s max
         segments_ready = len(glob.glob(segment_pattern))
         if segments_ready >= 3:
             break
         time.sleep(0.2)
         if process.poll() is not None:
-            stderr_output = process.stderr.read().decode('utf-8')
+            stderr_output = ""
+            if process.stderr: # Check if stderr is available
+                try:
+                    stderr_output = process.stderr.read().decode('utf-8', errors='ignore') # Added errors='ignore'
+                except Exception as e:
+                    print(f"Error reading ffmpeg stderr: {e}")
+            # print(f"FFmpeg stderr: {stderr_output}")
             return f"Error starting stream: FFmpeg exited with code {process.returncode}", 500
+
 
     print(f"Starting playback with {segments_ready} segments ready")
     

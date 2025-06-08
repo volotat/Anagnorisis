@@ -3,10 +3,12 @@ import os
 import torch
 import pickle
 import hashlib
+import flask
 import io
 from abc import ABC, abstractmethod
 from huggingface_hub import snapshot_download
 from tqdm import tqdm
+import pages.images.db_models as db_models
 import pages.file_manager as file_manager
 import numpy as np
 from src.model_manager import ModelManager # Assuming ModelManager is already implemented and works
@@ -101,7 +103,11 @@ class BaseSearchEngine(ABC):
              return
         
         # Setup model path
-        model_folder_name = self.model_name.replace('/', '__') # Sanitized name for local folder
+        if self.model_name is None:
+            model_folder_name = 'dummy_video_model' # Fallback if model_name is not set
+        else:
+            model_folder_name = self.model_name.replace('/', '__') # Sanitized name for local folder
+
         local_model_path = os.path.join(models_folder, model_folder_name)
         
         # Ensure directories exist
@@ -133,17 +139,20 @@ class BaseSearchEngine(ABC):
         config_file_path = os.path.join(local_model_path, 'config.json') 
         if not os.path.exists(config_file_path):
             print(f"Model '{self.model_name}' not found locally or incomplete at '{local_model_path}'. Downloading...")
-            try:
-                snapshot_download(
-                    repo_id=self.model_name,
-                    local_dir=local_model_path,
-                    local_dir_use_symlinks=False # Download actual files
-                )
-                print(f"Model '{self.model_name}' downloaded successfully.")
-            except Exception as e:
-                print(f"ERROR: Failed to download model '{self.model_name}'. Please check your internet connection and permissions.")
-                print(f"Error details: {e}")
-                raise RuntimeError(f"Failed to download required model: {self.model_name}") from e
+            if self.model_name is None:
+                print("ERROR: Model name is not set. Cannot download model.")
+            else:    
+                try:
+                    snapshot_download(
+                        repo_id=self.model_name,
+                        local_dir=local_model_path,
+                        local_dir_use_symlinks=False # Download actual files
+                    )
+                    print(f"Model '{self.model_name}' downloaded successfully.")
+                except Exception as e:
+                    print(f"ERROR: Failed to download model '{self.model_name}'. Please check your internet connection and permissions.")
+                    print(f"Error details: {e}")
+                    #raise RuntimeError(f"Failed to download required model: {self.model_name}") from e
         else:
             print(f"Found existing model '{self.model_name}' at '{local_model_path}'.")
     
@@ -205,36 +214,40 @@ class BaseSearchEngine(ABC):
                     if file_hash in self._fast_cache:
                         current_file_embeddings = self._fast_cache[file_hash]
                     else:
-                        # 2. Check database for existing embedding
-                        db_record = db_model_class.query.filter_by(hash=file_hash).first()
-
-                        if db_record and db_record.embedding and db_record.embedder_hash == self.model_hash:
-                            current_file_embeddings = pickle.loads(db_record.embedding)
-                            self._fast_cache[file_hash] = current_file_embeddings # Add to fast cache
+                        if not flask.has_app_context():
+                            current_file_embeddings = self._process_single_file(file_path)
+                            self._fast_cache[file_hash] = current_file_embeddings
                         else:
-                            # 3. If not in cache or DB, process the file to get embeddings
-                            current_file_embeddings = self._process_single_file(file_path, **kwargs)
-                            
-                            # Ensure embeddings are on CPU for pickling, will be moved to GPU by ModelManager when used
-                            if isinstance(current_file_embeddings, torch.Tensor):
-                                current_file_embeddings = current_file_embeddings.cpu()
+                            # 2. Check database for existing embedding
+                            db_record = db_model_class.query.filter_by(hash=file_hash).first()
 
-                            # 4. Prepare for database update/insert
-                            if db_record:
-                                db_record.embedding = pickle.dumps(current_file_embeddings)
-                                db_record.embedder_hash = self.model_hash
-                                # No need to add to session for updates managed by SQLAlchemy
+                            if db_record and db_record.embedding and db_record.embedder_hash == self.model_hash:
+                                current_file_embeddings = pickle.loads(db_record.embedding)
+                                self._fast_cache[file_hash] = current_file_embeddings # Add to fast cache
                             else:
-                                # Create new record if none exists
-                                new_entry_data = {
-                                    'hash': file_hash,
-                                    'file_path': os.path.relpath(file_path, media_folder) if media_folder else file_path,
-                                    'embedding': pickle.dumps(current_file_embeddings),
-                                    'embedder_hash': self.model_hash
-                                }
-                                new_db_entries.append(db_model_class(**new_entry_data))
-                            
-                            self._fast_cache[file_hash] = current_file_embeddings # Add to fast cache
+                                # 3. If not in cache or DB, process the file to get embeddings
+                                current_file_embeddings = self._process_single_file(file_path, **kwargs)
+                                
+                                # Ensure embeddings are on CPU for pickling, will be moved to GPU by ModelManager when used
+                                if isinstance(current_file_embeddings, torch.Tensor):
+                                    current_file_embeddings = current_file_embeddings.cpu()
+
+                                # 4. Prepare for database update/insert
+                                if db_record:
+                                    db_record.embedding = pickle.dumps(current_file_embeddings)
+                                    db_record.embedder_hash = self.model_hash
+                                    # No need to add to session for updates managed by SQLAlchemy
+                                else:
+                                    # Create new record if none exists
+                                    new_entry_data = {
+                                        'hash': file_hash,
+                                        'file_path': os.path.relpath(file_path, media_folder) if media_folder else file_path,
+                                        'embedding': pickle.dumps(current_file_embeddings),
+                                        'embedder_hash': self.model_hash
+                                    }
+                                    new_db_entries.append(db_model_class(**new_entry_data))
+                                
+                                self._fast_cache[file_hash] = current_file_embeddings # Add to fast cache
                 
                 except Exception as e:
                     print(f"Error processing file {file_path}: {e}")
@@ -251,9 +264,9 @@ class BaseSearchEngine(ABC):
                     callback(ind + 1, len(file_paths))
             
             # Commit new database entries and updated ones (if any were modified directly)
-            if new_db_entries:
-                db_model_class.db.session.bulk_save_objects(new_db_entries)
-            db_model_class.db.session.commit()
+            if new_db_entries and flask.has_app_context():
+                db_models.db.session.bulk_save_objects(new_db_entries)
+                db_models.db.session.commit()
             
             # Concatenate all embeddings into a single tensor, move to active device
             if all_embeddings:

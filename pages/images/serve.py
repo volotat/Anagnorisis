@@ -8,7 +8,7 @@ import hashlib
 import numpy as np
 from io import BytesIO
 
-from pages.images.engine import ImageSearch, ImageEvaluator #, get_file_hash, save_hash_cache, get_all_files
+from pages.images.engine import ImageSearch, ImageEvaluator
 import math
 from scipy.spatial import distance
 import torch
@@ -95,7 +95,8 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
   else:
     media_directory = os.path.join(data_folder, cfg.images.media_directory)
   
-  ImageSearch.initiate(models_folder=cfg.main.models_path, cache_folder=cfg.main.cache_path)
+  image_search_engine = ImageSearch(cfg=cfg)
+  image_search_engine.initiate(models_folder=cfg.main.models_path, cache_folder=cfg.main.cache_path)
 
   image_evaluator = ImageEvaluator() #src.scoring_models.Evaluator(embedding_dim=768)
   image_evaluator.load(os.path.join(cfg.main.models_path, 'image_evaluator.pt'))
@@ -111,7 +112,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
       file_path = os.path.relpath(full_path, media_directory)
       file_hash = all_hashes[ind]
 
-      image_metadata = ImageSearch.cached_metadata.get_metadata(full_path, file_hash)
+      image_metadata = image_search_engine.cached_metadata.get_metadata(full_path, file_hash)
       if 'resolution' not in image_metadata:
         raise Exception(f"Resolution not found for image: {file_path}")
       
@@ -126,7 +127,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
   def update_model_ratings(files_list):
     print(files_list)
     # filter out files that already have a rating in the DB
-    files_list_hash_map = {file_path: ImageSearch.cached_file_hash.get_file_hash(file_path) for file_path in files_list}
+    files_list_hash_map = {file_path: image_search_engine.cached_file_hash.get_file_hash(file_path) for file_path in files_list}
     hash_list = list(files_list_hash_map.values())
 
     # Fetch rated images from the database in a single query
@@ -145,7 +146,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
     
 
     # Rate all images in case they are not rated or model was updated
-    embeddings = ImageSearch.process_images(filtered_files_list, callback=embedding_gathering_callback, media_folder=media_directory) #.cpu().detach().numpy() 
+    embeddings = image_search_engine.process_images(filtered_files_list, callback=embedding_gathering_callback, media_folder=media_directory) #.cpu().detach().numpy() 
     model_ratings = image_evaluator.predict(embeddings)
 
     # Update the model ratings in the database
@@ -221,7 +222,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
     show_search_status(f"Searching for images in '{folder_path}'.")
   
     # Walk with cache 1.5s for 66k files
-    all_files = ImageSearch.cached_file_list.get_all_files(current_path, cfg.images.media_formats)
+    all_files = image_search_engine.cached_file_list.get_all_files(current_path, cfg.images.media_formats)
 
     show_search_status(f"Gathering hashes for {len(all_files)} images.")
     
@@ -236,9 +237,9 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
         show_search_status(f"Gathering hashes for {ind+1}/{len(all_files)} images.")
         last_shown_time = current_time
       
-      all_hashes.append(ImageSearch.cached_file_hash.get_file_hash(file_path))
+      all_hashes.append(image_search_engine.cached_file_hash.get_file_hash(file_path))
 
-    ImageSearch.cached_file_hash.save_hash_cache()
+    image_search_engine.cached_file_hash.save_hash_cache()
 
 
     # Sort image by text or image query
@@ -248,8 +249,8 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
       if os.path.isfile(text_query) and text_query.lower().endswith(tuple(cfg.images.media_formats)):
         target_path = text_query
         show_search_status(f"Extracting embeddings")
-        embeds_img = ImageSearch.process_images(all_files, callback=embedding_gathering_callback, media_folder=media_directory)
-        target_emb = ImageSearch.process_images([target_path], callback=embedding_gathering_callback, media_folder=media_directory)
+        embeds_img = image_search_engine.process_images(all_files, callback=embedding_gathering_callback, media_folder=media_directory)
+        target_emb = image_search_engine.process_images([target_path], callback=embedding_gathering_callback, media_folder=media_directory)
 
         show_search_status(f"Computing distances between embeddings")
         scores = torch.cdist(embeds_img, target_emb, p=2).cpu().detach().numpy() 
@@ -275,7 +276,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
       # Sort images by duplicates
       elif text_query.lower().strip() == "similarity":
         show_search_status(f"Extracting embeddings")
-        embeds_img = ImageSearch.process_images(all_files, callback=embedding_gathering_callback, media_folder=media_directory).cpu().detach().numpy() 
+        embeds_img = image_search_engine.process_images(all_files, callback=embedding_gathering_callback, media_folder=media_directory).cpu().detach().numpy() 
 
         show_search_status(f"Computing distances between embeddings")
         # Assuming embeds_img is an array of image embeddings
@@ -340,9 +341,9 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
       # Sort images by the text query
       else:
         show_search_status(f"Extracting embeddings")
-        embeds_img = ImageSearch.process_images(all_files, callback=embedding_gathering_callback, media_folder=media_directory)
-        embeds_text = ImageSearch.process_text(text_query)
-        scores = ImageSearch.compare(embeds_img, embeds_text)
+        embeds_img = image_search_engine.process_images(all_files, callback=embedding_gathering_callback, media_folder=media_directory)
+        embeds_text = image_search_engine.process_text(text_query)
+        scores = image_search_engine.compare(embeds_img, embeds_text)
 
         # Create a list of indices sorted by their corresponding score
         show_search_status(f"Sorting by relevance")
@@ -357,7 +358,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
     # Extracting metadata for relevant batch of images
     show_search_status(f"Extracting metadata for relevant batch of images")
     page_files = all_files[pagination:limit]
-    page_hashes = [ImageSearch.cached_file_hash.get_file_hash(file_path) for file_path in page_files]
+    page_hashes = [image_search_engine.cached_file_hash.get_file_hash(file_path) for file_path in page_files]
 
     # Extract DB data for the relevant batch of images
     image_db_items = db_models.ImagesLibrary.query.filter(db_models.ImagesLibrary.hash.in_(page_hashes)).all()
@@ -377,7 +378,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
       file_size = os.path.getsize(full_path)
       file_hash = page_hashes[ind]
 
-      image_metadata = ImageSearch.cached_metadata.get_metadata(full_path, file_hash)
+      image_metadata = image_search_engine.cached_metadata.get_metadata(full_path, file_hash)
       resolution = image_metadata.get('resolution')  # Returns a tuple (width, height)
     
       user_rating = None
@@ -402,7 +403,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
       files_data.append(data)
 
     # Save all extracted metadata to the cache
-    ImageSearch.cached_metadata.save_metadata_cache()
+    image_search_engine.cached_metadata.save_metadata_cache()
                  
     # Extract subfolders structure from the path into a dict
     folders = get_folder_structure(media_directory, cfg.images.media_formats)
@@ -483,7 +484,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
       image_data = {
         "hash": image_hash,
         "file_path": image_path,
-        "user_rating": int(image_rating),
+        "user_rating": float(image_rating),
         "user_rating_date": datetime.datetime.now()
       }
 
@@ -494,7 +495,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
       # Update the existing instance
 
       image_db_item.file_path = image_path # in case the file was moved
-      image_db_item.user_rating = int(image_rating)
+      image_db_item.user_rating = float(image_rating)
       image_db_item.user_rating_date = datetime.datetime.now()
       db_models.db.session.commit()
 

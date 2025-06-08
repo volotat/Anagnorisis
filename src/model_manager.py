@@ -49,6 +49,22 @@ class ModelManager:
         with ModelManager._lock:
             ModelManager._models[self._model_id] = self
             self._ensure_cleanup_thread()
+
+    def __call__(self, *args, **kwargs):
+        """
+        Handle method calls, loading the model if needed.
+        This is called when the model instance is called like a function.
+        """
+        with ModelManager._lock:
+            self._last_used = time.time()
+            
+            # If model is not loaded, load it
+            if not self._loaded:
+                self._load_model()
+                
+            # Call the method on the model
+            return self._model(*args, **kwargs)
+        
         
     def __getattr__(self, name):
         """

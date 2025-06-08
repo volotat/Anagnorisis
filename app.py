@@ -218,7 +218,7 @@ def export_database_csv():
     """
     Exports all database tables to a CSV file, excluding BLOB data, and sends it as a response.
     """
-    csv_data = src.db_models.export_db_to_csv(db.session, excluded_columns=['embedding'])  # Exclude embedding column
+    csv_data = src.db_models.export_db_to_csv(db.session, excluded_columns=['embedding', 'chunk_embeddings'])  # Exclude embedding column
     
     csv_file = io.BytesIO()
     csv_file.write(csv_data.encode('utf-8'))

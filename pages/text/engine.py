@@ -7,6 +7,7 @@ import time
 import gc
 import traceback # Import traceback
 
+import flask
 import torch
 import numpy as np
 from tqdm import tqdm
@@ -45,10 +46,7 @@ def get_text_metadata(file_path: str):
     return metadata
 
 
-
 class TextSearch(BaseSearchEngine):
-    # No need for device, model, tokenizer, is_busy global variables anymore
-
     def __init__(self, cfg=None):
         super().__init__(cfg) # Call base class __init__
         self.cfg = cfg # Store cfg for chunking parameters
@@ -98,12 +96,11 @@ class TextSearch(BaseSearchEngine):
         Reads a text file, splits it into chunks, and generates embeddings for each chunk.
         Returns a list of numpy arrays (each representing a chunk embedding).
         """
-        if self._model_manager is None:
+        if self.model is None:
             raise RuntimeError(f"{self.__class__.__name__} not initialized. Call initiate() first.")
 
         # Get the actual model instance (will be on GPU if active)
-        #model_instance = self.model 
-        model_instance = self._model_manager
+        model_instance = self.model
 
         try:
             # 1. Read File Content
@@ -180,14 +177,14 @@ class TextSearch(BaseSearchEngine):
         it's better to override the *entire* `process_files` method here to handle this list of lists directly
         rather than forcing `_process_single_file` to return a concatenated tensor.
         """
-        if self._model_manager is None:
+        if self.model is None:
             raise RuntimeError(f"{self.__class__.__name__} not initialized. Call initiate() first.")
         if self.is_busy: 
             raise Exception(f"{self.__class__.__name__} is busy processing another request.")
         
         self.is_busy = True
 
-        import flask
+        
         
         try:
             all_files_chunk_embeddings = [] # Accumulate list of list of numpy arrays
@@ -203,8 +200,6 @@ class TextSearch(BaseSearchEngine):
                         current_file_embeddings = self._fast_cache[file_hash]
                     else:
                         # Check if the database is accessible in the current context
-                        #if not db.session.is_active:
-                        #if not db_models.db.session.is_active:
                         if not flask.has_app_context():
                             current_file_embeddings = self._process_single_file(file_path)
                             self._fast_cache[file_hash] = current_file_embeddings
@@ -258,11 +253,11 @@ class TextSearch(BaseSearchEngine):
         Generates an embedding for a search query string.
         Uses 'retrieval.query' task and configured truncation dimension.
         """
-        if self._model_manager is None:
+        if self.model is None:
             raise RuntimeError(f"{self.__class__.__name__} not initialized. Call initiate() first.")
 
         #model_instance = self.model # Triggers loading to GPU if needed
-        model_instance = self._model_manager # Use the managed model instance
+        model_instance = self.model # Use the managed model instance
         
         try:
             query_embedding = model_instance.encode(
@@ -493,11 +488,6 @@ if __name__ == "__main__":
     print(f"Model device after re-use: {text_search_engine.model._model.device}")
     assert text_search_engine.model._loaded and text_search_engine.model._model.device.type == 'cuda', "Model did not reload to GPU on re-use."
     print(f"{colorama.Fore.GREEN}ModelManager reloading test successful.{colorama.Style.RESET_ALL}")
-
-    # Clean up dummy files
-    if os.path.exists(dummy_text_path1): os.remove(dummy_text_path1)
-    if os.path.exists(dummy_text_path2): os.remove(dummy_text_path2)
-    if os.path.exists(test_text_dir): shutil.rmtree(test_text_dir) # Use shutil.rmtree for directory
 
     # Shut down ModelManager gracefully at the end of tests
     ModelManager.shutdown()

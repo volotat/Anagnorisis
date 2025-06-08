@@ -20,6 +20,7 @@ images:
   - .webp
   - .tiff
 videos:
+  embedding_model: null
   media_directory: null
   media_formats:
   - .mp4
@@ -31,12 +32,12 @@ videos:
   - .mkv
   - .ogv
 text:
+  embedding_model: "jinaai/jina-embeddings-v3" # Or a specific v3 model ID
   media_directory: null
   media_formats:
   - .txt
   - .md
   # Added for text embedding and search
-  embedding_model: "jinaai/jina-embeddings-v3" # Or a specific v3 model ID
   chunk_size: 512 # Max tokens per chunk
   chunk_overlap: 128 # Overlap between chunks
   embedding_dimension: 1024 # Dimension to truncate to (Optional, match Matryoshka)

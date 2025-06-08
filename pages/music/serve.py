@@ -68,12 +68,14 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
 
   print('Music media_directory:', media_directory)
 
-  MusicSearch.initiate(models_folder=cfg.main.models_path, cache_folder=cfg.main.cache_path)
-  cached_file_list = MusicSearch.cached_file_list
-  cached_file_hash = MusicSearch.cached_file_hash
-  cached_metadata = MusicSearch.cached_metadata
+  music_search_engine = MusicSearch(cfg=cfg) 
+  music_search_engine.initiate(models_folder=cfg.main.models_path, cache_folder=cfg.main.cache_path)
 
-  music_evaluator = MusicEvaluator(embedding_dim=MusicSearch.embedding_dim) #src.scoring_models.Evaluator(embedding_dim=768)
+  cached_file_list = music_search_engine.cached_file_list
+  cached_file_hash = music_search_engine.cached_file_hash
+  cached_metadata = music_search_engine.cached_metadata
+
+  music_evaluator = MusicEvaluator(embedding_dim=music_search_engine.embedding_dim) #src.scoring_models.Evaluator(embedding_dim=768)
   music_evaluator.load(os.path.join(cfg.main.models_path, 'music_evaluator.pt'))
 
   def show_search_status(status):
@@ -126,7 +128,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
     
 
     # Rate all files in case they are not rated or model was updated
-    embeddings = MusicSearch.process_audio(filtered_files_list, callback=embedding_gathering_callback, media_folder=media_directory) #.cpu().detach().numpy() 
+    embeddings = music_search_engine.process_audio(filtered_files_list, callback=embedding_gathering_callback, media_folder=media_directory) #.cpu().detach().numpy() 
     model_ratings = music_evaluator.predict(embeddings)
 
     # Update the model ratings in the database
@@ -235,8 +237,8 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
       if os.path.isfile(text_query) and text_query.lower().endswith(tuple(cfg.music.media_formats)):
         target_path = text_query
         show_search_status(f"Extracting embeddings")
-        embeds_img = MusicSearch.process_audio(all_files, callback=embedding_gathering_callback, media_folder=media_directory)
-        target_emb = MusicSearch.process_audio([target_path], callback=embedding_gathering_callback, media_folder=media_directory)
+        embeds_img = music_search_engine.process_audio(all_files, callback=embedding_gathering_callback, media_folder=media_directory)
+        target_emb = music_search_engine.process_audio([target_path], callback=embedding_gathering_callback, media_folder=media_directory)
 
         show_search_status(f"Computing distances between embeddings")
         scores = torch.cdist(embeds_img, target_emb, p=2).cpu().detach().numpy() 
@@ -276,7 +278,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
       # Sort music by duplicates
       elif text_query.lower().strip() == "similarity":
         show_search_status(f"Extracting embeddings")
-        embeds_img = MusicSearch.process_audio(all_files, callback=embedding_gathering_callback, media_folder=media_directory).cpu().detach().numpy() 
+        embeds_img = music_search_engine.process_audio(all_files, callback=embedding_gathering_callback, media_folder=media_directory).cpu().detach().numpy() 
 
         show_search_status(f"Computing distances between embeddings")
         # Assuming embeds_img is an array of image embeddings
@@ -360,9 +362,9 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
       # Sort music by the text query
       else:
         show_search_status(f"Extracting embeddings")
-        embeds_audio = MusicSearch.process_audio(all_files, callback=embedding_gathering_callback, media_folder=media_directory)
-        embeds_text = MusicSearch.process_text(text_query)
-        scores = MusicSearch.compare(embeds_audio, embeds_text)
+        embeds_audio = music_search_engine.process_audio(all_files, callback=embedding_gathering_callback, media_folder=media_directory)
+        embeds_text = music_search_engine.process_text(text_query)
+        scores = music_search_engine.compare(embeds_audio, embeds_text)
 
         # Create a list of indices sorted by their corresponding score
         show_search_status(f"Sorting by relevance")
