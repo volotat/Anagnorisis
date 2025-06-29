@@ -21,17 +21,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Create virtual environment and install Python dependencies
-RUN python3 -m venv .env
+RUN python3 -m venv /venv
 # Add venv to PATH
-ENV PATH="/app/.env/bin:$PATH"
+ENV VENV_PATH=/venv
+ENV PATH="/venv/bin:$PATH"
 
 # Upgrade pip and install PyTorch with CUDA support
-RUN pip install --no-cache-dir --upgrade pip
-RUN pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
+RUN /venv/bin/pip install --no-cache-dir --upgrade pip
+RUN /venv/bin/pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
 
 # Copy requirements file
 COPY requirements.txt /app/
-RUN pip install --no-cache-dir -r requirements.txt
+RUN /venv/bin/pip install --no-cache-dir -r requirements.txt
 
 # Expose the application port
 EXPOSE 5001

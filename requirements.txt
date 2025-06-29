@@ -32,3 +32,4 @@ sentencepiece
 einops 
 sentence-transformers
 Flask-HTTPAuth
+protobuf

@@ -2,7 +2,7 @@
  
 echo "SH: Starting Anagnorisis application..."
 echo "SH: Activating virtual environment..."
-source .env/bin/activate || echo "Failed to activate virtual environment!"
+source "${VENV_PATH:-'.env'}/bin/activate" || echo "Failed to activate virtual environment!"
 
 echo "SH: Setting Flask environment..."
 export FLASK_APP=app.py
