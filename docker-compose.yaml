@@ -10,7 +10,7 @@ services:
     volumes:
       - .:/app  # Mount the source code directory
       - ${DATA_PATH:-./project_data}:/app/project_data # Mount your data directory
-    restart: unless-stopped
+    #restart: unless-stopped
     deploy:
       resources:
         reservations:

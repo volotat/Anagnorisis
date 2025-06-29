@@ -169,7 +169,7 @@ class ImageEvaluator(src.scoring_models.Evaluator):
             self._initialized = True
 
 
-# --- Testing Section (add this to the end of pages/images/engine.py for local tests) ---
+# --- Testing Section ---
 if __name__ == "__main__":
     from omegaconf import OmegaConf
     import colorama  # For colored terminal output

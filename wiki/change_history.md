@@ -45,6 +45,19 @@ When starting the Docker container, if the provided path to the share folder doe
 
 ## Versions History
 
+### Version 0.2.4 (29.06.2025)
+*   **Security Enhancements:**
+    *   Authentication with `ANAGNORISIS_USERNAME` and `ANAGNORISIS_PASSWORD` environment variables for basic privacy has been implemented. If these variables are not set, the application will run without authentication. This provides a layer of security when the application is exposed to the internet.
+    *   Very basic prevention of `Directory Traversal` attack has been implemented in `serve.py -> get_files` methods of all modules (`Images`, `Music`, `Text`, `Videos`). Further work is needed in file sharing methods to ensure no sensitive files can be accessed when the application instance is exposed over a network.
+*   **Module Improvements:**
+    *   Added external metadata (stored in `{file_name}.meta` file) viewing and editing functionality in the `Images` module. This feature lays groundwork for future additional text-based image embeddings that will enhance search, filtering, and recommendation capabilities.
+    *   Implemented seed-based sorting for the `Videos` module. This feature ensures consistent file order in the preview when navigating between pages and is a potential approach for other modules. If it proves effective, similar functionality will be applied to the `Images`, `Music` and `Videos` modules.
+*   **Configuration & Minor Enhancements:**
+    *   Expanded supported media formats in `config.yaml` to include `.wav`, `.ogg`, `.aac`, `.m4a` for music; `.htm`, `.html` for text; and `.mpeg`, `.mpg` for videos.
+    *   Minor internal code cleanup, including removal of commented test sections in `engine.py` files and adjustment of button IDs in the `videos` module frontend.
+    *   The `restart: unless-stopped` option has been commented out in `docker-compose.yaml` to allow for easier manual stopping of the container during development.
+ 
+
 ### Version 0.2.3 (09.06.2025)
 *   **Core Architecture Enhancements:**
     *   Refactored the `ImageSearch` (`pages/images/engine.py`) and `MusicSearch` (`pages/music/engine.py`) classes to inherit from the `BaseSearchEngine`, following the pattern established in the `TextSearch` class. This further reduces code duplication and enhances maintainability. To test the correctness of the code, test cases were created for both engines, which can be run with the command:

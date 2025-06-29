@@ -8,7 +8,6 @@ import hashlib
 import numpy as np
 from io import BytesIO
 from PIL import Image
-from pages.images.engine import ImageSearch
 import math
 from scipy.spatial import distance
 import torch
@@ -159,18 +158,44 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
     pagination = input_data.get('pagination', 0)
     limit = input_data.get('limit', 100)
     text_query = input_data.get('text_query', None)
+    seed = input_data.get('seed', None)
+
+    if seed is not None:
+      np.random.seed(int(seed))
     
     files_data = []
+
+    # --- Directory Traversal Prevention ---
+    # Resolve the real, canonical path of the safe base directory.
+    safe_base_dir = os.path.realpath(media_directory)
+    
+    # Safely join the user-provided path to the base directory.
     if path == "":
-      current_path = media_directory
+        unsafe_path = safe_base_dir
     else:
-      current_path = os.path.join(media_directory, '..', path)
+        unsafe_path = os.path.join(safe_base_dir, os.pardir, path)
+
+    # Resolve the absolute path, processing any '..' and symbolic links.
+    current_path = os.path.realpath(unsafe_path)
+    
+    # Check if the final resolved path is within the safe base directory.
+    # This is the crucial security check.
+    if os.path.commonpath([current_path, safe_base_dir]) != safe_base_dir:
+        show_search_status("Access denied: Directory traversal attempt detected")
+        # Default to the safe base directory if an invalid path is provided.
+        current_path = safe_base_dir
+    # --- End of Prevention ---
+
+    # if path == "":
+    #   current_path = media_directory
+    # else:
+    #   current_path = os.path.join(media_directory, '..', path)
 
 
     folder_path = os.path.relpath(current_path, os.path.join(media_directory, '..')) + os.path.sep
     print('folder_path', folder_path)
 
-    show_search_status(f"Searching for images in '{folder_path}'.")
+    show_search_status(f"Searching for videos in '{folder_path}'.")
 
       
     # all_files = glob.glob(os.path.join(current_path, '**/*'), recursive=True)
@@ -203,7 +228,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
 
 
     # Sort image by text or image query
-    show_search_status(f"Sorting images by {text_query}")
+    show_search_status(f"Sorting videos by {text_query}")
     if text_query and len(text_query) > 0:
       if text_query.lower().strip() == "random":
         np.random.shuffle(all_files)

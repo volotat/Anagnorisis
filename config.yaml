@@ -8,6 +8,10 @@ music:
   media_formats:
   - .mp3
   - .flac
+  - .wav
+  - .ogg
+  - .aac
+  - .m4a
 images:
   embedding_model: "google/siglip-base-patch16-224" 
   media_directory: null
@@ -31,12 +35,16 @@ videos:
   - .flv
   - .mkv
   - .ogv
+  - .mpeg
+  - .mpg
 text:
   embedding_model: "jinaai/jina-embeddings-v3" # Or a specific v3 model ID
   media_directory: null
   media_formats:
   - .txt
   - .md
+  - .htm
+  - .html
   # Added for text embedding and search
   chunk_size: 512 # Max tokens per chunk
   chunk_overlap: 128 # Overlap between chunks

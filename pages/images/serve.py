@@ -210,10 +210,32 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
     text_query = input_data.get('text_query', None)
     
     files_data = []
+
+    # --- Directory Traversal Prevention ---
+    # Resolve the real, canonical path of the safe base directory.
+    safe_base_dir = os.path.realpath(media_directory)
+    
+    # Safely join the user-provided path to the base directory.
     if path == "":
-      current_path = media_directory
+        unsafe_path = safe_base_dir
     else:
-      current_path = os.path.abspath(os.path.join(media_directory, '..', path))
+        unsafe_path = os.path.join(safe_base_dir, os.pardir, path)
+    
+    # Resolve the absolute path, processing any '..' and symbolic links.
+    current_path = os.path.realpath(unsafe_path)
+    
+    # Check if the final resolved path is within the safe base directory.
+    # This is the crucial security check.
+    if os.path.commonpath([current_path, safe_base_dir]) != safe_base_dir:
+        show_search_status("Access denied: Directory traversal attempt detected.")
+        # Default to the safe base directory if an invalid path is provided.
+        current_path = safe_base_dir
+    # --- End of Prevention ---
+
+    # if path == "":
+    #   current_path = media_directory
+    # else:
+    #   current_path = os.path.abspath(os.path.join(media_directory, '..', path))
 
 
     folder_path = os.path.relpath(current_path, os.path.join(media_directory, '..')) + os.path.sep
@@ -520,3 +542,49 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
 
     # Show files in new folder
     #get_files({})
+
+  @socketio.on('emit_images_page_get_image_metadata_file_content')
+  def get_image_metadata_file_content(file_path):
+      """
+      Reads the content of the .meta file associated with an image.
+      If the file does not exist, returns an empty string.
+      """
+      nonlocal media_directory
+      full_image_path = os.path.join(media_directory, file_path)
+      metadata_file_path = full_image_path + ".meta"
+      
+      content = ""
+      try:
+          if os.path.exists(metadata_file_path):
+              with open(metadata_file_path, 'r', encoding='utf-8') as f:
+                  content = f.read()
+          print(f"Read metadata for {file_path}")
+      except Exception as e:
+          print(f"Error reading metadata for {file_path}: {e}")
+          # Optionally, emit an error status to the frontend
+          socketio.emit('emit_images_page_show_search_status', f"Error reading metadata: {e}")
+      
+      socketio.emit('emit_images_page_show_image_metadata_content', {"content": content, "file_path": file_path})
+
+  @socketio.on('emit_images_page_save_image_metadata_file_content')
+  def save_image_metadata_file_content(data):
+      """
+      Saves the provided content to the .meta file associated with an image.
+      """
+      nonlocal media_directory
+      file_path = data['file_path']
+      metadata_content = data['metadata_content']
+      
+      full_image_path = os.path.join(media_directory, file_path)
+      metadata_file_path = full_image_path + ".meta"
+
+      try:
+          # Ensure the directory exists before writing the file
+          os.makedirs(os.path.dirname(metadata_file_path), exist_ok=True)
+          with open(metadata_file_path, 'w', encoding='utf-8') as f:
+              f.write(metadata_content)
+          print(f"Saved metadata for {file_path}")
+          socketio.emit('emit_images_page_show_search_status', f"Metadata saved for {os.path.basename(file_path)}")
+      except Exception as e:
+          print(f"Error saving metadata for {file_path}: {e}")
+          socketio.emit('emit_images_page_show_search_status', f"Error saving metadata: {e}")

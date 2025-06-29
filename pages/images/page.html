@@ -215,4 +215,31 @@
       </footer>
     </div>
   </div>
+
+  <!-- Modal for Metadata Editor -->
+  <div class="modal" id="metadata_editor_modal">
+    <div class="modal-background modal-close-action"></div>
+    <div class="modal-card" style="width: 80%; max-width: 960px; height: 90vh; display: flex; flex-direction: column;">
+      <header class="modal-card-head">
+        <p class="modal-card-title" id="metadata_modal_title">Edit Image Metadata</p>
+        <button class="delete modal-close is-large modal-close-action" aria-label="close"></button>
+      </header>
+      <section class="modal-card-body" style="flex: 1; display: flex; flex-direction: column; padding-bottom: 0;">
+        <textarea class="textarea" id="metadata_content_textarea" placeholder="Metadata content..." 
+          style="flex-grow: 1;
+                 min-height: 0;
+                 font-family: 'Courier New', monospace;
+                 resize: none;
+                 max-height: -webkit-fill-available;
+                 background: rgba(255, 255, 255, 0.7); /* Transparent background */
+                 backdrop-filter: blur(5px); /* Optional: blur background content */
+                 border: 1px solid rgba(0, 0, 0, 0.1);
+                 padding: 1rem;"></textarea>
+      </section>
+      <footer class="modal-card-foot">
+        <button class="button is-success modal-save-action">Save changes</button>
+        <button class="button modal-close-action">Cancel</button>
+      </footer>
+    </div>
+  </div>
 <div>

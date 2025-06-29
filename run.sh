@@ -1,3 +1,5 @@
+ #!/bin/bash
+ 
 echo "SH: Starting Anagnorisis application..."
 echo "SH: Activating virtual environment..."
 source .env/bin/activate || echo "Failed to activate virtual environment!"

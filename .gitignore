@@ -172,5 +172,6 @@ experiments/
 old_code/
 
 docker-compose-k.yaml
+docker-compose-m.yaml
 *_log.txt
 docker_commands.sh

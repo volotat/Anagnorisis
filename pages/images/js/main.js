@@ -7,6 +7,7 @@ import FileGridComponent from '/pages/FileGridComponent.js';
   let num_images_on_page = 60;
   let num_images_in_row = 6; // TODO: calculate from the screen size
   let selected_files = [];
+  let currentImageMetadataFilePath = null; // To store currently opened image file path for metadata
 
   //// BEFORE PAGE LOADED
   // read page number from the URL ?page=1
@@ -163,7 +164,7 @@ import FileGridComponent from '/pages/FileGridComponent.js';
 
     // Create level-left container
     const levelLeft = document.createElement('div');
-    levelLeft.className = 'level-left is-gapless';
+    levelLeft.className = 'level-left is-gapless is-flex-direction-column';
 
     // Create level-right container
     const levelRight = document.createElement('div');
@@ -173,6 +174,18 @@ import FileGridComponent from '/pages/FileGridComponent.js';
     levelContainer.append(levelLeft); // Add the level containers to the actions container
     levelContainer.append(levelRight); // Add the level containers to the actions container
 
+    // Add two raws of buttons for levelLeft container to hold
+    const btnsRow1 = document.createElement('div');
+    btnsRow1.className = 'is-flex is-gapless is-justify-content-flex-start';
+    btnsRow1.style.width = '100%';
+    const btnsRow2 = document.createElement('div');
+    btnsRow2.className = 'is-flex is-gapless is-justify-content-flex-start';
+    btnsRow2.style.width = '100%';
+
+    // Add the button rows to the levelLeft container
+    levelLeft.append(btnsRow1);
+    levelLeft.append(btnsRow2);
+
     // Create buttons for opening the file
     const btn_open = document.createElement('button');
     btn_open.className = 'button level-left is-gapless';
@@ -181,7 +194,7 @@ import FileGridComponent from '/pages/FileGridComponent.js';
       console.log('Open file in folder: ' + fileData.full_path);
       socket.emit('emit_images_page_open_file_in_folder', fileData.full_path);
     };
-    levelLeft.append(btn_open);
+    btnsRow1.append(btn_open);
 
     // Create a button for finding similar images
     const btn_find_similar = document.createElement('button');
@@ -197,7 +210,36 @@ import FileGridComponent from '/pages/FileGridComponent.js';
       url.search = params.toString();
       window.location.href = url.toString();
     };
-    levelLeft.append(btn_find_similar);
+    btnsRow1.append(btn_find_similar);
+
+    // --- Add the Edit Internal Metadata button (temporarily disabled) ---
+    const btn_edit_internal_metadata = document.createElement('button');
+    btn_edit_internal_metadata.disabled = true; // Temporarily disable this button
+    btn_edit_internal_metadata.className = 'button level-left is-gapless';
+    btn_edit_internal_metadata.innerHTML = '<span class="icon"><i class="fas fa-file"></i></span><span>Edit meta</span>';
+    btn_edit_internal_metadata.onclick = function() {
+        // console.log('Edit internal metadata for: ' + fileData.file_path);
+        // currentImageMetadataFilePath = fileData.file_path; // Set the global tracker
+        // $('#metadata_modal_title').text(`Edit ${fileData.base_name}.meta`); // Set modal title
+        // $('#metadata_content_textarea').val('Loading metadata...'); // Show loading state
+        // socket.emit('emit_images_page_get_image_metadata_file_content', fileData.file_path);
+        // $('#metadata_editor_modal').addClass('is-active'); // Show modal
+    };
+    btnsRow2.append(btn_edit_internal_metadata);
+
+    // --- Add the Edit External Metadata button ---
+    const btn_edit_external_metadata = document.createElement('button');
+    btn_edit_external_metadata.className = 'button level-left is-gapless';
+    btn_edit_external_metadata.innerHTML = '<span class="icon"><i class="fas fa-question"></i></span><span>Edit .meta</span>'; // Changed to 'Edit Meta' for space
+    btn_edit_external_metadata.onclick = function() {
+        console.log('Edit metadata for: ' + fileData.file_path);
+        currentImageMetadataFilePath = fileData.file_path; // Set the global tracker
+        $('#metadata_modal_title').text(`Edit ${fileData.base_name}.meta`); // Set modal title
+        $('#metadata_content_textarea').val('Loading metadata...'); // Show loading state
+        socket.emit('emit_images_page_get_image_metadata_file_content', fileData.file_path);
+        $('#metadata_editor_modal').addClass('is-active'); // Show modal
+    };
+    btnsRow2.append(btn_edit_external_metadata);
 
     // Create a checkbox for selecting the file for further actions
     const checkboxLabel = document.createElement('label');
@@ -474,6 +516,16 @@ import FileGridComponent from '/pages/FileGridComponent.js';
       $('#path_to_media_folder').val(current_path);
     });
 
+    socket.on('emit_images_page_show_image_metadata_content', (data) => {
+      const file_path_received = data.file_path;
+      const metadata_content = data.content;
+      
+      // Only update if the received content is for the currently active modal
+      if (file_path_received === currentImageMetadataFilePath) {
+        $('#metadata_content_textarea').val(metadata_content);
+      }
+    });
+
     // Set search query in input 
     $('#search_input').val(text_query);
 
@@ -537,6 +589,25 @@ import FileGridComponent from '/pages/FileGridComponent.js';
       });
       // refresh page
       location.reload();
+    });
+
+    // Close modal when clicking modal-close elements (background, X button, Cancel button)
+    $('#metadata_editor_modal .modal-close-action').on('click', function() {
+        $('#metadata_editor_modal').removeClass('is-active'); // Hide modal
+        currentImageMetadataFilePath = null; // Clear the tracker
+    });
+
+    // Save button in modal
+    $('#metadata_editor_modal .modal-save-action').on('click', function() {
+        if (currentImageMetadataFilePath) { // Ensure a file is selected
+            const metadataContent = $('#metadata_content_textarea').val(); // Get content from textarea
+            socket.emit('emit_images_page_save_image_metadata_file_content', { 
+                file_path: currentImageMetadataFilePath, 
+                metadata_content: metadataContent 
+            }); 
+            $('#metadata_editor_modal').removeClass('is-active'); // Hide modal after save
+            currentImageMetadataFilePath = null; // Clear the tracker
+        }
     });
   })
 

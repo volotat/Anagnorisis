@@ -90,7 +90,27 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
         text_query = data.get('text_query', None)
         
         files_data = []
-        current_path = resolve_media_path(media_directory, path)
+        
+        # --- Directory Traversal Prevention ---
+        # Resolve the real, canonical path of the safe base directory.
+        safe_base_dir = os.path.realpath(media_directory)
+        
+        # Safely join the user-provided path to the base directory.
+        if path == "":
+            unsafe_path = safe_base_dir
+        else:
+            unsafe_path = os.path.join(safe_base_dir, os.pardir, path)
+        
+        # Resolve the absolute path, processing any '..' and symbolic links.
+        current_path = os.path.realpath(unsafe_path)
+        
+        # Check if the final resolved path is within the safe base directory.
+        # This is the crucial security check.
+        if os.path.commonpath([current_path, safe_base_dir]) != safe_base_dir:
+            common_socket_events.show_search_status("Access denied: Directory traversal attempt detected")
+            # Default to the safe base directory if an invalid path is provided.
+            current_path = safe_base_dir
+        # --- End of Prevention ---
 
         folder_path = os.path.relpath(current_path, os.path.join(media_directory, '..')) + os.path.sep
         print('folder_path', folder_path)

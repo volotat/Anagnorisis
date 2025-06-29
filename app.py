@@ -1,6 +1,7 @@
 from flask import Flask, render_template, render_template_string, send_from_directory
 from flask_socketio import SocketIO
 from flask_migrate import Migrate
+from flask_httpauth import HTTPBasicAuth 
 
 #from sqlalchemy import TypeDecorator, String
 
@@ -27,6 +28,8 @@ import os
 import shutil
 
 import traceback
+
+
 
 
 def parse_arguments():
@@ -105,6 +108,48 @@ app = Flask(__name__, template_folder='pages', static_folder='static')
 app.config['SECRET_KEY'] = cfg.main.flask_secret_key
 app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{database_path}"
 
+# Initialize Flask-HTTPAuth
+auth = HTTPBasicAuth()
+
+# If these environment variables are not set, os.environ.get() will return None.
+# If they are set to an empty string, they will be empty.
+AUTH_USERNAME = os.environ.get('ANAGNORISIS_USERNAME')
+AUTH_PASSWORD = os.environ.get('ANAGNORISIS_PASSWORD')
+
+# Authentication is active only if BOTH username and password are set and non-empty.
+AUTH_ACTIVE = bool(AUTH_USERNAME and AUTH_PASSWORD)
+
+if AUTH_ACTIVE:
+    print("HTTP Basic Authentication is ACTIVE.")
+else:
+    print("HTTP Basic Authentication is INACTIVE (ANAGNORISIS_USERNAME or ANAGNORISIS_PASSWORD not set or empty).")
+
+@auth.verify_password
+def verify_password(username, password):
+    # Only perform verification if authentication is active
+    if AUTH_ACTIVE and username == AUTH_USERNAME and password == AUTH_PASSWORD:
+        print(f"Authentication successful for user: {username}")
+        return username
+    print(f"Authentication failed for user: {username}")
+    return None # Important: return None if auth is active but credentials are wrong
+
+@auth.error_handler
+def unauthorized():
+    return "Unauthorized access. Please provide valid credentials.", 401
+
+if AUTH_ACTIVE:
+    # If auth is active, use auth.login_required
+    auth_decorator = auth.login_required
+else:
+    # If auth is inactive, use a no-op decorator (does nothing)
+    def no_auth_decorator(f):
+        return f
+    auth_decorator = no_auth_decorator
+
+@app.before_request
+@auth_decorator # This decorator will either require login or do nothing
+def before_request_auth():
+    pass
 
 # Set the socketio parameters
 socketio = SocketIO(app, cors_allowed_origins="*", path="/socket.io")
@@ -170,6 +215,7 @@ def page_wiki(page_name):
 
 #### SERVING FILES FROM PAGES FOLDER, TO MAKE EXTENSIONS FILES ACCESSIBLE
 @app.route('/pages/<path:filename>')
+@auth.login_required
 def custom_static(filename):
     return send_from_directory('pages', filename)
 
