@@ -215,7 +215,7 @@ def page_wiki(page_name):
 
 #### SERVING FILES FROM PAGES FOLDER, TO MAKE EXTENSIONS FILES ACCESSIBLE
 @app.route('/pages/<path:filename>')
-@auth.login_required
+@auth_decorator
 def custom_static(filename):
     return send_from_directory('pages', filename)
 

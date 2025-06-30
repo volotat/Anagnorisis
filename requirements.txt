@@ -24,7 +24,6 @@ python-dateutil
 tinytag
 unidecode
 mutagen
-moviepy
 peft
 trl
 pandas
@@ -33,3 +32,4 @@ einops
 sentence-transformers
 Flask-HTTPAuth
 protobuf
+moviepy==1.0.3
