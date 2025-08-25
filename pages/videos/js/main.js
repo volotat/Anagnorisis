@@ -369,9 +369,11 @@ import FileGridComponent from '/pages/FileGridComponent.js';
       let params = new URLSearchParams(url.search);
       params.set('text_query', text_query);
       params.set('page', 1);
+      
       // Generate a new seed for each search
       let newSeed = Math.floor(Math.random() * 1e9);
       params.set('seed', newSeed);
+
       url.search = params.toString();
       window.location.href = url.toString();
     });

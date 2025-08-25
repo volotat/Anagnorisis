@@ -64,19 +64,20 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
     print("Music media folder is not set.")
     media_directory = None
   else:
-    media_directory = os.path.join(data_folder, cfg.music.media_directory)
+    # media_directory = os.path.join(data_folder, cfg.music.media_directory)
+    media_directory = cfg.music.media_directory
 
   print('Music media_directory:', media_directory)
 
   music_search_engine = MusicSearch(cfg=cfg) 
-  music_search_engine.initiate(models_folder=cfg.main.models_path, cache_folder=cfg.main.cache_path)
+  music_search_engine.initiate(models_folder=cfg.main.embedding_models_path, cache_folder=cfg.main.cache_path)
 
   cached_file_list = music_search_engine.cached_file_list
   cached_file_hash = music_search_engine.cached_file_hash
   cached_metadata = music_search_engine.cached_metadata
 
   music_evaluator = MusicEvaluator(embedding_dim=music_search_engine.embedding_dim) #src.scoring_models.Evaluator(embedding_dim=768)
-  music_evaluator.load(os.path.join(cfg.main.models_path, 'music_evaluator.pt'))
+  music_evaluator.load(os.path.join(cfg.main.personal_models_path, 'music_evaluator.pt'))
 
   def show_search_status(status):
     socketio.emit('emit_music_page_show_search_status', status)
@@ -190,6 +191,10 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
     pagination = input_data.get('pagination', 0)
     limit = input_data.get('limit', 100)
     text_query = input_data.get('text_query', None)
+    seed = input_data.get('seed', None)
+
+    if seed is not None:
+      np.random.seed(int(seed))
     
     files_data = []
 

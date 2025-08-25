@@ -60,10 +60,23 @@ class PaginationComponent {
       return listItem;
     }
   
+    // generatePageUrl(pageNumber) {
+    //   // Replace placeholders in urlPattern with actual values
+    //   let url = this.urlPattern.replace('{page}', pageNumber);
+    //   return url;
+    // }
+
     generatePageUrl(pageNumber) {
-      // Replace placeholders in urlPattern with actual values
-      let url = this.urlPattern.replace('{page}', pageNumber);
-      return url;
+      // Check if URL already has a page parameter (either page=number or page={page})
+      if (this.urlPattern.includes('page=')) {
+        // Replace existing page parameter with new page number
+        // This regex matches both page=123 and page={page}
+        return this.urlPattern.replace(/page=(?:\d+|\{page\})/, `page=${pageNumber}`);
+      } else {
+        // Add page parameter to URL
+        const separator = this.urlPattern.includes('?') ? '&' : '?';
+        return `${this.urlPattern}${separator}page=${pageNumber}`;
+      }
     }
   
     updatePagination(currentPage, totalPages) {

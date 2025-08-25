@@ -1,4 +1,4 @@
- #!/bin/bash
+#!/bin/bash
  
 echo "SH: Starting Anagnorisis application..."
 echo "SH: Activating virtual environment..."

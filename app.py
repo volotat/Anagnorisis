@@ -61,32 +61,20 @@ config_path = os.path.join(script_folder, 'config.yaml')
 cfg = OmegaConf.load(config_path)
 
 # Load local configuration if it exists
-project_config_folder_name = os.environ.get('PROJECT_CONFIG_FOLDER_NAME', 'Anagnorisis-app')
+project_config_folder_path = cfg.main.get('project_config_directory', 'project_config')
 
-local_config_path = os.path.join(data_folder, project_config_folder_name, 'config.yaml')
-database_path = os.path.join(data_folder, project_config_folder_name, 'database', 'project.db')
-migrations_path = os.path.join(data_folder, project_config_folder_name, 'database', 'migrations')
-models_path = os.path.join(data_folder, project_config_folder_name, 'models')
-cache_path = 'cache'
+#local_config_path = os.path.join(project_config_folder_path, 'config.yaml')
+database_path = os.path.join(project_config_folder_path, 'database', 'project.db')
+migrations_path = os.path.join(project_config_folder_path, 'database', 'migrations')
+embedding_models_path = os.path.join(script_folder, 'models')
+personal_models_path = os.path.join(project_config_folder_path, 'models')
+cache_path = os.path.join(project_config_folder_path, 'cache')
 
 cfg.main.database_path = database_path
 cfg.main.migrations_path = migrations_path
-cfg.main.models_path = models_path
+cfg.main.embedding_models_path = embedding_models_path
+cfg.main.personal_models_path = personal_models_path
 cfg.main.cache_path = cache_path
-
-
-if os.path.exists(local_config_path):
-    print(f"Loading configuration from: {local_config_path}")
-    local_cfg = OmegaConf.load(local_config_path)
-    cfg = OmegaConf.merge(cfg, local_cfg) # Merge local overrides into default
-else:
-    # Copy the default config to the data folder if it doesn't exist
-    print(f"Copying default config to: {local_config_path}")
-    os.makedirs(os.path.dirname(local_config_path), exist_ok=True)
-    shutil.copyfile(config_path, local_config_path)
-    # Load the copied config
-    print(f"Loading configuration from: {local_config_path}")
-    cfg = OmegaConf.load(local_config_path)
 
 # Ensure database path is properly set up
 # If the database path is relative, make it absolute within the data folder

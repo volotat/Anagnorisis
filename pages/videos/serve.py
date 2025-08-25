@@ -121,7 +121,8 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
       print("Videos media folder is not set.")
       media_directory = None
   else:
-      media_directory = os.path.join(data_folder, cfg.videos.media_directory)
+      # media_directory = os.path.join(data_folder, cfg.videos.media_directory)
+      media_directory = cfg.videos.media_directory
 
       # Check if media_directory exists, if not, print a warning and set to None
       if not os.path.isdir(media_directory):
@@ -138,7 +139,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
     return send_from_directory(media_directory, filename)
   
   video_search_engine = VideoSearch(cfg=cfg)
-  video_search_engine.initiate(models_folder=cfg.main.models_path, cache_folder=cfg.main.cache_path) # Needs actual models path
+  video_search_engine.initiate(models_folder=cfg.main.embedding_models_path, cache_folder=cfg.main.cache_path) # Needs actual models path
   
   # For now, cached_file_list and cached_file_hash can be from the base search engine
   cached_file_list = video_search_engine.cached_file_list

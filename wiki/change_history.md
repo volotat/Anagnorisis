@@ -45,6 +45,21 @@ When starting the Docker container, if the provided path to the share folder doe
 
 ## Versions History
 
+### Version 0.2.5 (25.08.2025)
+*   **Docker & Environment Enhancements:**
+    *   Fixed an issue where the virtual environment created by Docker was overwritten when source code was mounted into the container. The virtual environment is now created in a separate location (`/venv`) to avoid conflicts with code mounting.
+    *   Resolved constant login requirements even when `ANAGNORISIS_USERNAME` and `ANAGNORISIS_PASSWORD` environment variables are not set. The application now runs without authentication when these variables are not configured.
+    *   Implemented new container setup workflow based on `.env` file parameters for easier configuration management. Container logs are now stored as `{CONTAINER_NAME}_log.txt` by default instead of `container_log.txt`.
+*   **Configuration & File Management:**
+    *   Replaced `PROJECT_CONFIG_FOLDER_NAME` with `PROJECT_CONFIG_FOLDER_PATH`, which now contains the full path to the directory where personal database and trained recommendation models are stored.
+    *   Separated model storage into two distinct locations: all embedding models are stored in `./models/` in the project root, while personal trained models are stored in `{PROJECT_CONFIG_FOLDER_PATH}/models/`. This prevents redundant model downloads when running multiple project instances on the same host.
+    *   `config.yaml` file is no longer created in the `{PROJECT_CONFIG_FOLDER_PATH}` directory, as it is no longer necessary.
+*   **Module Improvements:**
+    *   Added seed-based sorting to `Music` and `Images` modules, matching the functionality already present in the `Videos` module. This ensures consistent file order when navigating between pages.
+*   **Dependencies:**
+    *   Added missing `moviepy` dependency to `requirements.txt` to ensure video processing functionality works correctly.
+    *   Added `protobuf` library to `requirements.txt` as required by the `transformers` library for model processing.
+
 ### Version 0.2.4 (29.06.2025)
 *   **Security Enhancements:**
     *   Authentication with `ANAGNORISIS_USERNAME` and `ANAGNORISIS_PASSWORD` environment variables for basic privacy has been implemented. If these variables are not set, the application will run without authentication. This provides a layer of security when the application is exposed to the internet.

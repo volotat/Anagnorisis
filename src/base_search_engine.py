@@ -104,7 +104,7 @@ class BaseSearchEngine(ABC):
         
         # Setup model path
         if self.model_name is None:
-            model_folder_name = 'dummy_video_model' # Fallback if model_name is not set
+            model_folder_name = 'dummy_model' # Fallback if model_name is not set
         else:
             model_folder_name = self.model_name.replace('/', '__') # Sanitized name for local folder
 

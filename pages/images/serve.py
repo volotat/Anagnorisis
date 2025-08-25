@@ -93,13 +93,14 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
     print("Images media folder is not set.")
     media_directory = None
   else:
-    media_directory = os.path.join(data_folder, cfg.images.media_directory)
+    # media_directory = os.path.join(data_folder, cfg.images.media_directory)
+    media_directory = cfg.images.media_directory
   
   image_search_engine = ImageSearch(cfg=cfg)
-  image_search_engine.initiate(models_folder=cfg.main.models_path, cache_folder=cfg.main.cache_path)
+  image_search_engine.initiate(models_folder=cfg.main.embedding_models_path, cache_folder=cfg.main.cache_path)
 
   image_evaluator = ImageEvaluator() #src.scoring_models.Evaluator(embedding_dim=768)
-  image_evaluator.load(os.path.join(cfg.main.models_path, 'image_evaluator.pt'))
+  image_evaluator.load(os.path.join(cfg.main.personal_models_path, 'image_evaluator.pt'))
 
   def show_search_status(status):
     socketio.emit('emit_images_page_show_search_status', status)
@@ -208,6 +209,10 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
     pagination = input_data.get('pagination', 0)
     limit = input_data.get('limit', 100)
     text_query = input_data.get('text_query', None)
+    seed = input_data.get('seed', None)
+
+    if seed is not None:
+      np.random.seed(int(seed))
     
     files_data = []
 

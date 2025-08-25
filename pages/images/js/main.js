@@ -19,6 +19,13 @@ import FileGridComponent from '/pages/FileGridComponent.js';
   text_query = decodeURIComponent(text_query);
   path = decodeURIComponent(path);
   console.log('path', path);
+
+  let seed = urlParams.get('seed');
+  if (!seed) {
+    seed = Math.floor(Math.random() * 1e9);
+    urlParams.set('seed', seed);
+    window.location.search = urlParams.toString();
+  }
   
   function renderImagePreview(fileData) { // Function for Images module
     const imageDataDiv = document.createElement('div');
@@ -397,7 +404,8 @@ import FileGridComponent from '/pages/FileGridComponent.js';
       path: path, 
       pagination: (page-1)*num_images_on_page, 
       limit: page * num_images_on_page,
-      text_query: text_query 
+      text_query: text_query,
+      seed: seed
     });
 
     // Display files from the folder
@@ -536,6 +544,11 @@ import FileGridComponent from '/pages/FileGridComponent.js';
       let params = new URLSearchParams(url.search);
       params.set('text_query', text_query);
       params.set('page', 1);
+      
+      // Generate a new seed for each search
+      let newSeed = Math.floor(Math.random() * 1e9);
+      params.set('seed', newSeed);
+
       url.search = params.toString();
       window.location.href = url.toString();
     });

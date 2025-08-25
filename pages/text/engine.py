@@ -336,7 +336,7 @@ if __name__ == "__main__":
     # Create a dummy config for testing
     dummy_cfg_dict = {
         'main': {
-            'models_path': './models',
+            'embedding_models_path': './models',
             'cache_path': './cache'
         },
         'text': {
@@ -348,7 +348,7 @@ if __name__ == "__main__":
     }
     cfg = OmegaConf.create(dummy_cfg_dict)
 
-    os.makedirs(cfg.main.models_path, exist_ok=True)
+    os.makedirs(cfg.main.embedding_models_path, exist_ok=True)
     os.makedirs(cfg.main.cache_path, exist_ok=True)
 
     # Read dummy text files for testing
@@ -364,7 +364,7 @@ if __name__ == "__main__":
     try:
         print("\nInitializing TextSearch engine...")
         text_search_engine = TextSearch(cfg=cfg) # Pass cfg to constructor
-        text_search_engine.initiate(models_folder=cfg.main.models_path, cache_folder=cfg.main.cache_path, cfg=cfg)
+        text_search_engine.initiate(models_folder=cfg.main.embedding_models_path, cache_folder=cfg.main.cache_path, cfg=cfg)
         print(f"TextSearch engine initialized. Model hash: {text_search_engine.model_hash}")
         print(f"Model on device: {text_search_engine.model.device}")
     except Exception as e:

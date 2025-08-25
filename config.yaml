@@ -2,9 +2,10 @@ main:
   host: 0.0.0.0
   port: 5001
   flask_secret_key: secret!123 # Does not matter when Flask is run locally
+  project_config_directory: /app/project_config
 music:
   embedding_model: "laion/clap-htsat-fused" 
-  media_directory: null
+  media_directory: /app/media/music
   media_formats:
   - .mp3
   - .flac
@@ -14,7 +15,7 @@ music:
   - .m4a
 images:
   embedding_model: "google/siglip-base-patch16-224" 
-  media_directory: null
+  media_directory: /app/media/images
   media_formats:
   - .jpg
   - .jpeg
@@ -25,7 +26,7 @@ images:
   - .tiff
 videos:
   embedding_model: null
-  media_directory: null
+  media_directory: /app/media/videos
   media_formats:
   - .mp4
   - .webm
@@ -39,7 +40,7 @@ videos:
   - .mpg
 text:
   embedding_model: "jinaai/jina-embeddings-v3" # Or a specific v3 model ID
-  media_directory: null
+  media_directory: /app/media/text
   media_formats:
   - .txt
   - .md

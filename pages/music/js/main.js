@@ -25,6 +25,13 @@ import PaginationComponent from '/pages/PaginationComponent.js';
   path = decodeURIComponent(path);
   console.log('path', path);
 
+  let seed = urlParams.get('seed');
+  if (!seed) {
+    seed = Math.floor(Math.random() * 1e9);
+    urlParams.set('seed', seed);
+    window.location.search = urlParams.toString();
+  }
+
   //window.global_function = (va1, var2){
   //  
   //}
@@ -91,7 +98,8 @@ import PaginationComponent from '/pages/PaginationComponent.js';
       path: path, 
       pagination: (page-1)*num_files_on_page, 
       limit: page * num_files_on_page,
-      text_query: text_query 
+      text_query: text_query,
+      seed: seed
     });
 
     // Display files from the folder
@@ -393,11 +401,13 @@ import PaginationComponent from '/pages/PaginationComponent.js';
       // Update or Initialize Pagination Component
       const paginationContainer = $('.pagination.is-rounded.level-left.mb-0 .pagination-list'); // Select pagination container
       const urlParams = new URLSearchParams(window.location.search); // Get URL parameters for pattern
-      let urlPattern = `?page={page}`; // Base URL pattern
+      // let urlPattern = `?page={page}`; // Base URL pattern
 
-      if (urlParams.get('text_query')) { // Add text_query if present
-          urlPattern += `&text_query=${encodeURIComponent(urlParams.get('text_query'))}`;
-      }
+      // if (urlParams.get('text_query')) { // Add text_query if present
+      //     urlPattern += `&text_query=${encodeURIComponent(urlParams.get('text_query'))}`;
+      // }
+
+      let urlPattern = `?${urlParams.toString()}`;
 
       if (!paginationComponent) { // Instantiate PaginationComponent if it doesn't exist yet
           paginationComponent = new PaginationComponent({
@@ -437,6 +447,11 @@ import PaginationComponent from '/pages/PaginationComponent.js';
       let params = new URLSearchParams(url.search);
       params.set('text_query', text_query);
       params.set('page', 1);
+
+      // Generate a new seed for each search
+      let newSeed = Math.floor(Math.random() * 1e9);
+      params.set('seed', newSeed);
+
       url.search = params.toString();
       window.location.href = url.toString();
     });

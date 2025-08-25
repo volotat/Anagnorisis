@@ -198,7 +198,7 @@ if __name__ == "__main__":
     # Create a dummy config for testing
     dummy_cfg_dict = {
         'main': {
-            'models_path': './models',
+            'embedding_models_path': './models',
             'cache_path': './cache'
         },
         'music': {
@@ -208,7 +208,7 @@ if __name__ == "__main__":
     }
     cfg = OmegaConf.create(dummy_cfg_dict)
 
-    os.makedirs(cfg.main.models_path, exist_ok=True)
+    os.makedirs(cfg.main.embedding_models_path, exist_ok=True)
     os.makedirs(cfg.main.cache_path, exist_ok=True)
 
     # Create dummy audio files for testing (requires pydub and tinytag)
@@ -236,7 +236,7 @@ if __name__ == "__main__":
     try:
         print("\nInitializing MusicSearch engine...")
         music_search_engine = MusicSearch(cfg=cfg)
-        music_search_engine.initiate(models_folder=cfg.main.models_path, cache_folder=cfg.main.cache_path)
+        music_search_engine.initiate(models_folder=cfg.main.embedding_models_path, cache_folder=cfg.main.cache_path)
         print(f"MusicSearch engine initialized. Model hash: {music_search_engine.model_hash}")
         print(f"Model on device: {music_search_engine.model.device}")
     except Exception as e:

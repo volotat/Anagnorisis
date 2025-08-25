@@ -64,12 +64,12 @@ def train_music_evaluator(cfg, callback=None):
       best_epoch = epoch + 1
 
       # Save the model
-      evaluator.save(os.path.join(cfg.main.models_path, 'music_evaluator.pt'))
+      evaluator.save(os.path.join(cfg.main.personal_models_path, 'music_evaluator.pt'))
 
   status = f'Best Epoch: {best_epoch}, Train Accuracy: {best_train_accuracy * 100:.2f}%, Test Accuracy: {best_test_accuracy * 100:.2f}%'
   print(status)
   if callback: 
     callback(status, 100, baseline_accuracy)
 
-  evaluator.load(os.path.join(cfg.main.models_path, 'music_evaluator.pt'))
+  evaluator.load(os.path.join(cfg.main.personal_models_path, 'music_evaluator.pt'))
   print('Training complete! Now you can use new model to evaluate music.')

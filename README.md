@@ -39,14 +39,30 @@ The preferred way to run the project is from Docker. This should be much more st
         git clone https://github.com/volotat/Anagnorisis.git
         cd Anagnorisis
     ```
-3. Launch the application
+3. Specify your environment variables in a `.env` file. You can see the example in the `.env.example` file.
     ```bash
-        DATA_PATH=/path/to/your/data EXTERNAL_PORT=5001 docker-compose up -d
+        # .env.example
+        CONTAINER_NAME=anagnorisis-app # The name of the Docker container
+        EXTERNAL_PORT=5001 # The external port for accessing the application
+        # ANAGNORISIS_USERNAME=**** # The username for accessing the application (uncomment if you want to use it)
+        # ANAGNORISIS_PASSWORD=**** # The password for accessing the application (uncomment if you want to use it)
+        PROJECT_CONFIG_FOLDER_PATH=/path/to/folder/Anagnorisis-app # The path to the folder where your personal database and personally trained recommendation models will be stored
+        IMAGES_MODULE_DATA_PATH=/path/to/folder/Images # The path to the folder with your images data
+        MUSIC_MODULE_DATA_PATH=/path/to/folder/Music # The path to the folder with your music data
+        TEXT_MODULE_DATA_PATH=/path/to/folder/Text # The path to the folder with your text data
+        VIDEOS_MODULE_DATA_PATH=/path/to/folder/Videos # The path to the folder with your videos data
     ```
-    Note: if you are using Docker Desktop you have to explicitly provide access to `/path/to/your/data` folder in the Docker settings. Otherwise, you will not be able to access it from the container. To do so, go to Docker Desktop settings, then to Resources -> File Sharing and add the path to your data folder.
+4. Launch the application
+    ```bash
+        docker-compose up -d
+    ```
+    Note: if you are using Docker Desktop you have to explicitly provide access to `/path/to/your/data` folders in the Docker settings. Otherwise, you will not be able to access it from the container. To do so, go to Docker Desktop settings, then to Resources -> File Sharing and add the path to your data folder.
 4. Access the application at http://localhost:5001 (or whichever port you configured) in your web browser.
 
 ## Running from the local environment
+> [!WARNING]
+> **Since version 0.2.5 running project from the local environment is most likely broken, without heavy adjustments to the code.** I am reconsidering how the project is getting set up to make this project as streamlined and simple as possible, as well as removing fragile elements that might cause unexpected issues.
+
 In case you do not want to use Docker, you can also install the project manually with this commands. Notice that the project has only been tested on Ubuntu 22.04 with Python 3.10, there is no guarantee that it will work on any other platforms or different version of Python. For Windows users I highly recommend to use Docker as there might be some unexpected issues.
 
 1. Clone this repository:
@@ -58,12 +74,12 @@ In case you do not want to use Docker, you can also install the project manually
 2. Recreate the Environment with following commands: 
     ```bash 
         # For Linux
-        python3 -m venv .env  # recreate the virtual environment
-        source .env/bin/activate  # activate the virtual environment
+        python3 -m venv .venv  # recreate the virtual environment
+        source .venv/bin/activate  # activate the virtual environment
         pip install -r requirements.txt  # install the required packages
         # For Windows
-        python -m venv .env  # recreate the virtual environment
-        .env\Scripts\activate  # activate the virtual environment
+        python -m venv .venv  # recreate the virtual environment
+        .venv\Scripts\activate  # activate the virtual environment
         pip install -r requirements.txt  # install the required packages
     ```
 
