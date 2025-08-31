@@ -14,9 +14,6 @@ Implement some sort of effective resolution estimation technique.
 Improve sorting by resolution performance (one idea might be caching information of image resolution).   
 Add a way to select only some particular folders for displaying images from.  
 Remove from DB images that no longer exist in the media folder and have no user rating. This should reduce the size of the DB as embeddings took quite a lot of space.  
-Add a way to create new folders in the UI.  
-Add a way to copy path to a folder trough the UI.  
-Make start rating bar sensitive to fractional value to allow more fine-tuned user rating.  
 Make number of images per page adjustable via config.yaml file.  
 Make number of columns of images presented dependent on the screen size. 
 Add BRISQUE score filter for simple image quality assessment. 
@@ -29,21 +26,42 @@ Add a button to stop the training process and save the best model so far.
 After training is complete or canceled reload the evaluation models.  
 
 ### Wiki
+Complete self-hosting guide.
 
 ### General
 Add some sort of a control panel that is active on all pages (may be hidden) and shows current GPU memory load by the system and console output.  
 Create an extension that provides recent Arxiv papers (https://arxiv.org/list/cs.LG/recent).    
-Implement usage of FAISS library for fast vector search.  
-Update main readme.md file and write about 'images' page, also need to add a way to download SigLIP model.  
+Implement usage of FAISS library for fast vector search.    
 When the folder name contains '[' and ']' symbols it is not correctly read by python scripts for some reason.   
 Add automatic database backup generation from time to time to prevent loss of data in case of a failure.  
 Find a way for more optimal embeddings storage in the DB.  
-Implement automatic model downloading at the fresh start of the project.
 Add display of the current version of the project into the header. 
 Add pop-up messages about new version of the project available to download and some button that allows to download it directly from the UI and restart the server.
 When starting the Docker container, if the provided path to the share folder does not exists the error should be displayed and the container should not start.
+Add a way to create new folders in the UI.  
+Add a way to copy path to a folder trough the UI.  
+
+### Ideas
+Add new downloadable module for 'Deep Research'-like functionality that uses user-trained text evaluating model to search for relative information adjusted to user preferences.
 
 ## Versions History
+
+### Version 0.2.6 (31.08.2025)
+*   **Security & Path Traversal Prevention:**
+    *   Implemented comprehensive path traversal attack prevention using a minimal `@app.before_request` decorator that automatically protects all routes from dangerous patterns like `..`, `%2e%2e`, `/etc/`, and other traversal attempts.
+    *   Enhanced Docker security configuration with `security_opt` to reduce attack surface for potential self-hosting scenarios.
+*   **Performance & Device Management:**
+    *   Fixed critical issue with slow embedding processing caused by device mismatch between models and tensors, which was forcing CPU processing instead of GPU acceleration. Embedding generation now correctly utilizes GPU resources.
+*   **Text Module Enhancements:**
+    *   Added Markdown and HTML preview functionality to the Text module, allowing users to view `.md` files as rendered content alongside the raw text view.
+    *   Text file viewer now includes tabs for Raw, Markdown, and HTML views in the modal interface.
+*   **Audio Format Support:**
+    *   Added `.opus` file format support to the Music module's supported formats in `config.yaml`.
+*   **Architecture & Deployment:**
+    *   Streamlined project startup by removing `run.sh` and `run.bat` scripts. All necessary commands are now integrated into the `Dockerfile`, with local environment execution temporarily unsupported in favor of containerized deployment.
+    *   Improved Docker container configuration for enhanced security and better isolation in preparation for self-hosting deployment scenarios.
+*   **Folder & File Management:**
+    * Some preparation work for future folder and files management in `FolderViewComponent` has been made.
 
 ### Version 0.2.5 (25.08.2025)
 *   **Docker & Environment Enhancements:**

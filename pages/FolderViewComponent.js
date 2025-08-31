@@ -34,16 +34,33 @@ class FolderViewComponent {
    * Create a FolderViewComponent.
    * @param {Object} folders_dict - The dictionary representing the folder structure.
    * @param {string} [active_path=''] - The active path to highlight.
+   * @param {boolean} [enableContextMenu=false] - Whether to enable the right-click context menu.
    */
-  constructor(folders_dict, active_path = '') {
+  constructor(folders_dict, active_path = '', enableContextMenu = false) {
     this.folders_dict = folders_dict;
     this.active_path = active_path;
+    this.enableContextMenu = enableContextMenu;
+    this.contextMenu = null;
+    this.currentContextPath = '';
+
+    // Only initialize context menu elements if enabled
+    if (this.enableContextMenu) {
+      this.contextMenu = document.getElementById('folder-context-menu');
+      if (!this.contextMenu) {
+        console.warn('Context menu element not found. Make sure #folder-context-menu exists in the DOM.');
+      }
+    }
 
     // Create the DOM element
     this.dom_element = document.createElement('ul');
     this.dom_element.className = 'menu-list';
     const li = this.createFolderRepresentation(this.folders_dict, this.active_path);
     this.dom_element.appendChild(li);
+
+    // Set up context menu event listeners only if enabled
+    if (this.enableContextMenu && this.contextMenu) {
+      this.setupContextMenu();
+    }
   }
 
   /**
@@ -87,6 +104,15 @@ class FolderViewComponent {
     a.className = `${isActive} ${color}`;
     a.href = `?${encoded_link}`;
     a.textContent = `${folderName} ${imageCountDisplay}`;
+
+    // Add right-click context menu only if enabled
+    if (this.enableContextMenu && this.contextMenu) {
+      a.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        this.showContextMenu(e, current_path_);
+      });
+    }
+
     folderRepresentation.appendChild(a);
 
     // Sort the folders by name
@@ -107,7 +133,6 @@ class FolderViewComponent {
     }
 
     folderRepresentation.appendChild(ul);
-
     return folderRepresentation;
   }
 
@@ -117,6 +142,120 @@ class FolderViewComponent {
    */
   getDOMElement() {
     return this.dom_element;
+  }
+
+  /**
+   * Setup the context menu for folder actions.
+   */
+  setupContextMenu() {
+    // Hide context menu when clicking elsewhere
+    document.addEventListener('click', (e) => {
+      if (!this.contextMenu.contains(e.target)) {
+        this.hideContextMenu();
+      }
+    });
+
+    // Context menu actions
+    document.getElementById('create-folder').addEventListener('click', (e) => {
+      e.preventDefault();
+      this.createFolder();
+    });
+
+    document.getElementById('create-file').addEventListener('click', (e) => {
+      e.preventDefault();
+      this.createFile();
+    });
+
+    document.getElementById('rename-folder').addEventListener('click', (e) => {
+      e.preventDefault();
+      this.renameFolder();
+    });
+
+    document.getElementById('delete-folder').addEventListener('click', (e) => {
+      e.preventDefault();
+      this.deleteFolder();
+    });
+  }
+
+  /**
+   * Show the context menu for folder actions.
+   * @param {MouseEvent} event - The mouse event triggering the context menu.
+   * @param {string} folderPath - The path of the folder for context actions.
+   */
+  showContextMenu(event, folderPath) {
+    this.currentContextPath = folderPath;
+    
+    // Position the context menu
+    this.contextMenu.style.left = `${event.pageX}px`;
+    this.contextMenu.style.top = `${event.pageY}px`;
+    
+    // Show the context menu
+    this.contextMenu.classList.remove('is-hidden');
+  }
+
+  /**
+   * Hide the context menu.
+   */
+  hideContextMenu() {
+    this.contextMenu.classList.add('is-hidden');
+  }
+
+
+  /**
+   * Create a new folder.
+   */
+  createFolder() {
+    const folderName = prompt('Enter folder name:');
+    if (folderName && folderName.trim()) {
+      // Emit socket event to create folder
+      socket.emit('emit_create_folder', {
+        path: this.currentContextPath,
+        name: folderName.trim()
+      });
+    }
+    this.hideContextMenu();
+  }
+
+  /**
+   * Create a new file.
+   */
+  createFile() {
+    const fileName = prompt('Enter file name:');
+    if (fileName && fileName.trim()) {
+      // Emit socket event to create file
+      socket.emit('emit_create_file', {
+        path: this.currentContextPath,
+        name: fileName.trim()
+      });
+    }
+    this.hideContextMenu();
+  }
+
+  /**
+   * Rename a folder.
+   */
+  renameFolder() {
+    const currentName = this.currentContextPath.split('/').slice(-2)[0]; // Get folder name
+    const newName = prompt('Enter new folder name:', currentName);
+    if (newName && newName.trim() && newName !== currentName) {
+      socket.emit('emit_rename_folder', {
+        path: this.currentContextPath,
+        newName: newName.trim()
+      });
+    }
+    this.hideContextMenu();
+  }
+
+  /**
+   * Delete a folder.
+   */
+  deleteFolder() {
+    if (confirm(`Are you sure you want to delete this folder: ${this.currentContextPath}?`)) {
+      socket.emit('emit_delete_folder', {
+        path: this.currentContextPath
+      });
+    }
+    this.hideContextMenu();
   }
 }
 

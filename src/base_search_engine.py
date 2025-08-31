@@ -255,7 +255,7 @@ class BaseSearchEngine(ABC):
                     if self.embedding_dim:
                         current_file_embeddings = torch.zeros(1, self.embedding_dim).cpu()
                     else: # Fallback if embedding_dim not determined yet
-                         current_file_embeddings = None # Handle this case in calling function
+                        current_file_embeddings = None # Handle this case in calling function
                 
                 if current_file_embeddings is not None:
                     all_embeddings.append(current_file_embeddings)
@@ -267,7 +267,10 @@ class BaseSearchEngine(ABC):
             if new_db_entries and flask.has_app_context():
                 db_models.db.session.bulk_save_objects(new_db_entries)
                 db_models.db.session.commit()
-            
+
+            # Move all embeddings to the same device
+            all_embeddings = [embed.to(self._model_manager._device) for embed in all_embeddings if embed is not None]
+
             # Concatenate all embeddings into a single tensor, move to active device
             if all_embeddings:
                 return torch.cat(all_embeddings, dim=0).to(self._model_manager._device)

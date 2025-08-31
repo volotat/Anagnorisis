@@ -20,6 +20,8 @@ Here is the main pipeline of working with the project:
 
 You repeat these steps again and again, getting each time model that better and better aligns to your preferences.  
 
+The big vision of this project is to provide a platform that creates a local, private model of your interests. That likes what you like and sees importance where you would see it. Then you can use this model to search and filter local and global information on your behalf in a way you would do it yourself but in a much faster and efficient way. Making this platform (in the future) a go to place to see news, recommendations and insights, and so on, tailored specifically for you. As the internet gets populated with bots and AI slop, a platform like this might create a necessary filter to be able to navigate in this chaotic information space efficiently.
+
 ## Music Module
 Please watch this video to see presentation of 'Music' module usage:  
 [![Watch the video](https://i3.ytimg.com/vi/vux7mDaRCeY/hqdefault.jpg?1)](https://youtu.be/vux7mDaRCeY)  
@@ -97,7 +99,7 @@ The Docker container includes Ubuntu 22.04, CUDA drives and several large machin
 
 If `DATA_PATH` is not provided, `/project_data` folder in the project root will be used. 
 
-After initializing the project, you will find new `Anagnorisis-app` folder inside of `DATA_PATH` folder. In this folder project's database, migrations, models and configuration file will be stored. After running the project for the first time, `{DATA_PATH}/Anagnorisis-app/database/project.db` file will be crated. That DB will store your preferences, that will be used later to fine-tune evaluation models. Try to make backups of this file from time to time, as it contains all of your preferences, and some additional data, such as playback history.
+After initializing the project, you will find new `Anagnorisis-app` folder inside of `PROJECT_CONFIG_FOLDER_PATH` folder. In this folder project's database, migrations, models and configuration file will be stored. After running the project for the first time, `{PROJECT_CONFIG_FOLDER_PATH}/Anagnorisis-app/database/project.db` file will be crated. That DB will store your preferences, that will be used later to fine-tune evaluation models. Try to make backups of this file from time to time, as it contains all of your preferences, and some additional data, such as playback history.
 
 Running the project from the local environment should be somewhat more efficient as there is no Docker overhead when reading the data. 
 
@@ -114,7 +116,7 @@ To make audio, visual and text search possible the project uses these models:
 [Google/SigLIP](https://arxiv.org/pdf/2303.15343)  
 [JinaAI/jina-embeddings-v3](https://huggingface.co/jinaai/jina-embeddings-v3)
 
-All embedding models are downloaded automatically when the project is started for the first time. This might take some time depending on the internet connection. You can see the progress inside `container_log.txt` file that will appear in the project's root folder if you run the project from the Docker container.
+All embedding models are downloaded automatically when the project is started for the first time. This might take some time depending on the internet connection. You can see the progress inside `logs/anagnorisis-app_log.txt` file that will appear in the project's root folder if you run the project from the Docker container.
 
 ## Wiki
 The project has its own wiki that is integrated into the project itself, you might access it by running the project, or simply reading it as markdown files.

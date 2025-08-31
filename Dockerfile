@@ -37,9 +37,8 @@ RUN /venv/bin/pip install --no-cache-dir -r requirements.txt
 # Expose the application port
 EXPOSE 5001
 
-# Default command to run the application using the script
-COPY run.sh /app/
-RUN chmod +x /app/run.sh
+# Create logs directory
+#RUN mkdir -p /app/logs
 
-# Set the default command to run the script with proper working directory
-CMD ["bash", "-c", "/app/run.sh > /app/$(echo ${CONTAINER_NAME:-container})_log.txt 2>&1"]
+# Running flask app from app.py
+CMD /venv/bin/python app.py > /app/logs/${CONTAINER_NAME:-container}_log.txt 2>&1

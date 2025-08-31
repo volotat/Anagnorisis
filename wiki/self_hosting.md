@@ -1,1 +1,6 @@
-# Self-Hosting Anagnorisis as service
+# Self-Hosting Anagnorisis as public service
+
+>Attention.  
+>The project is far from perfect from the security perspective. If you want to self-host it with public internet access, you should take additional precautions to secure your deployment. To make sure non of your personal data is leaked from the host machine you should either use a VM (Virtual Machine) with only the target folders that you want to share available to it or. even better, use a completely different machine for hosting that does not contain any personal data that you don't want to share with anyone. Running the Anagnorisis service from a VM could be quite tricky as it does require to configure a GPU passthrough for all AI-based features to work correctly. This might be a challenging task, depending on your setup, and might make one of your GPU's unusable for any other purposes.
+>
+>If wanted, one can also self-host private Anagnorisis instance with confidential data, but make 100% sure to put it under username/password protection to ensure that only you can access that data.

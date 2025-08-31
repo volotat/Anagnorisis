@@ -28,31 +28,31 @@ import os
 import shutil
 
 import traceback
+import time
 
-
-
-
-def parse_arguments():
-    parser = argparse.ArgumentParser(description='Anagnorisis Application')
-    parser.add_argument('--data-folder', type=str, default='/project_data', help='Path to data folder')
-    return parser.parse_args()
+# def parse_arguments():
+#     parser = argparse.ArgumentParser(description='Anagnorisis Application')
+#     parser.add_argument('--data-folder', type=str, default='/project_data', help='Path to data folder')
+#     return parser.parse_args()
 
 # Get data folder from command line
-args = parse_arguments()
-data_folder = str(args.data_folder)
+# args = parse_arguments()
+# data_folder = str(args.data_folder)
 script_folder = os.path.dirname(os.path.abspath(__file__))
 print(f"Script folder: {script_folder}")
 
 # Check if running in a Docker container
-if os.environ.get('RUNNING_IN_DOCKER') == 'true':
-    print("Running in Docker container")
-    # If running in Docker, use the data folder from the environment variable
-    if data_folder.startswith('/'):
-        # If it's an absolute path, make it relative to /app
-        data_folder = os.path.join('/app', data_folder[1:])
-    else:
-        # If it's already relative, just prepend /app
-        data_folder = os.path.join('/app', data_folder)
+# if os.environ.get('RUNNING_IN_DOCKER') == 'true':
+#     print("Running in Docker container")
+#     # If running in Docker, use the data folder from the environment variable
+#     if data_folder.startswith('/'):
+#         # If it's an absolute path, make it relative to /app
+#         data_folder = os.path.join('/app', data_folder[1:])
+#     else:
+#         # If it's already relative, just prepend /app
+#         data_folder = os.path.join('/app', data_folder)
+
+data_folder = script_folder
 
 print(f"Using data folder: {data_folder}")
 
@@ -325,6 +325,40 @@ def migrate_database():
         upgrade(directory=migrations_dir)
         
         print("Database migration completed successfully.")  
+
+from flask import request, abort
+
+#### PREVENT PATH TRAVERSAL
+@app.before_request 
+def block_path_traversal():
+    dangerous = ['..', '%2e%2e', '%252e%252e', '..%2f', '..%5c', '~/', '/etc/', '/proc/']
+    
+    # Collect all values to check
+    check_values = [request.path]
+    
+    # Add URL parameters and form data
+    check_values.extend(request.args.values())
+    check_values.extend(request.form.values())
+    
+    # Add JSON data if present
+    if request.is_json and request.json:
+        def extract_strings(obj):
+            if isinstance(obj, dict):
+                for v in obj.values():
+                    yield from extract_strings(v)
+            elif isinstance(obj, list):
+                for item in obj:
+                    yield from extract_strings(item)
+            elif isinstance(obj, str):
+                yield obj
+        
+        check_values.extend(extract_strings(request.json))
+    
+    # Check for dangerous patterns
+    for value in check_values:
+        if isinstance(value, str) and any(pattern in value.lower() for pattern in dangerous):
+            print(f"Path traversal attempt blocked: {value}")
+            abort(403)
 
 #### RUNNING THE APPLICATION
 if __name__ == '__main__':

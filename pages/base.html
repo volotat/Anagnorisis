@@ -110,6 +110,29 @@
   </nav>
   <progress id="llm_processing_progress_bar" class="progress is-small is-primary is-expanded mb-0" max="100" style="height:.20rem" value="0"></progress>
 
+  <!-- Context menu for folder and files actions -->
+  <div id="folder-context-menu" class="dropdown is-hidden" style="position: absolute; z-index: 1000;">
+    <div class="dropdown-content">
+      <a href="#" class="dropdown-item" id="create-folder">
+        <span class="icon"><i class="fas fa-folder-plus"></i></span>
+        <span>New Folder</span>
+      </a>
+      <a href="#" class="dropdown-item" id="create-file">
+        <span class="icon"><i class="fas fa-file-plus"></i></span>
+        <span>New File</span>
+      </a>
+      <hr class="dropdown-divider">
+      <a href="#" class="dropdown-item" id="rename-folder">
+        <span class="icon"><i class="fas fa-edit"></i></span>
+        <span>Rename</span>
+      </a>
+      <a href="#" class="dropdown-item" id="delete-folder">
+        <span class="icon"><i class="fas fa-trash"></i></span>
+        <span>Delete</span>
+      </a>
+    </div>
+  </div>
+
   {% block content %}{% endblock %}
 </body>
 </html>

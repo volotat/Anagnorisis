@@ -1,4 +1,19 @@
 <script type="module" src="pages/text/js/main.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked@9.1.2/marked.min.js"></script>
+<link href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism.min.css" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.6/dist/purify.min.js"></script>
+
+<style>
+  /* Remove list markers only from task lists (lists with checkboxes) */
+  #text_content_markdown ul:has(input[type="checkbox"]) {
+      list-style: none;
+      padding-left: 1rem;
+  }
+
+  #text_content_markdown li:has(input[type="checkbox"]) {
+      list-style: none;
+  }
+</style>
 
 <div class="container is-fluid columns is-centered py-6 mb-6">
   <aside class="column is-2 menu">
@@ -70,19 +85,23 @@
       <button class="delete modal-close modal-close-action" aria-label="close"></button>
     </header>
     <section class="modal-card-body" style="flex: 1; display: flex; flex-direction: column; padding-bottom: 0;">
-      <div class="tabs is-toggle is-fullwidth is-medium">
-        <ul>
-          <li class="is-active" data-tab="raw">
-            <a><span>Raw Text</span></a>
-          </li>
-          <li data-tab="markdown">
-            <a><span>Markdown</span></a>
-          </li>
-          <li data-tab="html">
-            <a><span>HTML</span></a>
-          </li>
-        </ul>
+      <!-- Tabs - fixed position -->
+      <div class="tabs is-toggle is-fullwidth is-normal" style="flex-shrink: 0; margin-bottom: 1rem;">
+          <ul>
+              <li class="is-active" data-tab="raw">
+                  <a><span>Raw Text</span></a>
+              </li>
+              <li data-tab="markdown">
+                  <a><span>Markdown</span></a>
+              </li>
+              <li data-tab="html">
+                  <a><span>HTML</span></a>
+              </li>
+          </ul>
       </div>
+
+
+      <!-- Content container with controlled overflow -->
       <div id="text_viewer_raw" class="tab-content" style="flex: 1; display: flex; flex-direction: column;">
         <textarea class="textarea" id="text_content_textarea" placeholder="File content..." 
           style="flex-grow: 1;
@@ -91,12 +110,12 @@
                  resize: none;
                  max-height: -webkit-fill-available;"></textarea>
       </div>
-      <div id="text_viewer_markdown" class="tab-content" style="display: none; flex: 1;">
+      <div id="text_viewer_markdown" class="tab-content" style="flex: 1; display: flex; flex-direction: column; overflow: auto;">
         <div class="content" id="text_content_markdown" style="height: 100%; border: 1px solid var(--bulma-border-color); padding: 10px; overflow-y: auto;">
           <!-- Markdown content will be rendered here -->
         </div>
       </div>
-      <div id="text_viewer_html" class="tab-content" style="display: none; flex: 1;">
+      <div id="text_viewer_html" class="tab-content" style="flex: 1; display: flex; flex-direction: column; overflow: auto;">
         <div class="content" id="text_content_html" style="height: 100%; border: 1px solid var(--bulma-border-color); padding: 10px; overflow-y: auto;">
           <!-- HTML content will be rendered here -->
         </div>

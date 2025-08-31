@@ -86,6 +86,63 @@ function renderCustomData(fileData) { // Function for custom data rendering
     return dataContainer;
 }
 
+function renderMarkdown(textContent) {
+    try {
+        // Configure marked to treat single line breaks as <br>
+        marked.setOptions({
+            breaks: true,  // Enable GitHub-flavored line breaks
+            gfm: true      // Enable GitHub Flavored Markdown
+        });
+        
+        let htmlContent = marked.parse(textContent);
+        return DOMPurify.sanitize(htmlContent);
+    } catch (error) {
+        console.error('Error parsing markdown:', error);
+        return `<p>Error rendering markdown: ${error.message}</p>`;
+    }
+}
+
+function renderHTML(textContent) {
+    // For security, sanitize HTML content using DOMPurify to prevent XSS
+    return DOMPurify.sanitize(textContent);
+}
+
+function updateTabContent(textContent) {
+    // Raw text tab
+    $('#text_content_textarea').val(textContent);
+    
+    // Markdown tab
+    const markdownHtml = renderMarkdown(textContent);
+    $('#text_content_markdown').html(markdownHtml);
+    
+    // HTML tab  
+    const htmlContent = renderHTML(textContent);
+    $('#text_content_html').html(htmlContent);
+}
+
+function setupAutoUpdate() {
+    const textarea = $('#text_content_textarea');
+    
+    // Function to update rendered content
+    function updateRenderedContent() {
+        const currentContent = textarea.val();
+        
+        // Update markdown tab
+        const markdownHtml = renderMarkdown(currentContent);
+        $('#text_content_markdown').html(markdownHtml);
+        
+        // Update HTML tab  
+        const htmlContent = renderHTML(currentContent);
+        $('#text_content_html').html(htmlContent);
+    }
+    
+    // Real-time updates on input
+    textarea.on('input keyup paste', function() {
+        // Use requestAnimationFrame for smooth updates
+        requestAnimationFrame(updateRenderedContent);
+    });
+}
+
 
 //// AFTER PAGE LOADED
 $(document).ready(function() {
@@ -109,7 +166,7 @@ $(document).ready(function() {
 
     // --- Folder View ---
     socket.on('emit_text_page_show_folders', (data) => { // NEW event handler for folders
-        const folderView = new FolderViewComponent(data.folders, data.folder_path);
+        const folderView = new FolderViewComponent(data.folders, data.folder_path, true); // Enable context menu
         $('.menu').append(folderView.getDOMElement());
     });
 
@@ -162,7 +219,20 @@ $(document).ready(function() {
         $('.tab-content').hide(); // Hide all tab contents
         $('.tabs li').removeClass('is-active'); // Deactivate all tabs
         $(`.tabs li[data-tab="${tabName}"]`).addClass('is-active'); // Activate current tab
-        $(`#text_viewer_${tabName}`).show(); // Show current tab content
+        
+        if (tabName === 'raw') {
+            $('#text_viewer_raw').show();
+            $('#text_viewer_markdown').hide();
+            $('#text_viewer_html').hide();
+        } else if (tabName === 'markdown') {
+            $('#text_viewer_raw').hide();
+            $('#text_viewer_markdown').show();
+            $('#text_viewer_html').hide();
+        } else if (tabName === 'html') {
+            $('#text_viewer_raw').hide(); 
+            $('#text_viewer_markdown').hide();
+            $('#text_viewer_html').show();
+        }
     }
     
  
@@ -189,7 +259,13 @@ $(document).ready(function() {
     socket.on('emit_text_page_show_file_content', (data) => {
         const file_path = data.file_path;
         const text_content = data.content;
-        $('#text_content_textarea').val(text_content); // Set text content in textarea           
+        // $('#text_content_textarea').val(text_content); // Set text content in textarea   
+        
+        // Update all tab contents
+        updateTabContent(text_content);
+
+        // Setup auto-update functionality
+        setupAutoUpdate();
     });
 
     // Display current search status
