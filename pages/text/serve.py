@@ -6,15 +6,38 @@ from flask_socketio import SocketIO
 
 import pages.utils
 import pages.file_manager as file_manager # or pages.utils if you put get_folder_structure there
+import pages.text.db_models as db_models
 from pages.socket_events import CommonSocketEvents
 
 import numpy as np
 
-from pages.text.engine import TextSearch #, TextEvaluator
+from pages.text.engine import TextSearch, TextEvaluator
 from pages.utils import SortingProgressCallback, EmbeddingGatheringCallback
+from pages.common_filters import CommonFilters
 
 from omegaconf import OmegaConf
 
+# EVENTS:
+
+# Incoming (handled with @socketio.on):
+
+# emit_text_page_get_folders
+# emit_text_page_get_files
+# emit_text_page_get_file_content
+# emit_text_page_save_file_content
+# emit_text_page_get_path_to_media_folder
+# emit_text_page_update_path_to_media_folder
+
+# Outgoing (explicit socketio.emit calls):
+
+# emit_text_page_show_folders
+# emit_text_page_show_files
+# emit_text_page_show_file_content
+# emit_text_page_show_path_to_media_folder
+
+# Outgoing (indirect via CommonSocketEvents):
+
+# show_search_status (emits a “search status” event from CommonSocketEvents)
 
 def get_text_preview(file_path):
     preview_text = '' # Default no preview
@@ -50,6 +73,8 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
     cached_file_hash = text_search_engine.cached_file_hash
     cached_metadata = text_search_engine.cached_metadata
 
+    text_evaluator = TextEvaluator(embedding_dim=text_search_engine.embedding_dim)
+
     #TextSearch.initiate(cfg, models_folder=cfg.main.embedding_models_path, cache_folder=cfg.main.cache_path)
     #cached_file_list = TextSearch.cached_file_list
     #cached_file_hash = TextSearch.cached_file_hash
@@ -59,182 +84,134 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
 
     embedding_gathering_callback = EmbeddingGatheringCallback(common_socket_events.show_search_status)
 
+    text_file_manager = file_manager.FileManager(
+        media_directory=media_directory,
+        engine=text_search_engine,
+        module_name="text",
+        media_formats=cfg.text.media_formats,
+        socketio=socketio,
+        db_schema=db_models.TextLibrary,
+    )
+
+    def update_model_ratings(files_list):
+        print('update_model_ratings')
+
+        # filter out files that already have a rating in the DB
+        files_list_hash_map = {file_path: cached_file_hash.get_file_hash(file_path) for file_path in files_list}
+        hash_list = list(files_list_hash_map.values())
+
+        # Fetch rated files from the database in a single query
+        rated_files_db_items = db_models.TextLibrary.query.filter(
+            db_models.TextLibrary.hash.in_(hash_list),
+            db_models.TextLibrary.model_rating.isnot(None),
+            db_models.TextLibrary.model_hash.is_(text_evaluator.hash)
+        ).all()
+
+        # Create a list of hashes for rated files
+        rated_files_hashes = {item.hash for item in rated_files_db_items}
+
+        # Filter out files that already have a rating in the database
+        filtered_files_list = [file_path for file_path, file_hash in files_list_hash_map.items() if file_hash not in rated_files_hashes]
+        if not filtered_files_list: return
+        
+
+        # Rate all files in case they are not rated or model was updated
+        embeddings = text_search_engine.process_files(filtered_files_list, callback=embedding_gathering_callback, media_folder=media_directory) #.cpu().detach().numpy() 
+        # model_ratings = text_evaluator.predict(embeddings)
+
+        # Update the model ratings in the database
+        common_socket_events.show_search_status(f"Updating model ratings of files...") 
+        new_items = []
+        update_items = []
+        last_shown_time = 0
+        for ind, full_path in enumerate(filtered_files_list):
+            print(f"Updating model ratings for {ind+1}/{len(filtered_files_list)} files.")
+
+            hash = files_list_hash_map[full_path]
+
+            # print('model_ratings[ind]', model_ratings[ind])
+            model_rating = None #model_ratings[ind].mean().item()
+
+            music_db_item = db_models.TextLibrary.query.filter_by(hash=hash).first()
+            if music_db_item:
+                music_db_item.model_rating = model_rating
+                music_db_item.model_hash = text_evaluator.hash
+                update_items.append(music_db_item)
+            else:
+                file_data = {
+                        "hash": hash,
+                        "file_path": os.path.relpath(full_path, media_directory),
+                        "model_rating": model_rating,
+                        "model_hash": text_evaluator.hash
+                }
+                new_items.append(db_models.TextLibrary(**file_data))
+
+            current_time = time.time()
+            if current_time - last_shown_time >= 1:
+                common_socket_events.show_search_status(f"Updated model ratings for {ind+1}/{len(filtered_files_list)} files.")
+                last_shown_time = current_time     
+
+        # Bulk update and insert
+        if update_items:
+                db_models.db.session.bulk_save_objects(update_items)
+        if new_items:
+                db_models.db.session.bulk_save_objects(new_items)
+
+        # Commit the transaction
+        db_models.db.session.commit()
+
     @socketio.on('emit_text_page_get_folders')  
     def get_folders(data):
         path = data.get('path', '')
-        current_path = resolve_media_path(media_directory, path)
-        folder_path = os.path.relpath(current_path, os.path.join(media_directory, '..')) + os.path.sep
-        print('folder_path', folder_path)
-
-        # Extract subfolders structure from the path into a dict
-        folders = file_manager.get_folder_structure(media_directory, cfg.text.media_formats)
-
-        # Extract main folder name
-        main_folder_name = os.path.basename(os.path.normpath(media_directory))
-        folders['name'] = main_folder_name
-
-        socketio.emit('emit_text_page_show_folders', {"folders": folders, "folder_path": folder_path})
+        return text_file_manager.get_folders(path)
 
     @socketio.on('emit_text_page_get_files')
     def get_files(data):
-        nonlocal media_directory
+        # Create common filters instance
+        common_filters = CommonFilters(
+            engine=text_search_engine,
+            common_socket_events=common_socket_events,
+            media_directory=media_directory,
+            db_schema=db_models.TextLibrary,
+            update_model_ratings_func=update_model_ratings
+        )
 
-        if media_directory is None:
-            common_socket_events.show_search_status("Text media folder is not set.")
-            return
-
-        start_time = time.time()
-
+        # Get parameters
         path = data.get('path', '')
         pagination = data.get('pagination', 0)
         limit = data.get('limit', 100)
         text_query = data.get('text_query', None)
-        
-        files_data = []
-        
-        # --- Directory Traversal Prevention ---
-        # Resolve the real, canonical path of the safe base directory.
-        safe_base_dir = os.path.realpath(media_directory)
-        
-        # Safely join the user-provided path to the base directory.
-        if path == "":
-            unsafe_path = safe_base_dir
-        else:
-            unsafe_path = os.path.join(safe_base_dir, os.pardir, path)
-        
-        # Resolve the absolute path, processing any '..' and symbolic links.
-        current_path = os.path.realpath(unsafe_path)
-        
-        # Check if the final resolved path is within the safe base directory.
-        # This is the crucial security check.
-        if os.path.commonpath([current_path, safe_base_dir]) != safe_base_dir:
-            common_socket_events.show_search_status("Access denied: Directory traversal attempt detected")
-            # Default to the safe base directory if an invalid path is provided.
-            current_path = safe_base_dir
-        # --- End of Prevention ---
+        seed = data.get('seed', None)
 
-        folder_path = os.path.relpath(current_path, os.path.join(media_directory, '..')) + os.path.sep
-        print('folder_path', folder_path)
+        # Define available filters
+        filters = {
+            # "by_file": filter_by_file, # special sorting case when file path used as query
+            "by_text": common_filters.filter_by_text, # special sorting case when text used as query, i.e. all other cases wasn't triggered
+            # "file size": filter_by_file_size,
+            # "length": filter_by_length,
+            # "similarity": filter_by_similarity, 
+            # "random": filter_by_random, 
+            # "rating": filter_by_rating, 
+            # "recommendation": filter_by_recommendation
+        }
 
-        common_socket_events.show_search_status(f"Searching for text files in '{folder_path}'.")
-
-        
-        all_files = []
-        all_files = cached_file_list.get_all_files(current_path, cfg.text.media_formats)
-        
-        print(f"Found {len(all_files)} files in {current_path}")
-        common_socket_events.show_search_status(f"Gathering hashes for {len(all_files)} files.")
-        
-        # Initialize the last shown time
-        last_shown_time = 0
-
-        # Get the hash of each file
-        all_hashes = []
-        for ind, file_path in enumerate(all_files):
-            current_time = time.time()
-            if current_time - last_shown_time >= 1:
-                common_socket_events.show_search_status(f"Gathering hashes for {ind+1}/{len(all_files)} files.")
-                last_shown_time = current_time
-            
-            all_hashes.append(cached_file_hash.get_file_hash(file_path))
-
-        cached_file_hash.save_hash_cache()
-
-
-        # Sort files by text or file query
-        common_socket_events.show_search_status(f"Sorting music files by {text_query}")
-        if text_query and len(text_query) > 0:
-            # If there is a file path in the query, sort files by similarity to that file
-            if os.path.isfile(text_query) and text_query.lower().endswith(tuple(cfg.music.media_formats)):
-                pass
-            # Sort music by file size
-            elif text_query.lower().strip() == "file size":
-                common_socket_events.show_search_status(f"Gathering file sizes for sorting...") # Initial status message
-                all_files = sorted(all_files, key=os.path.getsize)
-            # Sort music by length
-            elif text_query.lower().strip() == "length":
-                common_socket_events.show_search_status(f"Gathering resolutions for sorting...") # Initial status message
-                pass
-            # Sort music by duplicates
-            elif text_query.lower().strip() == "similarity":
-                pass
-            # Sort music randomly
-            elif text_query.lower().strip() == "random":
-                np.random.shuffle(all_files)
-            # Sort music by rating
-            elif text_query.lower().strip() == "rating": 
-                pass
-            # Sort music with recommendation engine 
-            elif text_query.lower().strip() == "recommendation":
-                pass 
-            # Sort files by the text query
+        # Define a method to gather domain specific file information
+        def get_file_info(full_path, file_hash):
+            db_item = db_models.TextLibrary.query.filter_by(hash=file_hash).first()
+                    
+            if db_item:
+                file_data = text_search_engine.cached_metadata.get_metadata(full_path, file_hash)     
             else:
-                common_socket_events.show_search_status(f"Extracting embeddings")
-                embeds_files = text_search_engine.process_files(all_files, callback=embedding_gathering_callback, media_folder=media_directory)
-                embeds_text = text_search_engine.process_text(text_query)
-                scores = text_search_engine.compare(embeds_files, embeds_text)
+                raise Exception(f"File '{full_path}' with hash '{file_hash}' not found in the database.")
+            
+            return {
+                    "user_rating": db_item.user_rating,
+                    "model_rating": db_item.model_rating,
+                    "preview_text": get_text_preview(full_path),    
+                    "file_data": file_data,
+                }
 
-                # Create a list of indices sorted by their corresponding score
-                common_socket_events.show_search_status(f"Sorting by relevance")
-                sorted_indices = sorted(range(len(scores)), key=scores.__getitem__, reverse=True)
-
-                # Use the sorted indices to sort all_files
-                all_files = [all_files[i] for i in sorted_indices]
-        
-        # Truncate the list of hashes to the current pagination
-        page_files = all_files[pagination:limit]
-        page_hashes = [cached_file_hash.get_file_hash(file_path) for file_path in page_files]
-
-        # Extracting metadata for relevant batch of files
-        common_socket_events.show_search_status(f"Extracting metadata for relevant batch of files.")
-        
-
-        # Extract DB data for the relevant batch of files
-        # text_db_items = db_models.TextLibrary.query.filter(db_models.TextLibrary.hash.in_(page_hashes)).all()
-        # text_db_items_map = {item.hash: item for item in text_db_items}
-
-        # Check if there files without model rating
-        # no_model_rating_files = [os.path.join(media_directory, item.file_path) for item in text_db_items if item.model_rating is None]
-        # print('no_model_rating_files size', len(no_model_rating_files))
-        
-        # if len(no_model_rating_files) > 0:
-        #    # Update the model ratings of all current files
-        #    update_model_ratings(no_model_rating_files)
-
-        for ind, full_path in enumerate(page_files):
-            file_path = os.path.relpath(full_path, media_directory)
-            basename = os.path.basename(full_path)
-            file_size = os.path.getsize(full_path)
-            file_hash = page_hashes[ind]
-        
-            user_rating = None
-            model_rating = None
-
-            preview_text = get_text_preview(full_path)
-
-            # if file_hash in text_db_items_map:
-            #     text_db_item = text_db_items_map[file_hash]
-            #     user_rating = text_db_item.user_rating
-            #     model_rating = text_db_item.model_rating
-
-            data = {
-                "type": "file",
-                "full_path": full_path,
-                "file_path": file_path,
-                "base_name": basename,
-                "hash": file_hash,
-                "user_rating": user_rating,
-                "model_rating": model_rating,
-                "file_size": pages.utils.convert_size(file_size),
-                "preview_text": preview_text
-            }
-            files_data.append(data)
-
-        all_files_paths = [os.path.relpath(file_path, media_directory) for file_path in all_files]
-        
-        socketio.emit('emit_text_page_show_files', {"files_data": files_data, "total_files": len(all_files), "all_files_paths": all_files_paths})
-
-        common_socket_events.show_search_status(f'{len(all_files)} files processed in {time.time() - start_time:.4f} seconds.')
+        return text_file_manager.get_files(path, pagination, limit, text_query, seed, filters, get_file_info, update_model_ratings)
 
     @socketio.on('emit_text_page_get_file_content')
     def get_file_content(data):

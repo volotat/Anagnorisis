@@ -41,4 +41,5 @@ EXPOSE 5001
 #RUN mkdir -p /app/logs
 
 # Running flask app from app.py
-CMD /venv/bin/python app.py > /app/logs/${CONTAINER_NAME:-container}_log.txt 2>&1
+#CMD /venv/bin/python app.py > /app/logs/${CONTAINER_NAME:-container}_log.txt 2>&1
+CMD ["bash", "-c", "/venv/bin/python app.py > /app/logs/${CONTAINER_NAME:-container}_log.txt 2>&1"]

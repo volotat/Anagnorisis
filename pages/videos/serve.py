@@ -22,58 +22,32 @@ import uuid
 import tempfile
 import shutil
 
+from pages.socket_events import CommonSocketEvents
+
 import pages.file_manager as file_manager
 import pages.videos.db_models as db_models
 from pages.videos.engine import VideoSearch, VideoEvaluator
 from pages.recommendation_engine import sort_files_by_recommendation
+from pages.common_filters import CommonFilters
 
-def convert_size(size_bytes):
-  if size_bytes == 0:
-      return "0B"
-  size_name = ("B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB")
-  i = int(math.floor(math.log(size_bytes, 1024)))
-  p = math.pow(1024, i)
-  s = round(size_bytes / p, 2)
-  return f"{s} {size_name[i]}"
+from pages.utils import convert_size, convert_length, time_difference
 
-def compute_distances_batched(embeds_img, batch_size=1024 * 24):
-  # Ensure input is a torch tensor (on CPU)
-  embeds_img = torch.tensor(embeds_img, dtype=torch.float32)
+# EVENTS:
 
-  num_images = embeds_img.shape[0]
-  # Initialize the distances matrix on the CPU
-  distances = torch.zeros((num_images, num_images), dtype=torch.float32)
+# Incoming (handled with @socketio.on):
 
-  for start_row in range(0, num_images, batch_size):
-    print(f"Processing row {start_row} of {num_images}")
+# emit_videos_page_get_files
+# emit_videos_page_open_file_in_folder
+# emit_videos_page_send_file_to_trash
+# emit_videos_page_video_start_playing
+# emit_videos_page_start_streaming
+# emit_videos_page_stop_streaming
 
-    end_row = min(start_row + batch_size, num_images)
-    # Move only the current batch to GPU
-    batch = embeds_img[start_row:end_row].cuda()
+# Outgoing (emitted with socketio.emit):
 
-    for start_col in range(0, num_images, batch_size):
-      end_col = min(start_col + batch_size, num_images)
-      # Move the comparison batch to GPU
-      compare_batch = embeds_img[start_col:end_col].cuda()
-      # Compute pairwise distances for the batch on GPU
-      dists_batch = torch.cdist(batch, compare_batch, p=2).cpu()  # Move results back to CPU
-      
-      distances[start_row:end_row, start_col:end_col] = dists_batch
-      if start_col != start_row:  # Fill the symmetric part of the matrix
-        distances[start_col:end_col, start_row:end_row] = dists_batch.T
+# emit_videos_page_show_search_status
+# emit_videos_page_show_files
 
-      del compare_batch  # Free the memory used by the comparison batch
-      del dists_batch  # Free the memory used by the batch
-
-    del batch  # Free the memory used by the batch
-
-  distances.fill_diagonal_(float('inf'))  # Ignore self-distances
-  distances = distances.detach().numpy()  # Convert to a NumPy array
-
-  gc.collect()  # Force garbage collection to free memory
-  torch.cuda.empty_cache()  # Free the memory used by the GPU
-  
-  return distances  # Convert to a NumPy
 
 def get_folder_structure(root_folder):
   folder_dict = {}
@@ -116,6 +90,7 @@ def generate_preview(video_path, preview_path):
     print(f"Error generating preview for {video_path}: {e}")
 
 
+
 def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data'):
   if cfg.videos.media_directory is None:
       print("Videos media folder is not set.")
@@ -138,103 +113,129 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
     nonlocal media_directory
     return send_from_directory(media_directory, filename)
   
-  video_search_engine = VideoSearch(cfg=cfg)
-  video_search_engine.initiate(models_folder=cfg.main.embedding_models_path, cache_folder=cfg.main.cache_path) # Needs actual models path
+  videos_search_engine = VideoSearch(cfg=cfg)
+  videos_search_engine.initiate(models_folder=cfg.main.embedding_models_path, cache_folder=cfg.main.cache_path) # Needs actual models path
   
   # For now, cached_file_list and cached_file_hash can be from the base search engine
-  cached_file_list = video_search_engine.cached_file_list
-  cached_file_hash = video_search_engine.cached_file_hash
+  cached_file_list = videos_search_engine.cached_file_list
+  cached_file_hash = videos_search_engine.cached_file_hash
+
+  common_socket_events = CommonSocketEvents(socketio)
+
+  videos_file_manager = file_manager.FileManager(
+        media_directory=media_directory,
+        engine=videos_search_engine,
+        module_name="videos",
+        media_formats=cfg.videos.media_formats,
+        socketio=socketio,
+        db_schema=db_models.VideosLibrary,
+    )
+  
+  def update_model_ratings(files_list):
+        print('update_model_ratings')
+
+        files_list_hash_map = {file_path: cached_file_hash.get_file_hash(file_path) for file_path in files_list}
+        hash_list = list(files_list_hash_map.values())
+
+        # Update file paths in the DB if none
+        for file_path, file_hash in files_list_hash_map.items():
+            db_item = db_models.VideosLibrary.query.filter_by(hash=file_hash).first()
+            if db_item is None or db_item.file_path is None:
+                file_data = {
+                    "hash": file_hash,
+                    "file_path": os.path.relpath(file_path, media_directory),
+                    "model_rating": None,
+                    "model_hash": None
+                }
+                new_item = db_models.VideosLibrary(**file_data)
+                db_models.db.session.add(new_item)
+
+        db_models.db.session.commit()
+
+        # # filter out files that already have a rating in the DB
+        # files_list_hash_map = {file_path: cached_file_hash.get_file_hash(file_path) for file_path in files_list}
+        # hash_list = list(files_list_hash_map.values())
+
+        # # Fetch rated files from the database in a single query
+        # rated_files_db_items = db_models.VideosLibrary.query.filter(
+        #     db_models.VideosLibrary.hash.in_(hash_list),
+        #     db_models.VideosLibrary.model_rating.isnot(None),
+        #     db_models.VideosLibrary.model_hash.is_(videos_evaluator.hash)
+        # ).all()
+
+        # # Create a list of hashes for rated files
+        # rated_files_hashes = {item.hash for item in rated_files_db_items}
+
+        # # Filter out files that already have a rating in the database
+        # filtered_files_list = [file_path for file_path, file_hash in files_list_hash_map.items() if file_hash not in rated_files_hashes]
+        # if not filtered_files_list: return
+        
+
+        # # Rate all files in case they are not rated or model was updated
+        # embeddings = videos_search_engine.process_files(filtered_files_list, callback=embedding_gathering_callback, media_folder=media_directory) #.cpu().detach().numpy() 
+        # # model_ratings = text_evaluator.predict(embeddings)
+
+        # # Update the model ratings in the database
+        # common_socket_events.show_search_status(f"Updating model ratings of files...") 
+        # new_items = []
+        # update_items = []
+        # last_shown_time = 0
+        # for ind, full_path in enumerate(filtered_files_list):
+        #     print(f"Updating model ratings for {ind+1}/{len(filtered_files_list)} files.")
+
+        #     hash = files_list_hash_map[full_path]
+
+        #     # print('model_ratings[ind]', model_ratings[ind])
+        #     model_rating = None #model_ratings[ind].mean().item()
+
+        #     music_db_item = db_models.VideosLibrary.query.filter_by(hash=hash).first()
+        #     if music_db_item:
+        #         music_db_item.model_rating = model_rating
+        #         music_db_item.model_hash = videos_evaluator.hash
+        #         update_items.append(music_db_item)
+        #     else:
+        #         file_data = {
+        #                 "hash": hash,
+        #                 "file_path": os.path.relpath(full_path, media_directory),
+        #                 "model_rating": model_rating,
+        #                 "model_hash": videos_evaluator.hash
+        #         }
+        #         new_items.append(db_models.VideosLibrary(**file_data))
+
+        #     current_time = time.time()
+        #     if current_time - last_shown_time >= 1:
+        #         common_socket_events.show_search_status(f"Updated model ratings for {ind+1}/{len(filtered_files_list)} files.")
+        #         last_shown_time = current_time     
+
+        # # Bulk update and insert
+        # if update_items:
+        #         db_models.db.session.bulk_save_objects(update_items)
+        # if new_items:
+        #         db_models.db.session.bulk_save_objects(new_items)
+
+        # # Commit the transaction
+        # db_models.db.session.commit()
+
+  @socketio.on('emit_videos_page_get_folders')  
+  def get_folders(data):
+    path = data.get('path', '')
+    return videos_file_manager.get_folders(path)
 
   @socketio.on('emit_videos_page_get_files')
-  def get_files(input_data):
-    nonlocal media_directory
+  def get_files(data):
+    # Create common filters instance
+    common_filters = CommonFilters(
+        engine=videos_search_engine,
+        common_socket_events=common_socket_events,
+        media_directory=media_directory,
+        db_schema=db_models.VideosLibrary,
+        update_model_ratings_func=update_model_ratings
+    )
 
-    if media_directory is None:
-      show_search_status("Video media folder is not set.")
-      return
-    
-    start_time = time.time()
-
-    path = input_data.get('path', '')
-    pagination = input_data.get('pagination', 0)
-    limit = input_data.get('limit', 100)
-    text_query = input_data.get('text_query', None)
-    seed = input_data.get('seed', None)
-
-    if seed is not None:
-      np.random.seed(int(seed))
-    
-    files_data = []
-
-    # --- Directory Traversal Prevention ---
-    # Resolve the real, canonical path of the safe base directory.
-    safe_base_dir = os.path.realpath(media_directory)
-    
-    # Safely join the user-provided path to the base directory.
-    if path == "":
-        unsafe_path = safe_base_dir
-    else:
-        unsafe_path = os.path.join(safe_base_dir, os.pardir, path)
-
-    # Resolve the absolute path, processing any '..' and symbolic links.
-    current_path = os.path.realpath(unsafe_path)
-    
-    # Check if the final resolved path is within the safe base directory.
-    # This is the crucial security check.
-    if os.path.commonpath([current_path, safe_base_dir]) != safe_base_dir:
-        show_search_status("Access denied: Directory traversal attempt detected")
-        # Default to the safe base directory if an invalid path is provided.
-        current_path = safe_base_dir
-    # --- End of Prevention ---
-
-    # if path == "":
-    #   current_path = media_directory
-    # else:
-    #   current_path = os.path.join(media_directory, '..', path)
-
-
-    folder_path = os.path.relpath(current_path, os.path.join(media_directory, '..')) + os.path.sep
-    print('folder_path', folder_path)
-
-    show_search_status(f"Searching for videos in '{folder_path}'.")
-
-      
-    # all_files = glob.glob(os.path.join(current_path, '**/*'), recursive=True)
-
-    # # Filter the list to only include files of certain types
-    # all_files = [f for f in all_files if f.lower().endswith(tuple(cfg.videos.media_formats))]
-
-    all_files = cached_file_list.get_all_files(current_path, cfg.videos.media_formats)
-
-    show_search_status(f"Gathering hashes for {len(all_files)} files.")
-    
-    # Initialize the last shown time
-    last_shown_time = 0
-
-    # Get the hash of each file
-    all_hashes = []
-    for ind, file_path in enumerate(all_files):
-      current_time = time.time()
-      if current_time - last_shown_time >= 1:
-        show_search_status(f"Gathering hashes for {ind+1}/{len(all_files)} files.")
-        last_shown_time = current_time
-      
-      # Get file hash, use dummy if file not found
-      try:
-          all_hashes.append(cached_file_hash.get_file_hash(file_path))
-      except FileNotFoundError:
-          all_hashes.append("file_not_found_hash_" + str(uuid.uuid4())) # Unique dummy hash
-
-    cached_file_hash.save_hash_cache()
-
-
-    # Sort image by text or image query
-    show_search_status(f"Sorting videos by {text_query}")
-    if text_query and len(text_query) > 0:
-      if text_query.lower().strip() == "random":
-        np.random.shuffle(all_files)
-      elif text_query.lower().strip() == "recommendation":
+    def filter_by_recommendation(all_files, text_query):
         # For now, we only need basic info from DB for sorting.
+        all_hashes = [cached_file_hash.get_file_hash(file_path) for file_path in all_files]
+
         # Model ratings update logic can be added later if needed.
         video_data = db_models.VideosLibrary.query.with_entities(
             db_models.VideosLibrary.hash,
@@ -257,188 +258,74 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
             full_video_data_for_sorting.append(hash_to_db_data.get(file_hash, {
                 'hash': file_hash, 'user_rating': None, 'model_rating': None, 'full_play_count': 0, 'skip_count': 0, 'last_played': None
             }))
-        all_files, scores = sort_files_by_recommendation(all_files, full_video_data_for_sorting)
+        all_files_sorted, scores = sort_files_by_recommendation(all_files, full_video_data_for_sorting)
 
-    '''
-    # Sort image by text or image query
-    show_search_status(f"Sorting images by {text_query}")
-    if text_query and len(text_query) > 0:
-      # Sort images by file size
-      if text_query.lower().strip() == "file size":
-        all_files = sorted(all_files, key=os.path.getsize)
-      # Sort images by resolution
-      elif text_query.lower().strip() == "resolution":
-        # TODO: THIS IS VERY SLOW, NEED TO OPTIMIZE
-        resolutions = {file_path: Image.open(file_path).size for file_path in all_files}
-        all_files = sorted(all_files, key=lambda x: resolutions[x][0] * resolutions[x][1])
-      # Sort images by duplicates
-      elif text_query.lower().strip() == "similarity":
-        show_search_status(f"Extracting embeddings")
-        embeds_img = ImageSearch.process_images(all_files).cpu().detach().numpy() 
+        return all_files_sorted
 
-        show_search_status(f"Computing distances between embeddings")
-        # Assuming embeds_img is an array of image embeddings
-        distances = compute_distances_batched(embeds_img)
+    path = data.get('path', '')
+    pagination = data.get('pagination', 0)
+    limit = data.get('limit', 100)
+    text_query = data.get('text_query', None)
+    seed = data.get('seed', None)
 
-        # memory inefficient but fast way to compute the pairwise distance matrix
-        # distances = np.sqrt(((embeds_img[:, np.newaxis] - embeds_img[np.newaxis, :]) ** 2).sum(axis=2))
+    filters = {
+        # "by_file": filter_by_file, # special sorting case when file path used as query
+        # "by_text": filter_by_text, # special sorting case when text used as query, i.e. all other cases wasn't triggered
+        # "file size": filter_by_file_size,
+        # "length": filter_by_length,
+        # "similarity": filter_by_similarity, 
+        "random": common_filters.filter_by_random, 
+        # "rating": filter_by_rating, 
+        "recommendation": filter_by_recommendation
+    }
 
-        # Set the diagonal to a large number to ignore self-distances
-        #np.fill_diagonal(distances, np.inf)
+    def get_file_info(full_path, file_hash):
+        basename = os.path.basename(full_path)
+        preview_path = os.path.join(os.path.dirname(full_path), basename + ".preview.png")
 
-        # Find the smallest distance for each embedding
-        min_distances = np.min(distances, axis=1)
-        
-        show_search_status(f"Clustering images by similarity")
-        ##################################################
-        # Sort the embeddings by the smallest distance
-        # if similarity is exactly zero, sort by file name
+        # Generate preview if it does not exist
+        if not os.path.exists(preview_path):
+          show_search_status(f"Generating preview for {basename}...")
+          try:
+            generate_preview(full_path, preview_path)
+            show_search_status(f"Generated preview for {basename}.")
+          except Exception as e:
+            print(f"Error generating preview for {basename}: {e}")
+            show_search_status(f"Failed to generate preview for {basename}. Using placeholder.")
 
-        # Step 1: Identify the most similar image for each image
-        # Find the index of the smallest distance for each image (ignoring self-distances)
-        target_indices = np.argmin(distances, axis=1)
+        file_size = os.path.getsize(full_path)
 
-        # Step 2: Use the min_distances of the target image
-        # Extract the min_distances for the target images
-        target_min_distances = min_distances[target_indices]
+        db_item = db_models.VideosLibrary.query.filter_by(hash=file_hash).first()
 
-        # Step 3: Adjust the sorting logic
-        # Get file sizes for all files
-        file_sizes = [os.path.getsize(file_path) for file_path in all_files]
-        # Create a list of tuples (target_min_distance, file_size, file_path) for each file
-        files_with_target_distances_and_sizes = list(zip(target_min_distances, min_distances, file_sizes, all_files))
-        # Sort the list of tuples by target_min_distance, then by file_size
-        sorted_files = sorted(files_with_target_distances_and_sizes, key=lambda x: (x[0], x[1], x[2]))
-        # Extract the sorted list of file paths
-        all_files = [file_path for _, _, _, file_path in sorted_files]
-      elif text_query.lower().strip() == "random":
-        np.random.shuffle(all_files)
-      else:
-        show_search_status(f"Extracting embeddings")
-        embeds_img = ImageSearch.process_images(all_files, callback=print_emb_extracting_status)
-        embeds_text = ImageSearch.process_text(text_query)
-        scores = ImageSearch.compare(embeds_img, embeds_text)
+        last_played = "Never"    
+        user_rating = None
+        model_rating = None
+        if db_item:
+            if db_item.last_played:
+                last_played_timestamp = db_item.last_played.timestamp()
+                last_played = time_difference(last_played_timestamp, datetime.datetime.now().timestamp())  
 
-        # Create a list of indices sorted by their corresponding score
-        show_search_status(f"Sorting by relevance")
-        sorted_indices = sorted(range(len(scores)), key=scores.__getitem__, reverse=True)
+            user_rating = db_item.user_rating
+            model_rating = db_item.model_rating
+        else:
+            pass
+            # raise Exception(f"File '{full_path}' with hash '{file_hash}' not found in the database.")
 
-        # Use the sorted indices to sort all_files
-        all_files = [all_files[i] for i in sorted_indices]
-
-    #all_files = sorted(all_files, key=os.path.basename)
-    '''
-
-    # Extracting metadata for relevant batch of videos
-    show_search_status(f"Extracting metadata for relevant batch of videos")
-    page_files = all_files[pagination:limit]
-    page_files_hashes = [cached_file_hash.get_file_hash(f) for f in page_files]
+        return {
+                #"full_path": full_path,
+                #"file_path": os.path.relpath(full_path, media_directory), # Relative path for serving
+                "preview_path": os.path.relpath(preview_path, media_directory), # Relative path for serving preview
+                "base_name": basename,
+                #"hash": file_hash,
+                "user_rating": user_rating,
+                "model_rating": model_rating,
+                "file_size": convert_size(file_size),
+                "resolution": "N/A", # Placeholder, implement proper metadata extraction later (e.g., using ffprobe)
+                "length": "N/A",     # Placeholder, implement proper metadata extraction later (e.g., using ffprobe)
+                "last_played": last_played,
+            }
     
-    # Fetch DB data for the relevant batch of videos
-    video_db_items = db_models.VideosLibrary.query.filter(db_models.VideosLibrary.hash.in_(page_files_hashes)).all()
-    video_db_items_map = {item.hash: item for item in video_db_items}
-
-    for ind, full_path in enumerate(page_files):
-      basename = os.path.basename(full_path)
-      preview_path = os.path.join(os.path.dirname(full_path), basename + ".preview.png")
-      
-      # #with open(full_path, "rb") as f:
-      # #  bytes = f.read() # read entire file as bytes
-      # #  file_size = len(bytes) # Get the file size in bytes
-      # #  hash = hashlib.md5(bytes).hexdigest() # Compute the hash of the file
-
-      #   #Use BytesIO to create a file-like object from bytes and get resolution with Pillow
-      #   #image = Image.open(BytesIO(bytes))
-      #   #resolution = image.size  # Returns a tuple (width, height)
-
-      video_file_hash = page_files_hashes[ind]
-      
-      # Generate preview if it does not exist
-      if not os.path.exists(preview_path):
-        show_search_status(f"Generating preview for {basename}...")
-        try:
-          generate_preview(full_path, preview_path)
-          show_search_status(f"Generated preview for {basename}.")
-        except Exception as e:
-          print(f"Error generating preview for {basename}: {e}")
-          show_search_status(f"Failed to generate preview for {basename}. Using placeholder.")
-
-      # data = {
-      #   "type": "file",
-      #   "full_path": full_path,
-      #   "file_path": os.path.relpath(full_path, media_directory),
-      #   "preview_path": os.path.relpath(preview_path, media_directory),
-      #   "base_name": basename,
-      #   "hash": "", #hash,
-      #   "user_rating": "...",
-      #   "model_rating": "...",
-      #   "file_size": "...", #convert_size(file_size),
-      #   "resolution": "...", #f"{resolution[0]}x{resolution[1]}",
-      # }
-      # files_data.append(data)
-
-      file_size = os.path.getsize(full_path)
-
-      user_rating = None
-      model_rating = None
-      last_played = "Never"
-
-      from pages.utils import time_difference
-      
-      # Fetch data from DB for the current video
-      video_db_item = video_db_items_map.get(video_file_hash)
-      if video_db_item:
-        user_rating = video_db_item.user_rating
-        model_rating = video_db_item.model_rating
-        if video_db_item.last_played:
-            last_played_timestamp = video_db_item.last_played.timestamp()
-            last_played = time_difference(last_played_timestamp, datetime.datetime.now().timestamp())
-        
-      data = {
-        "type": "file",
-        "full_path": full_path,
-        "file_path": os.path.relpath(full_path, media_directory), # Relative path for serving
-        "preview_path": os.path.relpath(preview_path, media_directory), # Relative path for serving preview
-        "base_name": basename,
-        "hash": video_file_hash,
-        "user_rating": user_rating,
-        "model_rating": model_rating,
-        "file_size": convert_size(file_size),
-        "resolution": "N/A", # Placeholder, implement proper metadata extraction later (e.g., using ffprobe)
-        "length": "N/A",     # Placeholder, implement proper metadata extraction later (e.g., using ffprobe)
-        "last_played": last_played,
-      }
-      files_data.append(data)
-    
-                 
-    # Extract subfolders structure from the path into a dict
-    #folders = get_folder_structure(media_directory)
-    folders = file_manager.get_folder_structure(media_directory, cfg.videos.media_formats)
-
-    # Return "No files in the directory" if the path not exist or empty.
-    if not folders:
-      show_search_status(f"No files in the directory.")
-      socketio.emit('emit_videos_page_show_files', {"files_data": files_data, "folder_path": folder_path, "total_files": 0, "folders": folders, "all_files_paths": []})
-      return
-
-    # Extract main folder name
-    main_folder_name = os.path.basename(os.path.normpath(media_directory))
-    folders['name'] = main_folder_name
-
-    all_files_paths = [os.path.relpath(file_path, media_directory) for file_path in all_files]
-    
-    socketio.emit('emit_videos_page_show_files', {"files_data": files_data, "folder_path": folder_path, "total_files": len(all_files), "folders": folders, "all_files_paths": all_files_paths})
-
-    show_search_status(f'{len(all_files)} files processed in {time.time() - start_time:.4f} seconds.')
-
-
-    # # Extract main folder name
-    # main_folder_name = os.path.basename(os.path.normpath(media_directory))
-    # folders = {main_folder_name: folders}
-    
-    # socketio.emit('emit_videos_page_show_files', {"files_data": files_data, "folder_path": folder_path, "total_files": len(all_files), "folders": folders})
-
-    # show_search_status(f'{len(all_files)} videos processed in {time.time() - start_time:.4f} seconds.')
+    return videos_file_manager.get_files(path, pagination, limit, text_query, seed, filters, get_file_info, update_model_ratings)
 
   @socketio.on('emit_videos_page_open_file_in_folder')
   def open_file_in_folder(file_path):

@@ -17,6 +17,7 @@ Remove from DB images that no longer exist in the media folder and have no user 
 Make number of images per page adjustable via config.yaml file.  
 Make number of columns of images presented dependent on the screen size. 
 Add BRISQUE score filter for simple image quality assessment. 
+Replace SigLIP model with more powerful MobileClip2.
 
 ### Train page
 Disable the start button if fine-tuning has already started.  
@@ -40,11 +41,27 @@ Add pop-up messages about new version of the project available to download and s
 When starting the Docker container, if the provided path to the share folder does not exists the error should be displayed and the container should not start.
 Add a way to create new folders in the UI.  
 Add a way to copy path to a folder trough the UI.  
+When gathering hashes of files make the cache saving once in a while, as this process might take quite a long time especially for video files.
+All active filters should be automatically gathered from the backend and displayed in the UI, instead of being hardcoded in the frontend.
 
 ### Ideas
 Add new downloadable module for 'Deep Research'-like functionality that uses user-trained text evaluating model to search for relative information adjusted to user preferences.
 
 ## Versions History
+
+### Version 0.2.7 (18.09.2025)
+*   **Architecture & Code Refactoring:**
+    *   Global code refactoring in the `serve.py` files across all modules (`Images`, `Music`, `Text`, `Videos`) to significantly reduce code duplication and improve maintainability.
+    *   Moved common `get_files` functionality into the `FileManager` class (`pages/file_manager.py`) for reuse across all modules.
+    *   Centralized common filtering options into a new `CommonFilters` class (`pages/common_filters.py`), while retaining domain-specific filters in their respective modules.
+    *   Pinpoint changes in some elements names and other minor changes.
+*   **UI & UX Enhancements:**
+    *   `FileGridComponent` is now consistently used in all modules (`Images`, `Music`, `Text`, and `Videos`) for displaying files, replacing custom implementations.
+    *   The columns in `FileGridComponent` now dynamically adjust to the screen size, with a minimum tile width of `18rem`.
+    *   `Update Playlist` buttons are now correctly disabled until file data has completely loaded, preventing potential errors.
+    *   The displays for media folder paths have been temporarily hidden, as these paths are now statically configured in the `.env` file.
+*   **Video Module Improvements:**
+    *   Implemented autoplay for the next video in the `Videos` module. When the current video finishes, the next one in the current view will start playing automatically.
 
 ### Version 0.2.6 (31.08.2025)
 *   **Security & Path Traversal Prevention:**

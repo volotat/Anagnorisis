@@ -1,5 +1,5 @@
 class FileGridComponent {
-  constructor({ containerId, filesData, renderPreviewContent, renderCustomData, renderActions, handleFileClick, numColumns = 5}) {
+  constructor({ containerId, filesData, renderPreviewContent, renderCustomData, renderActions, handleFileClick, numColumns = 5, minTileWidth = '20rem'}) {
     this.containerId = containerId; // ID of the HTML container to render the grid in
     this.filesData = filesData;     // Array of file data objects
     this.renderPreviewContent = renderPreviewContent; // Function to render preview content (customizable)
@@ -7,6 +7,7 @@ class FileGridComponent {
     this.renderActions = renderActions;       // Function to render actions (customizable)
     this.handleFileClick = handleFileClick;     // Function to handle file click events (customizable)
     this.numColumns = numColumns;             // Number of columns in the grid
+    this.minTileWidth = minTileWidth;         // Minimum width of each tile
     this.render(); // Initial rendering
   }
 
@@ -18,8 +19,13 @@ class FileGridComponent {
       container.html('<p>No files to display.</p>'); // Handle empty data case
       return;
     }
-
-    let gridHTML = `<div class="fixed-grid has-${this.numColumns}-cols is-gap-0.5"><div class="grid" id="file_grid_inner_container"></div></div>`;
+    
+    const gridHTML = `
+      <div class="grid is-gap-0.5" id="file_grid_inner_container"
+           style="
+             grid-template-columns: repeat(auto-fill, minmax(${this.minTileWidth}, 1fr)); 
+           ">
+      </div>`;
     container.append(gridHTML);
     const innerContainer = container.find('#file_grid_inner_container');
 

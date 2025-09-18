@@ -44,8 +44,8 @@
 <!-- PAGE MAIN CONTENT -->
 <div class="container is-fluid columns is-centered py-6">
   <aside class="column is-2 menu">
-    <p class="menu-label">Path to local image library</p>
-    <div class="field has-addons">
+    <p class="menu-label is-hidden">Path to local image library</p>
+    <div class="field has-addons is-hidden">
       <div class="control is-expanded">
         <input class="input is-fullwidth" id="path_to_media_folder" type="text" placeholder="Write folder path here">
       </div>
@@ -53,10 +53,6 @@
         <button class="button is-info" id="update_path_to_media_folder">Save</button>
       </div>
     </div>
-    
-    <ul class="menu-list" id="folders_menu">
-      ...
-    </ul>
   </aside>
 
   <div class="column">
@@ -143,7 +139,7 @@
     </nav>
 
     <!-- Grid with previews of images -->
-    <div id="images_preview_container">
+    <div id="images_grid_container">
     </div>
 
     <!-- Pagination and status on bottom-->

@@ -25,6 +25,33 @@ from pages.utils import convert_size
 from pages.utils import SortingProgressCallback, EmbeddingGatheringCallback
 from pages.socket_events import CommonSocketEvents
 import pages.file_manager as file_manager
+from pages.common_filters import CommonFilters
+
+from pages.utils import convert_size, convert_length, time_difference
+
+# EVENTS:
+# Incoming (handled with @socketio.on):
+
+# emit_images_page_get_files
+# emit_images_page_move_files
+# emit_images_page_open_file_in_folder
+# emit_images_page_send_file_to_trash
+# emit_images_page_send_files_to_trash
+# emit_images_page_set_image_rating
+# emit_images_page_get_path_to_media_folder
+# emit_images_page_update_path_to_media_folder
+# emit_images_page_get_image_metadata_file_content
+# emit_images_page_save_image_metadata_file_content
+
+# Also should be:
+# emit_images_page_get_folders
+
+# Outgoing (emitted with socketio.emit):
+
+# emit_images_page_show_search_status
+# emit_images_page_show_files
+# emit_images_page_show_path_to_media_folder
+# emit_images_page_show_image_metadata_content
 
 def compute_distances_batched(embeds_img, batch_size=1024 * 24):
   # Ensure input is a torch tensor (on CPU)
@@ -96,8 +123,12 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
     # media_directory = os.path.join(data_folder, cfg.images.media_directory)
     media_directory = cfg.images.media_directory
   
-  image_search_engine = ImageSearch(cfg=cfg)
-  image_search_engine.initiate(models_folder=cfg.main.embedding_models_path, cache_folder=cfg.main.cache_path)
+  images_search_engine = ImageSearch(cfg=cfg)
+  images_search_engine.initiate(models_folder=cfg.main.embedding_models_path, cache_folder=cfg.main.cache_path)
+
+  cached_file_list = images_search_engine.cached_file_list
+  cached_file_hash = images_search_engine.cached_file_hash
+  cached_metadata = images_search_engine.cached_metadata
 
   image_evaluator = ImageEvaluator() #src.scoring_models.Evaluator(embedding_dim=768)
   image_evaluator.load(os.path.join(cfg.main.personal_models_path, 'image_evaluator.pt'))
@@ -113,7 +144,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
       file_path = os.path.relpath(full_path, media_directory)
       file_hash = all_hashes[ind]
 
-      image_metadata = image_search_engine.cached_metadata.get_metadata(full_path, file_hash)
+      image_metadata = images_search_engine.cached_metadata.get_metadata(full_path, file_hash)
       if 'resolution' not in image_metadata:
         raise Exception(f"Resolution not found for image: {file_path}")
       
@@ -121,14 +152,25 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
       progress_callback(ind + 1, len(all_files)) # Update progress
 
     return resolutions
+  
+  common_socket_events = CommonSocketEvents(socketio)
 
   embedding_gathering_callback = EmbeddingGatheringCallback(show_search_status)
+
+  images_file_manager = file_manager.FileManager(
+    media_directory=media_directory,
+    engine=images_search_engine,
+    module_name="images",
+    media_formats=cfg.images.media_formats,
+    socketio=socketio,
+    db_schema=db_models.ImagesLibrary,
+  )
   
 
   def update_model_ratings(files_list):
     print(files_list)
     # filter out files that already have a rating in the DB
-    files_list_hash_map = {file_path: image_search_engine.cached_file_hash.get_file_hash(file_path) for file_path in files_list}
+    files_list_hash_map = {file_path: images_search_engine.cached_file_hash.get_file_hash(file_path) for file_path in files_list}
     hash_list = list(files_list_hash_map.values())
 
     # Fetch rated images from the database in a single query
@@ -147,7 +189,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
     
 
     # Rate all images in case they are not rated or model was updated
-    embeddings = image_search_engine.process_images(filtered_files_list, callback=embedding_gathering_callback, media_folder=media_directory) #.cpu().detach().numpy() 
+    embeddings = images_search_engine.process_images(filtered_files_list, callback=embedding_gathering_callback, media_folder=media_directory) #.cpu().detach().numpy() 
     model_ratings = image_evaluator.predict(embeddings)
 
     # Update the model ratings in the database
@@ -194,256 +236,90 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
   def serve_image_files(filename):
     nonlocal media_directory
     return send_from_directory(media_directory, filename)
+  
+  @socketio.on('emit_images_page_get_folders')  
+  def get_folders(data):
+    path = data.get('path', '')
+    return images_file_manager.get_folders(path)
 
   @socketio.on('emit_images_page_get_files')
   def get_files(input_data):
-    nonlocal media_directory
+    # Define domain specific filters 
+    def filter_by_resolution(all_files, text_query):
+      show_search_status(f"Gathering resolutions for sorting...") # Initial status message
+      all_hashes = [cached_file_hash.get_file_hash(file_path) for file_path in all_files]
+      resolutions = gather_resolutions(all_files, all_hashes, media_directory)
+      all_files_sorted = sorted(all_files, key=lambda x: resolutions[x][0] * resolutions[x][1])
+      return all_files_sorted
 
-    if media_directory is None:
-      show_search_status("Images media folder is not set.")
-      return
+    def filter_by_proportion(all_files, text_query):
+      show_search_status(f"Gathering resolutions for sorting...") # Initial status message
+      all_hashes = [cached_file_hash.get_file_hash(file_path) for file_path in all_files]
+      resolutions = gather_resolutions(all_files, all_hashes, media_directory)
+      all_files_sorted = sorted(all_files, key=lambda x: resolutions[x][0] / resolutions[x][1])
+      return all_files_sorted
 
-    start_time = time.time()
+    # Create common filters instance
+    common_filters = CommonFilters(
+        engine=images_search_engine,
+        common_socket_events=common_socket_events,
+        media_directory=media_directory,
+        db_schema=db_models.ImagesLibrary,
+        update_model_ratings_func=update_model_ratings
+    )
 
+    # Get parameters
     path = input_data.get('path', '')
     pagination = input_data.get('pagination', 0)
     limit = input_data.get('limit', 100)
     text_query = input_data.get('text_query', None)
     seed = input_data.get('seed', None)
 
-    if seed is not None:
-      np.random.seed(int(seed))
-    
-    files_data = []
+    # Define available filters
+    filters = {
+      "by_file": common_filters.filter_by_file, # special sorting case when file path used as query
+      "by_text": common_filters.filter_by_text, # special sorting case when text used as query, i.e. all other cases wasn't triggered
+      "file size": common_filters.filter_by_file_size,
+      "resolution": filter_by_resolution,
+      "proportion": filter_by_proportion,
+      "similarity": common_filters.filter_by_similarity, 
+      "random": common_filters.filter_by_random, 
+      "rating": common_filters.filter_by_rating, 
+      # "recommendation": filter_by_recommendation
+    }
 
-    # --- Directory Traversal Prevention ---
-    # Resolve the real, canonical path of the safe base directory.
-    safe_base_dir = os.path.realpath(media_directory)
-    
-    # Safely join the user-provided path to the base directory.
-    if path == "":
-        unsafe_path = safe_base_dir
-    else:
-        unsafe_path = os.path.join(safe_base_dir, os.pardir, path)
-    
-    # Resolve the absolute path, processing any '..' and symbolic links.
-    current_path = os.path.realpath(unsafe_path)
-    
-    # Check if the final resolved path is within the safe base directory.
-    # This is the crucial security check.
-    if os.path.commonpath([current_path, safe_base_dir]) != safe_base_dir:
-        show_search_status("Access denied: Directory traversal attempt detected.")
-        # Default to the safe base directory if an invalid path is provided.
-        current_path = safe_base_dir
-    # --- End of Prevention ---
-
-    # if path == "":
-    #   current_path = media_directory
-    # else:
-    #   current_path = os.path.abspath(os.path.join(media_directory, '..', path))
-
-
-    folder_path = os.path.relpath(current_path, os.path.join(media_directory, '..')) + os.path.sep
-    print('folder_path', folder_path)
-
-    show_search_status(f"Searching for images in '{folder_path}'.")
-  
-    # Walk with cache 1.5s for 66k files
-    all_files = image_search_engine.cached_file_list.get_all_files(current_path, cfg.images.media_formats)
-
-    show_search_status(f"Gathering hashes for {len(all_files)} images.")
-    
-    # Initialize the last shown time
-    last_shown_time = 0
-
-    # Get the hash of each file
-    all_hashes = []
-    for ind, file_path in enumerate(all_files):
-      current_time = time.time()
-      if current_time - last_shown_time >= 1:
-        show_search_status(f"Gathering hashes for {ind+1}/{len(all_files)} images.")
-        last_shown_time = current_time
-      
-      all_hashes.append(image_search_engine.cached_file_hash.get_file_hash(file_path))
-
-    image_search_engine.cached_file_hash.save_hash_cache()
-
-
-    # Sort image by text or image query
-    show_search_status(f"Sorting images by {text_query}")
-    if text_query and len(text_query) > 0:
-      # If there is an image file with the path of the query, sort image by similarity to that image
-      if os.path.isfile(text_query) and text_query.lower().endswith(tuple(cfg.images.media_formats)):
-        target_path = text_query
-        show_search_status(f"Extracting embeddings")
-        embeds_img = image_search_engine.process_images(all_files, callback=embedding_gathering_callback, media_folder=media_directory)
-        target_emb = image_search_engine.process_images([target_path], callback=embedding_gathering_callback, media_folder=media_directory)
-
-        show_search_status(f"Computing distances between embeddings")
-        scores = torch.cdist(embeds_img, target_emb, p=2).cpu().detach().numpy() 
-
-        # Create a list of indices sorted by their corresponding score
-        sorted_indices = sorted(range(len(scores)), key=scores.__getitem__)
-
-        # Use the sorted indices to sort all_files
-        all_files = [all_files[i] for i in sorted_indices]
-      # Sort images by file size
-      elif text_query.lower().strip() == "file size":
-        all_files = sorted(all_files, key=os.path.getsize)
-      # Sort images by resolution
-      elif text_query.lower().strip() == "resolution":
-        show_search_status(f"Gathering resolutions for sorting...") # Initial status message
-        resolutions = gather_resolutions(all_files, all_hashes, media_directory)
-        all_files = sorted(all_files, key=lambda x: resolutions[x][0] * resolutions[x][1])
-      # Sort images by proportion
-      elif text_query.lower().strip() == "proportion":
-        show_search_status(f"Gathering resolutions for sorting...") # Initial status message
-        resolutions = gather_resolutions(all_files, all_hashes, media_directory)
-        all_files = sorted(all_files, key=lambda x: resolutions[x][0] / resolutions[x][1])
-      # Sort images by duplicates
-      elif text_query.lower().strip() == "similarity":
-        show_search_status(f"Extracting embeddings")
-        embeds_img = image_search_engine.process_images(all_files, callback=embedding_gathering_callback, media_folder=media_directory).cpu().detach().numpy() 
-
-        show_search_status(f"Computing distances between embeddings")
-        # Assuming embeds_img is an array of image embeddings
-        distances = compute_distances_batched(embeds_img)
-
-        # memory inefficient but fast way to compute the pairwise distance matrix
-        # distances = np.sqrt(((embeds_img[:, np.newaxis] - embeds_img[np.newaxis, :]) ** 2).sum(axis=2))
-
-        # Set the diagonal to a large number to ignore self-distances
-        #np.fill_diagonal(distances, np.inf)
-
-        # Find the smallest distance for each embedding
-        min_distances = np.min(distances, axis=1)
-        
-        show_search_status(f"Clustering images by similarity")
-        ##################################################
-        # Sort the embeddings by the smallest distance
-        # if similarity is exactly zero, sort by file name
-
-        # Step 1: Identify the most similar image for each image
-        # Find the index of the smallest distance for each image (ignoring self-distances)
-        target_indices = np.argmin(distances, axis=1)
-
-        # Step 2: Use the min_distances of the target image
-        # Extract the min_distances for the target images
-        target_min_distances = min_distances[target_indices]
-
-        # Step 3: Adjust the sorting logic
-        # Get file sizes for all files
-        file_sizes = [os.path.getsize(file_path) for file_path in all_files]
-        # Create a list of tuples (target_min_distance, min_distances, file_size, file_path) for each file
-        files_with_target_distances_and_sizes = list(zip(target_min_distances, min_distances, file_sizes, all_files))
-        # Sort the list of tuples by target_min_distance, then by file_size
-        sorted_files = sorted(files_with_target_distances_and_sizes, key=lambda x: (x[0], x[1], x[2]))
-        # Extract the sorted list of file paths
-        all_files = [file_path for _, _, _, file_path in sorted_files]
-      # Sort images randomly
-      elif text_query.lower().strip() == "random":
-        np.random.shuffle(all_files)
-      # Sort images by rating
-      elif text_query.lower().strip() == "rating": 
-        # Update the model ratings of all current images
-        update_model_ratings(all_files)
-
-        # Get all ratings from the database
-        items = db_models.ImagesLibrary.query.filter(db_models.ImagesLibrary.hash.in_(all_hashes)).all()
-
-        # Create a dictionary to map hashes to their ratings
-        hash_to_rating = {item.hash: item.user_rating if item.user_rating is not None else item.model_rating for item in items}
-
-        # Iterate over all_hashes and populate all_ratings using the dictionary
-        all_ratings = [hash_to_rating.get(hash) for hash in all_hashes]
-
-        # Calculate the mean score considering that there might be None values
-        mean_score = np.mean([rating for rating in all_ratings if rating is not None])
-
-        # Replace None values with the mean score
-        all_ratings = [rating if rating is not None else mean_score for rating in all_ratings]
-
-        # Sort the files by the ratings
-        all_files = [file_path for _, file_path in sorted(zip(all_ratings, all_files), reverse=True)]
-      # Sort images by the text query
-      else:
-        show_search_status(f"Extracting embeddings")
-        embeds_img = image_search_engine.process_images(all_files, callback=embedding_gathering_callback, media_folder=media_directory)
-        embeds_text = image_search_engine.process_text(text_query)
-        scores = image_search_engine.compare(embeds_img, embeds_text)
-
-        # Create a list of indices sorted by their corresponding score
-        show_search_status(f"Sorting by relevance")
-        sorted_indices = sorted(range(len(scores)), key=scores.__getitem__, reverse=True)
-
-        # Use the sorted indices to sort all_files
-        all_files = [all_files[i] for i in sorted_indices]
-
-    #all_files = sorted(all_files, key=os.path.basename)
-
-
-    # Extracting metadata for relevant batch of images
-    show_search_status(f"Extracting metadata for relevant batch of images")
-    page_files = all_files[pagination:limit]
-    page_hashes = [image_search_engine.cached_file_hash.get_file_hash(file_path) for file_path in page_files]
-
-    # Extract DB data for the relevant batch of images
-    image_db_items = db_models.ImagesLibrary.query.filter(db_models.ImagesLibrary.hash.in_(page_hashes)).all()
-    image_db_items_map = {item.hash: item for item in image_db_items}
-
-    # Check if there images without model rating
-    no_model_rating_images = [os.path.join(media_directory, item.file_path) for item in image_db_items if item.model_rating is None]
-    print('no_model_rating_images size', len(no_model_rating_images))
-
-    if len(no_model_rating_images) > 0:
-      # Update the model ratings of all current images
-      update_model_ratings(no_model_rating_images)
-
-    for ind, full_path in enumerate(page_files):
+    # Define a method to gather domain specific file information
+    def get_file_info(full_path, file_hash):
       file_path = os.path.relpath(full_path, media_directory)
       basename = os.path.basename(full_path)
       file_size = os.path.getsize(full_path)
-      file_hash = page_hashes[ind]
 
-      image_metadata = image_search_engine.cached_metadata.get_metadata(full_path, file_hash)
+      image_metadata = images_search_engine.cached_metadata.get_metadata(full_path, file_hash)
       resolution = image_metadata.get('resolution')  # Returns a tuple (width, height)
     
       user_rating = None
       model_rating = None
 
-      if file_hash in image_db_items_map:
-        image_db_item = image_db_items_map[file_hash]
-        user_rating = image_db_item.user_rating
-        model_rating = image_db_item.model_rating
+      db_item = db_models.ImagesLibrary.query.filter_by(hash=file_hash).first()
 
-      data = {
-        "type": "file",
-        "full_path": full_path,
+      if db_item:
+        user_rating = db_item.user_rating
+        model_rating = db_item.model_rating
+        file_data = images_search_engine.cached_metadata.get_metadata(full_path, file_hash)
+      else:
+        raise Exception(f"File '{full_path}' with hash '{file_hash}' not found in the database.")
+
+      return {
         "file_path": file_path,
         "base_name": basename,
-        "hash": file_hash,
         "user_rating": user_rating,
         "model_rating": model_rating,
         "file_size": convert_size(file_size),
         "resolution": f"{resolution[0]}x{resolution[1]}" if resolution else "N/A",
+        "file_data": file_data
       }
-      files_data.append(data)
 
-    # Save all extracted metadata to the cache
-    image_search_engine.cached_metadata.save_metadata_cache()
-                 
-    # Extract subfolders structure from the path into a dict
-    folders = get_folder_structure(media_directory, cfg.images.media_formats)
-
-    # Extract main folder name
-    main_folder_name = os.path.basename(os.path.normpath(media_directory))
-    folders['name'] = main_folder_name
-
-    print(folders)
-    
-    socketio.emit('emit_images_page_show_files', {"files_data": files_data, "folder_path": folder_path, "total_files": len(all_files), "folders": folders})
-
-    show_search_status(f'{len(all_files)} images processed in {time.time() - start_time:.4f} seconds.')
+    return images_file_manager.get_files(path, pagination, limit, text_query, seed, filters, get_file_info, update_model_ratings)
 
   @socketio.on('emit_images_page_move_files')
   def move_files(data):

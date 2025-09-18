@@ -5,8 +5,8 @@
 
 <div class="container is-fluid columns is-centered py-6 mb-6">
   <aside class="column is-2 menu">
-    <p class="menu-label">Path to local music library</p>
-    <div class="field has-addons">
+    <p class="menu-label is-hidden">Path to local music library</p>
+    <div class="field has-addons is-hidden">
       <div class="control is-expanded">
         <input class="input is-fullwidth" id="path_to_media_folder" type="text" placeholder="Write folder path here">
       </div>
@@ -60,8 +60,9 @@
       </div>
     </nav>
 
-    <!-- Grid with previews of images -->
-    <div id="images_preview_container">
+    <!-- Grid with previews -->
+    <div id="music_grid_container"> 
+      <!-- Files will be listed here -->
     </div>
 
     <!-- Pagination and status on bottom-->
@@ -193,7 +194,7 @@
   <nav id="song_control_panel_dectivated" class="navbar is-fixed-bottom is-mobile is-light m-0 p-4 is-flex is-flex-direction-column song-control-panel"> 
     <!-- Activate Playlist Button -->
     <div class="navbar-item level is-justify-content-center">
-      <button class="button is-info update_playlist">Play as playlist</button>
+      <button class="button is-info update_playlist" disabled>Play as playlist</button>
     </div>
   </nav>
 
@@ -258,7 +259,7 @@
     
     <div class="panel is-info p-4" style="overflow: hidden; height: 100%;">
       <!-- refresh playlist from the currently active folder or selected files -->
-      <button class="button is-info is-fullwidth mb-4 update_playlist">Refresh playlist</button>
+      <button class="button is-info is-fullwidth mb-4 update_playlist" disabled>Refresh playlist</button>
       
       <!-- playlist content goes here -->
       <div class="p-4 pb-6" id="playlist_content">

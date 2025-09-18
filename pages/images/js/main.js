@@ -1,11 +1,14 @@
+import FolderViewComponent from '/pages/FolderViewComponent.js';
 import StarRatingComponent from '/pages/StarRating.js';
+import PaginationComponent from '/pages/PaginationComponent.js';
 import FileGridComponent from '/pages/FileGridComponent.js';
+
 
 // Create a closed scope to avoid any variable collisions  
 (function() {
   //// CONSTANTS AND VARIABLES
-  let num_images_on_page = 60;
-  let num_images_in_row = 6; // TODO: calculate from the screen size
+  let num_files_on_page = 60;
+  let num_files_in_row = 6; // TODO: calculate from the screen size
   let selected_files = [];
   let currentImageMetadataFilePath = null; // To store currently opened image file path for metadata
 
@@ -50,7 +53,7 @@ import FileGridComponent from '/pages/FileGridComponent.js';
           rating: rating,
         });
       },
-      initialRating: fileData.user_rating,
+      initialRating: fileData.file_info.user_rating,
     });
   
     // Create an object for holding the image data
@@ -119,7 +122,7 @@ import FileGridComponent from '/pages/FileGridComponent.js';
   
     // Create a new star rating component (need to be created here to be accessible in the closure)
     const starRating = new StarRatingComponent({
-      initialRating: fileData.user_rating,
+      initialRating: fileData.file_info.user_rating,
     });
 
     const StarRatingComponentObject = starRating.issueNewHtmlComponent({ // Use the *global* starRatingComponent
@@ -132,14 +135,14 @@ import FileGridComponent from '/pages/FileGridComponent.js';
     $(data).append('<br>');
   
   
-    if (fileData.model_rating != null){
-      $(data).append('<b>Model rating:</b>&nbsp;' + fileData.model_rating.toFixed(2) + '/10<br>');
+    if (fileData.file_info.model_rating != null){
+      $(data).append('<b>Model rating:</b>&nbsp;' + fileData.file_info.model_rating.toFixed(2) + '/10<br>');
     } else {
       $(data).append('<b>Model rating:</b>&nbsp;N/A<br>');
     }
   
     $(data).append('<b>File size:</b>&nbsp;' + fileData.file_size + '<br>');
-    $(data).append('<b>Resolution:</b>&nbsp;' + fileData.resolution + '<br><br>');
+    $(data).append('<b>Resolution:</b>&nbsp;' + fileData.file_info.resolution + '<br><br>');
   
     dataContainer.appendChild(data); // Append data to the container
   
@@ -396,70 +399,65 @@ import FileGridComponent from '/pages/FileGridComponent.js';
 
   //// AFTER PAGE LOADED
   $(document).ready(function() {
+    let paginationComponent;
+
     // Request current media folder path
     socket.emit('emit_images_page_get_path_to_media_folder');
 
     // Request files from the main media folder
+    // --- Folder View ---
+    socket.emit('emit_images_page_get_folders', {
+      path: path, 
+    }, (response) => { // event handler for folders
+      console.log('emit_images_page_get_folders response', response);
+
+      const folderView = new FolderViewComponent(response.folders, response.folder_path, false); // Enable context menu
+      $('.menu').append(folderView.getDOMElement());
+    });
+    
+    // --- File List ---
     socket.emit('emit_images_page_get_files', {
       path: path, 
-      pagination: (page-1)*num_images_on_page, 
-      limit: page * num_images_on_page,
+      pagination: (page-1)*num_files_on_page, 
+      limit: page * num_files_on_page,
       text_query: text_query,
       seed: seed
-    });
+    }, (response)=>{
+      console.log('emit_images_page_get_files response', response);
+      // Handle the response here
+      //all_files_paths = response["all_files_paths"];
 
-    // Display files from the folder
-    socket.on('emit_images_page_show_files', (data) => {
-      console.log('emit_images_page_show_files', data);
-
+      // Update or Initialize FileGridComponent
       const fileGridComponent = new FileGridComponent({
-        containerId: '#images_preview_container',
-        filesData: data.files_data,
-        renderPreviewContent: renderImagePreview, // Use your customized renderImagePreview
-        renderCustomData: renderCustomData,
-        renderActions: renderActions,
-        handleFileClick: (fileData) => {
-          //window.photoGalleryLightbox.loadAndOpen(0, $('#images_grid_container div.cell').toArray())
-        },
-        numColumns: 6,
+          containerId: '#images_grid_container', // Use the new container ID
+          filesData: response.files_data,
+          renderPreviewContent: renderImagePreview, // Pass the text preview function
+          renderCustomData: renderCustomData, // Pass the custom data rendering function
+          renderActions: renderActions, // Pass the actions rendering function
+          handleFileClick: (fileData) => {
+            // ?
+          },
+          numColumns: num_files_in_row, 
+          minTileWidth: "18rem",
       });
 
-      // update the pagination
-      $(".pagination-list").empty();
-      let total_pages = Math.ceil(data["total_files"] / num_images_on_page);
+      // Update or Initialize Pagination Component
+      const paginationContainer = $('.pagination.is-rounded.level-left.mb-0 .pagination-list'); // Select pagination container
+      const urlParams = new URLSearchParams(window.location.search); // Get URL parameters for pattern
+      const urlPattern = `?${urlParams.toString()}`;
 
-      for (let i = 1; i <= total_pages; i++) {
-        // only include the first, one before, one after, and last pages
-        if (i == 1 || i == page - 1 || i == page || i == page + 1 || i == total_pages) {
-          //let link = `page=${i}`;
-          urlParams.set('page', i);
-          
-          if (text_query){
-            let encoded_text_query = encodeURIComponent(text_query);
-            //link = link + `&text_query=${encoded_text_query}`
-            urlParams.set('text_query', encoded_text_query);
-          }
-          console.log('urlParams', urlParams.toString());
-
-          let template = /*html*/`<li>
-            <a href="?${urlParams.toString()}" class="pagination-link ${i == page?'is-current':''}" aria-label="Goto page ${i}">${i}</a>
-          </li>`
-          $(".pagination-list").append(template);
-        }
-        // add ellipsis when there are skipped pages
-        else if (i == 2 && page > 3 || i == total_pages - 1 && page < total_pages - 2) {
-          let template = /*html*/`<li>
-            <span class="pagination-ellipsis">&hellip;</span>
-          </li>`
-          $(".pagination-list").append(template);
-        }
+      if (!paginationComponent) { // Instantiate PaginationComponent if it doesn't exist yet
+          paginationComponent = new PaginationComponent({
+              containerId: paginationContainer.closest('.pagination').get(0), // Pass the pagination nav element
+              currentPage: page,
+              totalPages: Math.ceil(response["total_files"] / num_files_on_page),
+              urlPattern: urlPattern,
+          });
+      } else { // Update existing PaginationComponent
+          paginationComponent.updatePagination(page, Math.ceil(response["total_files"] / num_files_on_page));
       }
 
-      // Create folder representation from data["folders"] dictionary
-      let folderRepresentation = create_folder_representation(data["folders"], data["folder_path"]);
 
-      // Add the folder representation to the page
-      $('#folders_menu').html(folderRepresentation);
 
       // Initialize photoSwipe gallery
       window.photoGalleryLightbox.on('uiRegister', function() {
@@ -511,11 +509,11 @@ import FileGridComponent from '/pages/FileGridComponent.js';
         });
       });
       window.photoGalleryLightbox.init();
-
     });
 
+
     // Display current search status
-    socket.on('emit_images_page_show_search_status', (status) => {
+    socket.on('emit_show_search_status', (status) => {
       $('.image-search-status').html(status);
     });
 

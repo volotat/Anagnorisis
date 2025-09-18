@@ -27,7 +27,7 @@ function replaceNewLinesWithBreaks(text) {
 function renderTextPreview(fileData) { // Function for Text module preview
     const previewText = document.createElement('p');
     previewText.className = 'text-preview'; // Add class for styling
-    previewText.textContent = fileData.preview_text || 'No preview available';
+    previewText.textContent = fileData.file_info.preview_text || 'No preview available';
     
     // Set basic styling
     previewText.style.overflow = 'hidden';
@@ -146,39 +146,37 @@ function setupAutoUpdate() {
 
 //// AFTER PAGE LOADED
 $(document).ready(function() {
+    let paginationComponent;
+
     // Request current media folder path
     socket.emit('emit_text_page_get_path_to_media_folder');
 
-    // Request folders for folder view
-    socket.emit('emit_text_page_get_folders', {
-        path: path, 
-    }); 
-
     // Request files from the main media folder
+    // --- Folder View ---
+    socket.emit('emit_text_page_get_folders', {
+            path: path, 
+        }, (response) => { // event handler for folders
+            console.log('emit_text_page_get_folders', response);
+
+            const folderView = new FolderViewComponent(response.folders, response.folder_path, true); // Enable context menu
+            $('.menu').append(folderView.getDOMElement());
+        }
+    );
+
+    // --- File List ---
+    let currentFilePath = null; // To store currently opened file path
     socket.emit('emit_text_page_get_files', {
       path: path, 
       pagination: (page-1)*num_files_on_page, 
       limit: page * num_files_on_page,
       text_query: text_query 
-    });
-
-    let currentFilePath = null; // To store currently opened file path
-
-    // --- Folder View ---
-    socket.on('emit_text_page_show_folders', (data) => { // NEW event handler for folders
-        const folderView = new FolderViewComponent(data.folders, data.folder_path, true); // Enable context menu
-        $('.menu').append(folderView.getDOMElement());
-    });
-
-    // --- File List ---
-    let paginationComponent; // Declare paginationComponent in the scope 
-    socket.on('emit_text_page_show_files', (data) => {
-        console.log('emit_text_page_show_files', data);
+    }, (response) => {
+        console.log('emit_text_page_show_files', response);
 
         // Update or Initialize FileGridComponent
         const fileGridComponent = new FileGridComponent({
             containerId: '#text_files_grid_container', // Use the new container ID
-            filesData: data.files_data,
+            filesData: response.files_data,
             renderPreviewContent: renderTextPreview, // Pass the text preview function
             renderCustomData: renderCustomData, // No custom data rendering for now
             handleFileClick: (fileData) => {
@@ -196,23 +194,33 @@ $(document).ready(function() {
         // Update or Initialize Pagination Component
         const paginationContainer = $('.pagination.is-rounded.level-left.mb-0 .pagination-list'); // Select pagination container
         const urlParams = new URLSearchParams(window.location.search); // Get URL parameters for pattern
-        let urlPattern = `?page={page}`; // Base URL pattern
-
-        if (urlParams.get('text_query')) { // Add text_query if present
-            urlPattern += `&text_query=${encodeURIComponent(urlParams.get('text_query'))}`;
-        }
+        const urlPattern = `?${urlParams.toString()}`;
 
         if (!paginationComponent) { // Instantiate PaginationComponent if it doesn't exist yet
             paginationComponent = new PaginationComponent({
                 containerId: paginationContainer.closest('.pagination').get(0), // Pass the pagination nav element
                 currentPage: page,
-                totalPages: Math.ceil(data["total_files"] / num_files_on_page),
+                totalPages: Math.ceil(response["total_files"] / num_files_on_page),
                 urlPattern: urlPattern,
             });
         } else { // Update existing PaginationComponent
-            paginationComponent.updatePagination(page, Math.ceil(data["total_files"] / num_images_on_page));
+            paginationComponent.updatePagination(page, Math.ceil(response["total_files"] / num_files_on_page));
         }
     });
+
+    
+
+    // // --- Folder View ---
+    // socket.on('emit_text_page_show_folders', (data) => { // NEW event handler for folders
+    //     const folderView = new FolderViewComponent(data.folders, data.folder_path, true); // Enable context menu
+    //     $('.menu').append(folderView.getDOMElement());
+    // });
+
+    
+    // let paginationComponent; // Declare paginationComponent in the scope 
+    // socket.on('emit_text_page_show_files', (data) => {
+        
+    // });
 
     // Function to switch tabs in the modal
     function showTab(tabName) {
