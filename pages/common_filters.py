@@ -56,23 +56,34 @@ class CommonFilters:
         return [all_files[i] for i in sorted_indices]
 
     def filter_by_text(self, all_files, text_query):
+        process_meta = getattr(self.engine, 'process_metadata', None)
+
         self.common_socket_events.show_search_status("Extracting embeddings")
-        embeds_files = self.engine.process_files(all_files, callback=self.embedding_gathering_callback, media_folder=self.media_directory)
         embeds_text = self.engine.process_text(text_query)
-        scores = self.engine.compare(embeds_files, embeds_text)
 
+        embeds_files = self.engine.process_files(all_files, callback=self.embedding_gathering_callback, media_folder=self.media_directory)
+        files_similarity_scores = self.engine.compare(embeds_files, embeds_text)
+
+        if process_meta:
+            embeds_meta = self.engine.process_metadata(all_files, callback=self.embedding_gathering_callback, media_folder=self.media_directory)
+            meta_similarity_scores = self.engine.compare(embeds_meta, embeds_text)
+            total_similarity_scores = (files_similarity_scores + meta_similarity_scores) / 2
+        else:
+            meta_similarity_scores = np.zeros_like(files_similarity_scores)
+            total_similarity_scores = files_similarity_scores
+            
         self.common_socket_events.show_search_status("Sorting by relevance")
-        sorted_indices = sorted(range(len(scores)), key=scores.__getitem__, reverse=True)
-        return [all_files[i] for i in sorted_indices]
+        sorted_indices = sorted(range(len(total_similarity_scores)), key=total_similarity_scores.__getitem__, reverse=True)
+        return [all_files[i] for i in sorted_indices], files_similarity_scores[sorted_indices].tolist(), meta_similarity_scores[sorted_indices].tolist()
 
-    def filter_by_file_size(self, all_files, text_query):
+    def filter_by_file_size(self, all_files, args):
         return sorted(all_files, key=os.path.getsize)
 
-    def filter_by_random(self, all_files, text_query):
+    def filter_by_random(self, all_files, args):
         shuffled_indices = np.random.permutation(len(all_files))
         return [all_files[i] for i in shuffled_indices]
 
-    def filter_by_rating(self, all_files, text_query):
+    def filter_by_rating(self, all_files, args):
         self.update_model_ratings_func(all_files)
         all_hashes = [self.engine.cached_file_hash.get_file_hash(f) for f in all_files]
         items = self.db_schema.query.filter(self.db_schema.hash.in_(all_hashes)).all()
@@ -84,7 +95,7 @@ class CommonFilters:
         
         return [file for _, file in sorted(zip(all_ratings, all_files), reverse=True)]
 
-    def filter_by_similarity(self, all_files, text_query):
+    def filter_by_similarity(self, all_files, args):
         self.common_socket_events.show_search_status("Extracting embeddings for similarity sort")
         embeds = self.engine.process_files(all_files, callback=self.embedding_gathering_callback, media_folder=self.media_directory)
         if isinstance(embeds, torch.Tensor):

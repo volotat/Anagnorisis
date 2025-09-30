@@ -3,7 +3,7 @@ import FileGridComponent from '/pages/FileGridComponent.js';
 import PaginationComponent from '/pages/PaginationComponent.js';
 
 //// CONSTANTS AND VARIABLES
-let num_files_on_page = 60;
+let num_files_on_page = 24;
 let num_files_in_row = 6; // TODO: calculate from the screen size
 let selected_files = [];
 let currentFilePath = null; // To store currently opened file path in modal
@@ -19,6 +19,22 @@ let path = urlParams.get('path') || '';
 text_query = decodeURIComponent(text_query);
 path = decodeURIComponent(path);
 console.log('path', path);
+
+/**
+ * Shortens a string by keeping a specified number of characters 
+ * at the start and end, replacing the middle with '...'.
+ * @param {string} str The string to shorten.
+ * @param {number} charsToShow The number of characters to show at the start and end.
+ * @returns {string} The shortened string.
+ */
+function shortenHash(str, charsToShow = 8) {
+    if (!str || str.length <= charsToShow * 2) {
+        return str;
+    }
+    const start = str.substring(0, charsToShow);
+    const end = str.substring(str.length - charsToShow);
+    return `${start}...${end}`;
+}
 
 function replaceNewLinesWithBreaks(text) {
     return text.replace(/\n/g, '<br>');
@@ -52,7 +68,20 @@ function renderCustomData(fileData) { // Function for custom data rendering
     const dataContainer = document.createElement('div');
     dataContainer.className = 'file-custom-data';
     dataContainer.style.wordBreak = 'break-word';
-    
+
+    // Search matching scores
+    if (fileData.search_total_score > 0) {
+        const searchScoresElement = document.createElement('p');
+        searchScoresElement.className = 'file-info file-search-scores';
+        const searchScores = [
+            (fileData.search_total_score || 0).toFixed(3),
+            (fileData.search_semantic_score || 0).toFixed(3),
+            (fileData.search_meta_score || 0).toFixed(3),
+        ];
+        searchScoresElement.innerHTML = `<b>Search Scores:</b>&nbsp;${searchScores.join('/')}`;
+        dataContainer.appendChild(searchScoresElement);
+    }
+
     // File Path
     const filePathElement = document.createElement('p');
     filePathElement.className = 'file-info file-path';
@@ -62,7 +91,7 @@ function renderCustomData(fileData) { // Function for custom data rendering
     // Hash
     const hashElement = document.createElement('p');
     hashElement.className = 'file-info file-hash';
-    hashElement.innerHTML = `<b>Hash:</b>&nbsp;${fileData.hash}`;
+    hashElement.innerHTML = `<b>Hash:</b>&nbsp;${shortenHash(fileData.hash)}`;
     dataContainer.appendChild(hashElement);
 
     // User Rating

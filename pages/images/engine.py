@@ -57,6 +57,9 @@ class ImageSearch(BaseSearchEngine):
 
     def _get_db_model_class(self):
         return db_models.ImagesLibrary
+    
+    def _get_model_hash_postfix(self):
+        return ""
 
     def _load_model_and_processor(self, local_model_path: str):
         """

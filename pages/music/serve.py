@@ -217,6 +217,20 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
   def get_folders(data):
     path = data.get('path', '')
     return music_file_manager.get_folders(path)
+  
+  def debug_data_types(data, path=""):
+    """
+    Recursively traverses a data structure and prints the type of each value.
+    """
+    if isinstance(data, dict):
+        for key, value in data.items():
+            debug_data_types(value, f"{path}.{key}")
+    elif isinstance(data, list):
+        for i, item in enumerate(data):
+            debug_data_types(item, f"{path}[{i}]")
+    else:
+        # Print the path and type of the value
+        print(f"Path: {path:<70} | Type: {type(data)}")
 
   @socketio.on('emit_music_page_get_files')
   def get_files(input_data):
@@ -248,7 +262,15 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
 
       return sorted(all_files, key=lambda x: durations[x])
     
-    def filter_by_recommendation(all_files, text_query):
+    def filter_by_recommendation(all_files, args):
+      # Get the value for '-t' or '--temperature', defaulting to 1.0 if neither is found.
+      temp_str = args.get('-t', args.get('--temperature', '1.0'))
+      
+      try:
+          temperature = float(temp_str)
+      except (ValueError, TypeError):
+          temperature = 1.0 # Default to 1.0 if conversion fails
+
       # Update the model ratings of all current files
       update_model_ratings(all_files)
       
@@ -264,7 +286,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
 
       keys = ['hash', 'user_rating', 'model_rating', 'full_play_count', 'skip_count', 'last_played']
       music_data_dict = [dict(zip(keys, row)) for row in music_data]
-      all_files_sorted, scores = sort_files_by_recommendation(all_files, music_data_dict)
+      all_files_sorted, scores = sort_files_by_recommendation(all_files, music_data_dict, temperature=temperature)
 
       return all_files_sorted
     
@@ -288,7 +310,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
     filters = {
       "by_file": common_filters.filter_by_file, # special sorting case when file path used as query
       "by_text": common_filters.filter_by_text, # special sorting case when text used as query, i.e. all other cases wasn't triggered
-      "file size": common_filters.filter_by_file_size,
+      "file_size": common_filters.filter_by_file_size,
       "length": filter_by_length,
       "similarity": common_filters.filter_by_similarity, 
       "random": common_filters.filter_by_random, 

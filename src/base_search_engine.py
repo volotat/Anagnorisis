@@ -93,6 +93,14 @@ class BaseSearchEngine(ABC):
         """
         pass
 
+    @abstractmethod
+    def _get_model_hash_postfix(self) -> str:
+        """
+        Returns a short hash postfix based on the model name and version.
+        Used for versioning embeddings.
+        """
+        return ""
+
     def initiate(self, models_folder: str, cache_folder: str, **kwargs):
         """
         Initializes the search engine. This is the primary entry point for setup.
@@ -183,7 +191,7 @@ class BaseSearchEngine(ABC):
         buffer = io.BytesIO()
         torch.save(state_dict, buffer)
         buffer.seek(0)
-        model_hash = hashlib.md5(buffer.read()).hexdigest()
+        model_hash = hashlib.md5(buffer.read()).hexdigest() + self._get_model_hash_postfix()
         return model_hash
     
     def process_files(self, file_paths: list[str], callback=None, media_folder: str = None, **kwargs) -> torch.Tensor:

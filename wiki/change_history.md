@@ -43,11 +43,24 @@ Add a way to create new folders in the UI.
 Add a way to copy path to a folder trough the UI.  
 When gathering hashes of files make the cache saving once in a while, as this process might take quite a long time especially for video files.
 All active filters should be automatically gathered from the backend and displayed in the UI, instead of being hardcoded in the frontend.
+In the recommendation engine replace `full_play_count` and `skip_count` with `play_time` that dynamically calculate how much time user spent listening or watching the file. This should better reflect user preferences and be consistent across different types of data (at least music and videos).
 
 ### Ideas
 Add new downloadable module for 'Deep Research'-like functionality that uses user-trained text evaluating model to search for relative information adjusted to user preferences.
 
 ## Versions History
+
+### Version 0.2.8 (30.09.2025)
+*   **Recommendation & Search Enhancements:**
+    *   Introduced a `temperature` parameter to the `sort_files_by_recommendation` method in `pages/recommendation_engine.py`. This allows for dynamic control over the randomness of recommendations, where `0` provides a strict, score-based order and higher values increase randomness.
+    *   Implemented support for terminal-style arguments (`-t` or `--temperature`) in the `Music` module's search bar for the `recommendation` filter, allowing users to adjust the sorting temperature directly. For now it is only takes into account the file name and relative path, while in the future data from the `{file_name}.meta` files will be used as well. I also want to add this functionality to all other modules as well, working in the same vein. This will complete the main search functionality.
+    *   Enhanced the `Text` module's search capabilities by processing file metadata (file name and relative path) as a separate embedding. This provides more contextually aware and intuitive search results. Relative scores (total/content_score/meta_score) are also displayed in the search results now.
+*   **Robustness & UX Improvements:**
+    *   Improved the file hash gathering process to save progress to the cache every 60 seconds, preventing data loss during long operations.
+    *   Enhanced the status display for hash gathering to show percentage completion for better user feedback.
+    *   Standardized the `file size` filter to `file_size` in the `Music` and `Images` modules for consistency with the new terminal-style command parsing.
+*   **Bug Fixes:**
+    *   Resolved a critical `TypeError` by fixing a data serialization issue that occurred during search operations in the `Music` and `Images` modules, ensuring NumPy data types are correctly converted before being sent to the client.
 
 ### Version 0.2.7 (18.09.2025)
 *   **Architecture & Code Refactoring:**

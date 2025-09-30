@@ -2,6 +2,7 @@ import os
 import pickle
 import hashlib
 import datetime
+import shlex
 
 ###########################################
 # File Hash Caching
@@ -153,6 +154,67 @@ class CachedMetadata:
         return metadata
 
 
+def parse_terminal_command(input_string: str) -> tuple[str | None, dict]:
+    """
+    Parses a terminal-like command string into a command and a dictionary of arguments.
+
+    Args:
+        input_string: The string to parse, e.g., "recommendation -t 0.2 --mode strict".
+
+    Returns:
+        A tuple containing:
+        - The command name (str) if parsing is successful, otherwise None.
+        - A dictionary of parsed arguments.
+    """
+    try:
+        # Use shlex.split to handle quoted arguments correctly
+        parts = shlex.split(input_string)
+    except ValueError:
+        # shlex fails on unclosed quotes, treat as a non-command
+        return None, {}
+
+    if not parts:
+        return None, {}
+
+    command = parts[0]
+    # A simple check: if the first "word" contains internal spaces, it's likely not a command.
+    # shlex.split handles quotes, so this is a safe check.
+    if ' ' in command:
+        return None, {}
+
+    # Check if any subsequent part looks like an argument flag.
+    # This is our heuristic to decide if it's a "command-like" string.
+    is_command_like = any(p.startswith('-') for p in parts[1:])
+    
+    # If it's just a single word (like "recommendation"), treat it as a command.
+    if len(parts) == 1 and not command.startswith('-'):
+         is_command_like = True
+
+    if not is_command_like:
+        return None, {}
+
+    args = {}
+    i = 1
+    while i < len(parts):
+        part = parts[i]
+        if part.startswith('-'):
+            # Check if there is a next part and it's not another flag
+            if i + 1 < len(parts) and not parts[i+1].startswith('-'):
+                # It's a key-value pair, e.g., "-t 0.2"
+                args[part] = parts[i+1]
+                i += 2
+            else:
+                # It's a flag without a value, e.g., "--verbose"
+                args[part] = True
+                i += 1
+        else:
+            # This part is not a flag, so we can't process it in key-value style.
+            # You could assign it to a default key or ignore it.
+            # For now, we'll ignore it to keep the parsing strict.
+            i += 1
+            
+    return command, args
+
 def get_folder_structure(folder_path, media_extensions=None):
     # Check if directory exists and return None if not
     if not os.path.isdir(folder_path):
@@ -285,6 +347,40 @@ class FileManager:
         folders['name'] = main_folder_name
 
         return {"folders": folders, "folder_path": folder_path}
+    
+    def _get_all_hashes_with_progress(self, all_files):
+        """
+        Gathers hashes for all files, providing progress updates and periodic cache saving.
+        """
+        self.show_status(f"Gathering hashes for {len(all_files)} files.")
+        
+        all_hashes = []
+        last_shown_time = 0
+        last_saved_time = time.time()
+        total_files = len(all_files)
+
+        for ind, file_path in enumerate(all_files):
+            current_time = time.time()
+            
+            # Show progress every second
+            if current_time - last_shown_time >= 1:
+                percent = (ind + 1) / total_files * 100
+                self.show_status(f"Gathering hashes: {ind+1}/{total_files} ({percent:.2f}%)")
+                last_shown_time = current_time
+
+            # Save progress every 60 seconds
+            if current_time - last_saved_time > 60:
+                percent = (ind + 1) / total_files * 100
+                self.show_status(f"Gathering hashes: {ind+1}/{total_files} ({percent:.2f}%) (Saving progress...)")
+                self.cached_file_hash.save_hash_cache()
+                last_saved_time = current_time
+                last_shown_time = current_time # Reset show time to avoid immediate re-trigger
+                
+            all_hashes.append(self.cached_file_hash.get_file_hash(file_path))
+
+        # Final save after the loop completes
+        self.cached_file_hash.save_hash_cache()
+        return all_hashes
 
     def get_files(self, path = "", pagination = 0, limit = 100, text_query = None, seed = None, filters: dict = {}, get_file_info = None, update_model_ratings = None):
 
@@ -318,21 +414,7 @@ class FileManager:
         all_files = self.cached_file_list.get_all_files(current_path, self.media_formats)
 
         self.show_status(f"Gathering hashes for {len(all_files)} files.")
-        
-        # Initialize the last shown time
-        last_shown_time = 0
-
-        # Get the hash of each file
-        all_hashes = []
-        for ind, file_path in enumerate(all_files):
-            current_time = time.time()
-            if current_time - last_shown_time >= 1:
-                self.show_status(f"Gathering hashes for {ind+1}/{len(all_files)} files.")
-                last_shown_time = current_time
-        
-            all_hashes.append(self.cached_file_hash.get_file_hash(file_path))
-
-        self.cached_file_hash.save_hash_cache()
+        all_hashes = self._get_all_hashes_with_progress(all_files)
 
         # Update the hashes in the database if there are instances without a hash
         # self.show_status(f"Update hashes for imported files...")
@@ -341,23 +423,30 @@ class FileManager:
 
         # Sort music files by text or file query
         self.show_status(f"Sorting music files by: \"{text_query}\"")
+
+        semantic_scores = []
+        meta_scores = []
         if text_query and len(text_query) > 0:
-            filter_name = text_query.lower().strip()
+            # use first word as filter name
+            filter_name, args = parse_terminal_command(text_query)
+
 
             # If there is a file path used as a query, this file exists and within specified formats, sort files by similarity to that file
-            if os.path.isfile(text_query) and text_query.lower().endswith(tuple(cfg.music.media_formats)):
+            if os.path.isfile(text_query) and text_query.lower().endswith(tuple(self.media_formats)):
                 if filters["by_file"] is not None:
                     all_files = filters["by_file"](all_files, text_query) # Set the filter for other components
             
             # Custom sorts
-            elif (filter_name not in ["by_file", "by_text"]) and (filter_name in filters):
+            elif filter_name and (filter_name not in ["by_file", "by_text"]) and (filter_name in filters):
                 if filters[filter_name] is not None:
-                    all_files = filters[filter_name](all_files, text_query)
+                    all_files = filters[filter_name](all_files, args) # Set the filter for other components
 
             # In any other case sort by text query
             else:
                 if filters["by_text"] is not None:
-                    all_files = filters["by_text"](all_files, text_query)
+                    all_files, semantic_scores, meta_scores = filters["by_text"](all_files, text_query)
+                else:
+                    raise ValueError("No way to filter files. No 'by_text' filter provided.")
 
         #all_files = sorted(all_files, key=os.path.basename)
 
@@ -365,6 +454,16 @@ class FileManager:
         # Extracting metadata for relevant batch of music files
         self.show_status(f"Extracting metadata for relevant batch of files.")
         page_files = all_files[pagination:limit]
+
+        page_files_semantic_scores = np.zeros(len(page_files))
+        page_files_meta_scores = np.zeros(len(page_files))
+         # If there are semantic and meta scores, combine them for the relevant batch
+        if semantic_scores is not None and len(semantic_scores) > 0:
+            page_files_semantic_scores = semantic_scores[pagination:limit]
+
+        if meta_scores is not None and len(meta_scores) > 0:
+            page_files_meta_scores = meta_scores[pagination:limit]
+        
         print(f'page_files {pagination}:{limit}', page_files)
 
         page_hashes = [self.cached_file_hash.get_file_hash(file_path) for file_path in page_files]
@@ -425,6 +524,10 @@ class FileManager:
                 "hash": file_hash,
                 "file_size": convert_size(file_size),
                 "file_info": get_file_info(full_path, file_hash),
+
+                "search_semantic_score": page_files_semantic_scores[ind],
+                "search_meta_score": page_files_meta_scores[ind],
+                "search_total_score": page_files_semantic_scores[ind] + page_files_meta_scores[ind]
 
                 # "user_rating": user_rating,
                 # "model_rating": model_rating,

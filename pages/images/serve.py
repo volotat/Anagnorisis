@@ -279,7 +279,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
     filters = {
       "by_file": common_filters.filter_by_file, # special sorting case when file path used as query
       "by_text": common_filters.filter_by_text, # special sorting case when text used as query, i.e. all other cases wasn't triggered
-      "file size": common_filters.filter_by_file_size,
+      "file_size": common_filters.filter_by_file_size,
       "resolution": filter_by_resolution,
       "proportion": filter_by_proportion,
       "similarity": common_filters.filter_by_similarity, 

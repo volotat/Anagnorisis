@@ -71,6 +71,9 @@ class TextSearch(BaseSearchEngine):
 
     def _get_db_model_class(self):
         return db_models.TextLibrary
+    
+    def _get_model_hash_postfix(self):
+        return "_v1.0.3"
 
     def _load_model_and_processor(self, local_model_path: str):
         """
@@ -119,8 +122,8 @@ class TextSearch(BaseSearchEngine):
             start_token_idx = 0
             while start_token_idx < file_token_length:
                 end_token_idx = min(start_token_idx + chunk_size, file_token_length)
-                chunk_text = self.tokenizer.decode(tokens[start_token_idx:end_token_idx])
-                chunk_texts.append(chunk_text)
+                chunk_content = self.tokenizer.decode(tokens[start_token_idx:end_token_idx])
+                chunk_texts.append(chunk_content)
 
                 next_start_token_idx = start_token_idx + chunk_size - chunk_overlap
                 if next_start_token_idx <= start_token_idx:
@@ -201,7 +204,7 @@ class TextSearch(BaseSearchEngine):
                     else:
                         # Check if the database is accessible in the current context
                         if not flask.has_app_context():
-                            current_file_embeddings = self._process_single_file(file_path)
+                            current_file_embeddings = self._process_single_file(file_path, media_folder=media_folder)
                             self._fast_cache[file_hash] = current_file_embeddings
                         else:
                             db_record = db_model_class.query.filter_by(hash=file_hash).first()
@@ -210,7 +213,7 @@ class TextSearch(BaseSearchEngine):
                                 current_file_embeddings = pickle.loads(db_record.chunk_embeddings)
                                 self._fast_cache[file_hash] = current_file_embeddings
                             else:
-                                current_file_embeddings = self._process_single_file(file_path)
+                                current_file_embeddings = self._process_single_file(file_path, media_folder=media_folder)
                                 
                                 # Save to database (as pickled list of numpy arrays)
                                 if db_record:
@@ -273,6 +276,63 @@ class TextSearch(BaseSearchEngine):
             traceback.print_exc()
             dim = self.cfg.text.embedding_dimension or self.embedding_dim
             return torch.zeros((1, dim), device=model_instance._device) if dim else None
+        
+    def process_metadata(self, file_paths: list[str], callback=None, media_folder: str = None, **kwargs) -> list[list[np.ndarray]]:
+        """
+        Processes metadata for a list of files.
+        For text files, we can use the filename and relative path as metadata.
+        Generates embeddings for this metadata text.
+        Returns a list of lists of numpy arrays (one list per file, each containing one metadata embedding).
+        """
+        if self.model is None:
+            raise RuntimeError(f"{self.__class__.__name__} not initialized. Call initiate() first.")
+
+        model_instance = self.model # Use the managed model instance
+
+        all_files_meta_embeddings = []
+
+        for ind, file_path in enumerate(file_paths):
+            meta_embedding_np = None
+
+            try:
+                file_hash = self.cached_file_hash.get_file_hash(file_path)
+                cache_key = file_hash + '_meta'
+                
+                if cache_key in self._fast_cache:
+                    meta_embedding_np = self._fast_cache[cache_key]
+                else:
+                    # Get a clean, relative path for the metadata
+                    media_folder = kwargs.get('media_folder', '')
+                    relative_path = os.path.relpath(file_path, media_folder) if media_folder else os.path.basename(file_path)
+                    file_name = os.path.basename(file_path)
+
+                    meta_text = f"{file_name}\n{relative_path}"
+                    
+                    # Generate embedding for the metadata text
+                    meta_embedding_np = model_instance.encode(
+                        meta_text,
+                        task="retrieval.passage", # Treat metadata as passage
+                        truncate_dim=self.cfg.text.embedding_dimension,
+                        convert_to_tensor=False, # Get numpy array
+                        device=model_instance._device
+                    )
+
+                    # Cache the metadata embedding
+                    self._fast_cache[cache_key] = meta_embedding_np
+
+                all_files_meta_embeddings.append([meta_embedding_np]) # Wrap in list to match List[List[np.ndarray]]
+                    
+
+                if callback:
+                    callback(ind + 1, len(file_paths))
+            except Exception as e:
+                print(f"Error processing metadata for {file_path}: {e}")
+                traceback.print_exc()
+                dim = self.cfg.text.embedding_dimension or self.embedding_dim
+                zero_embedding = np.zeros((dim,), dtype=np.float32) if dim else np.array([], dtype=np.float32)
+                all_files_meta_embeddings.append([zero_embedding]) # Return zero embedding on error
+        
+        return all_files_meta_embeddings
 
     def compare(self, file_embeddings: list[list[np.ndarray]], query_embedding: torch.Tensor) -> np.ndarray:
         """

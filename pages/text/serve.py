@@ -187,7 +187,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
         filters = {
             # "by_file": filter_by_file, # special sorting case when file path used as query
             "by_text": common_filters.filter_by_text, # special sorting case when text used as query, i.e. all other cases wasn't triggered
-            # "file size": filter_by_file_size,
+            # "file_size": filter_by_file_size,
             # "length": filter_by_length,
             # "similarity": filter_by_similarity, 
             # "random": filter_by_random, 

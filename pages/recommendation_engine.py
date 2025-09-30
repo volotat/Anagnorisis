@@ -4,26 +4,46 @@ import numpy as np
 def sigmoid(x):
     return 1 / (1 + np.exp(-x))
 
-def weighted_shuffle(scores):
+def weighted_shuffle(scores, temperature=1.0):
     """
     Returns a permutation (list of indices) from files_list where
-    each item is sampled without replacement with a probability proportional to its score.
+    each item is sampled without replacement. The probability is adjusted by temperature.
+    - temperature = 0: Strict descending order (highest score first).
+    - temperature = 1: Probability proportional to score.
+    - temperature > 1: More random, flattens probability distribution.
     """
     remaining = list(range(len(scores)))
     order = []
-    scores = np.array(scores)  # ensure it is a NumPy array
+    scores = np.array(scores, dtype=np.float64)  # Use float64 for stability
+
+    if temperature == 0:
+        # Strict mode: sort remaining indices by their scores in descending order
+        # and append them all at once.
+        sorted_remaining_indices = sorted(remaining, key=lambda i: scores[i], reverse=True)
+        return sorted_remaining_indices
+
     while remaining:
-        total = scores[remaining].sum()
-        if total == 0:
-            # If total weight is 0, assign uniform probabilities.
+        # Apply temperature to the scores of the remaining items
+        current_scores = scores[remaining]
+        
+        # Prevent overflow/underflow with very high/low scores
+        current_scores = np.clip(current_scores, 1e-9, None)
+        
+        # The core of the temperature logic
+        adjusted_scores = current_scores ** (1 / temperature)
+
+        total = adjusted_scores.sum()
+        if total == 0 or not np.isfinite(total):
+            # If total is 0 or inf, assign uniform probabilities.
             probs = np.ones(len(remaining)) / len(remaining)
         else:
-            probs = scores[remaining] / total
+            probs = adjusted_scores / total
+        
         pick = np.random.choice(len(remaining), p=probs)
         order.append(remaining.pop(pick))
     return order
 
-def sort_files_by_recommendation(files_list, files_data, mode='random'):
+def sort_files_by_recommendation(files_list, files_data, temperature=1.0):
     """
     Expects each files dict to have:
       - user_rating (may be None)
@@ -31,9 +51,7 @@ def sort_files_by_recommendation(files_list, files_data, mode='random'):
       - full_play_count (int)
       - skip_count (int)
       - last_played (datetime or None)
-    The 'mode' parameter can be:
-      - 'random': perform a weighted shuffle based on the recommendation score.
-      - 'strict': sort strictly in descending order of recommendation score.
+    The 'temperature' parameter controls the randomness of the sort.
     Returns the files list and corresponding scores in the chosen order.
     """
     # Fallback: when no user rating is provided use median/mean from those available.
@@ -78,12 +96,7 @@ def sort_files_by_recommendation(files_list, files_data, mode='random'):
         print("Warning: Final scores contain non-finite values.")
         final_scores = np.nan_to_num(final_scores, nan=0.0, posinf=1.0, neginf=0.0)
 
-    if mode == 'random':
-        order = weighted_shuffle(final_scores)
-    elif mode == 'strict':
-        order = np.argsort(final_scores)[::-1]
-    else:
-        raise ValueError("mode must be either 'random' or 'strict'")
+    order = weighted_shuffle(final_scores, temperature=temperature)
 
     sorted_files = [files_list[i] for i in order]
     sorted_scores = final_scores[order]
@@ -105,7 +118,7 @@ def test_strict_order():
         {'user_rating': 9.0, 'model_rating': None, 'full_play_count': 12, 'skip_count': 0, 'last_played': datetime.datetime.fromtimestamp(120)},
         {'user_rating': None, 'model_rating': None, 'full_play_count': 3, 'skip_count': 3, 'last_played': None},  # Not played yet
     ]
-    sorted_files, sorted_scores = sort_files_by_recommendation(music_list, music_list, mode='strict')
+    sorted_files, sorted_scores = sort_files_by_recommendation(music_list, music_list, temperature=0)
     # Check that scores are in descending order.
     for i in range(len(sorted_scores) - 1):
         assert sorted_scores[i] >= sorted_scores[i+1], "Strict order not descending"
@@ -121,10 +134,10 @@ def test_random_order():
     ]
     # To help with reproducibility in tests.
     np.random.seed(42)
-    sorted_files_random, sorted_scores_random = sort_files_by_recommendation(music_list, music_list, mode='random')
+    sorted_files_random, sorted_scores_random = sort_files_by_recommendation(music_list, music_list, temperature=1.0)
     np.random.seed(42)
     # Running strict sort for comparison.
-    sorted_files_strict, sorted_scores_strict = sort_files_by_recommendation(music_list, music_list, mode='strict')
+    sorted_files_strict, sorted_scores_strict = sort_files_by_recommendation(music_list, music_list, temperature=0)
     # They are not expected to be equal overall; however, the set of files should match.
     assert set(tuple(m.items()) for m in sorted_files_random) == set(tuple(m.items()) for m in sorted_files_strict), "Random mode did not produce a valid permutation"
     print("test_random_order PASSED")
@@ -144,11 +157,11 @@ if __name__ == "__main__":
         {'user_rating': None, 'model_rating': None, 'full_play_count': 3, 'skip_count': 3, 'last_played': None},  # Not played yet
     ]
     print("\nExample usage with strict mode:")
-    sorted_music, scores = sort_files_by_recommendation(_music_list(), _music_list(), mode='strict')
+    sorted_music, scores = sort_files_by_recommendation(_music_list(), _music_list(), temperature=0)
     for m, s in zip(sorted_music, scores):
         print(f"{m} => recommendation score: {s}")
 
     print("\nExample usage with random mode:")
-    sorted_music, scores = sort_files_by_recommendation(_music_list(), _music_list(), mode='random')
+    sorted_music, scores = sort_files_by_recommendation(_music_list(), _music_list(), temperature=1.0)
     for m, s in zip(sorted_music, scores):
         print(f"{m} => recommendation score: {s}")
