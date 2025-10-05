@@ -33,3 +33,4 @@ sentence-transformers
 Flask-HTTPAuth
 protobuf
 moviepy==1.0.3
+watchdog

@@ -315,6 +315,18 @@ class BaseSearchEngine(ABC):
         """
         if self._model_manager is None:
             raise RuntimeError(f"{self.__class__.__name__} not initialized. Call initiate() first.")
+        
+        # print("Warning: Converting embeds_target to torch.Tensor")
+        # print(f"Type of embeds_target: {type(embeds_target)}")
+        # print(f"Shape of embeds_target[0]: {np.shape(embeds_target)}")
+
+        # # Ensure embeddings are torch tensors
+        # if type(embeds_target) is not torch.Tensor:
+        #     embeds_target = torch.tensor(embeds_target)
+        #     print(f"New type of embeds_target: {type(embeds_target)}")
+        #     print(f"New shape of embeds_target: {embeds_target.shape}")
+        # if type(embeds_query) is not torch.Tensor:
+        #     embeds_query = torch.tensor(embeds_query) 
 
         # Ensure embeddings are on the correct device
         embeds_target = embeds_target.to(self._model_manager._device)
@@ -327,15 +339,17 @@ class BaseSearchEngine(ABC):
         # Dot product for similarity
         logits = torch.matmul(embeds_query, embeds_target.t())
 
-        # If model has logit_scale (like CLIP/CLAP), apply it
-        if hasattr(self._model_manager, 'logit_scale'):
-            logits = logits * self._model_manager.logit_scale.exp()
-        elif hasattr(self._model_manager, 'logit_scale_t') and hasattr(self._model_manager, 'logit_scale_a'): # For CLAP
-            # Assuming embeds_query is text and embeds_target is audio/image
-            logits_per_text = logits * self._model_manager.logit_scale_t.exp()
-            logits_per_audio = torch.matmul(embeds_target, embeds_query.t()) * self._model_manager.logit_scale_a.exp()
-            logits = (logits_per_text + logits_per_audio.t()) / 2.0
+        # # If model has logit_scale (like CLIP/CLAP), apply it
+        # if hasattr(self._model_manager, 'logit_scale'):
+        #     logits = logits * self._model_manager.logit_scale.exp()
+        # elif hasattr(self._model_manager, 'logit_scale_t') and hasattr(self._model_manager, 'logit_scale_a'): # For CLAP
+        #     # Assuming embeds_query is text and embeds_target is audio/image
+        #     logits_per_text = logits * self._model_manager.logit_scale_t.exp()
+        #     logits_per_audio = torch.matmul(embeds_target, embeds_query.t()) * self._model_manager.logit_scale_a.exp()
+        #     logits = (logits_per_text + logits_per_audio.t()) / 2.0
             
-        probs = torch.sigmoid(logits) # Sigmoid for similarity score (0-1)
+        # # probs = torch.sigmoid(logits) # Sigmoid for similarity score (0-1)
 
-        return probs.cpu().detach().numpy()
+        cosine_sim = logits # Return raw logits that represent cosine similarity
+
+        return cosine_sim.cpu().detach().numpy()

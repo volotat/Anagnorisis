@@ -21,6 +21,27 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.css"/>
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.Default.css"/>
     <script src="https://unpkg.com/leaflet.markercluster@1.4.1/dist/leaflet.markercluster.js"></script>--> 
+
+    <style>
+      /* Custom scrollbar for the log container */
+      #log-container::-webkit-scrollbar {
+        width: 10px; /* Width of the scrollbar */
+      }
+
+      #log-container::-webkit-scrollbar-track {
+        background: #1e1e1e; /* Match the modal background */
+      }
+
+      #log-container::-webkit-scrollbar-thumb {
+        background-color: #555; /* A medium-dark grey for the handle */
+        border-radius: 5px; /* Rounded corners */
+        border: 2px solid #1e1e1e; /* Padding effect */
+      }
+
+      #log-container::-webkit-scrollbar-thumb:hover {
+        background-color: #777; /* Lighter handle on hover */
+      }
+    </style>
 </head>
 
 <body>
@@ -68,9 +89,61 @@
             reader.readAsText(file);
         }
       });
-    })
 
-    
+      // --- Real-time Log Streaming Logic ---
+      // 1. Handle the full log history sent on connection
+      socket.on('log_history', function(msg) {
+          window.logs = msg.data; // Overwrite with the full history
+          const logContainer = document.getElementById('log-container');
+          if (logContainer && logContainer.closest('.modal.is-active')) {
+              logContainer.textContent = window.logs;
+              logContainer.scrollTop = logContainer.scrollHeight;
+          }
+      });
+
+      // 2. Handle live updates
+      socket.on('log_update', function(msg) {
+          const newLogData = msg.data;
+          
+          // Append new data to the stored logs
+          window.logs = (window.logs || "") + newLogData;
+
+          // If the modal is open, append new logs and scroll to bottom
+          const logContainer = document.getElementById('log-container');
+          if (logContainer && logContainer.closest('.modal.is-active')) {
+              logContainer.textContent += newLogData;
+              logContainer.scrollTop = logContainer.scrollHeight;
+          }
+      });
+
+      // --- Logs Modal Logic ---
+      const logsModal = document.getElementById('logs-modal');
+      const logsButton = document.getElementById('logs_button');
+      const logContainer = document.getElementById('log-container');
+      const closeButtons = logsModal.querySelectorAll('.delete, .modal-background');
+
+      // Function to open the modal
+      logsButton.addEventListener('click', () => {
+        logContainer.textContent = window.logs; // Populate with existing logs
+        logsModal.classList.add('is-active');
+        // Add 'is-clipped' to the <html> tag to prevent background scrolling
+        document.documentElement.classList.add('is-clipped');
+        // Scroll to the bottom on open
+        logContainer.scrollTop = logContainer.scrollHeight;
+      });
+
+      // Function to close the modal
+      const closeModal = () => {
+        logsModal.classList.remove('is-active');
+        // Remove 'is-clipped' to restore background scrolling
+        document.documentElement.classList.remove('is-clipped');
+      };
+
+      closeButtons.forEach((button) => {
+        button.addEventListener('click', closeModal);
+      });
+    });
+
   </script>
 
   <nav class="navbar is-light" role="navigation" aria-label="main navigation">
@@ -96,6 +169,10 @@
       </div>
 
       <div class="navbar-end">
+        <!-- Add the Logs button -->
+        <a class="navbar-item" id="logs_button" title="View application logs">
+          <span class="icon"><i class="fas fa-terminal"></i></span>
+        </a>
         <!-- Add the download .csv with full DB button in the navbar -->
         <a class="navbar-item" href="/export_database_csv" title="export database in csv file" target=”_blank”>
           <span class="icon"><i class="fas fa-download"></i></span>
@@ -130,6 +207,16 @@
         <span class="icon"><i class="fas fa-trash"></i></span>
         <span>Delete</span>
       </a>
+    </div>
+  </div>
+
+  <!-- Logs Modal -->
+  <div id="logs-modal" class="modal">
+    <div class="modal-background"></div>
+    <div class="modal-card" style="width: 80%; max-width: 1200px; height: 100vh;">
+      <section class="modal-card-body is-size-5 py-2" style="background-color: #1e1e1e; display: flex; flex-direction: column;">
+        <pre id="log-container" style="background-color: inherit; color: #d4d4d4; padding: 1em; white-space: pre-wrap; word-wrap: break-word; flex-grow: 1; overflow-y: auto;"></pre>
+      </section>
     </div>
   </div>
 

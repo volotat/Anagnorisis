@@ -48,6 +48,6 @@ text:
   - .htm
   - .html
   # Added for text embedding and search
-  chunk_size: 512 # Max tokens per chunk
+  chunk_size: 384 # Max tokens per chunk
   chunk_overlap: 128 # Overlap between chunks
   embedding_dimension: 1024 # Dimension to truncate to (Optional, match Matryoshka)

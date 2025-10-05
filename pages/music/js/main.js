@@ -45,6 +45,19 @@ function renderCustomData(fileData) { // Function for custom data rendering
     const dataContainer = document.createElement('div');
     dataContainer.className = 'file-custom-data';
     dataContainer.style.wordBreak = 'break-word';
+
+    // Search matching scores
+    if (fileData.search_total_score > 0) {
+        const searchScoresElement = document.createElement('p');
+        searchScoresElement.className = 'file-info file-search-scores';
+        const searchScores = [
+            (fileData.search_total_score || 0).toFixed(3),
+            (fileData.search_semantic_score || 0).toFixed(3),
+            (fileData.search_meta_score || 0).toFixed(3),
+        ];
+        searchScoresElement.innerHTML = `<b>Search Scores:</b>&nbsp;${searchScores.join('/')}`;
+        dataContainer.appendChild(searchScoresElement);
+    }
     
     // File Path
     const filePathElement = document.createElement('p');

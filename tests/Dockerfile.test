@@ -1,0 +1,34 @@
+# Use the lighter -base image
+FROM nvidia/cuda:12.4.0-base-ubuntu22.04
+
+# Set up environment
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+
+# Install Python, system dependencies, AND the required cuDNN library
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3.10 \
+    python3.10-venv \
+    python3-pip \
+    build-essential \
+    git \
+    libcudnn8 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create a virtual environment
+RUN python3 -m venv /venv
+ENV PATH="/venv/bin:$PATH"
+
+# Set the working directory where the project will be mounted
+WORKDIR /app
+
+# Upgrade pip and install Python dependencies
+# We copy the requirements file to leverage Docker's build cache.
+COPY requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip
+RUN pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
+RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir colorama
+
+# Default command to start an interactive shell
+CMD ["bash"]

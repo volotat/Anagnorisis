@@ -20,6 +20,7 @@ import pages.file_manager as file_manager
 import pages.text.db_models as db_models
 from src.base_search_engine import BaseSearchEngine # Import the base class
 from src.model_manager import ModelManager # Still needed for TextEvaluator
+from src.text_embedder import TextEmbedder # Import the new TextEmbedder
 
 from scipy.spatial.distance import cosine
 
@@ -50,6 +51,7 @@ class TextSearch(BaseSearchEngine):
     def __init__(self, cfg=None):
         super().__init__(cfg) # Call base class __init__
         self.cfg = cfg # Store cfg for chunking parameters
+        self.embedder = TextEmbedder(cfg)
         self.tokenizer = None # Will be set in _load_model_and_processor
 
     @property
@@ -73,7 +75,7 @@ class TextSearch(BaseSearchEngine):
         return db_models.TextLibrary
     
     def _get_model_hash_postfix(self):
-        return "_v1.0.3"
+        return "_v1.0.4"
 
     def _load_model_and_processor(self, local_model_path: str):
         """
@@ -81,13 +83,18 @@ class TextSearch(BaseSearchEngine):
         Ensures the model is loaded to CPU before being wrapped by ModelManager.
         """
         try:
-            self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-            print(f"TextSearch: Loading model to CPU first...")
-            # Use SentenceTransformer.load to handle model + tokenizer + pooling correctly
-            self.model = SentenceTransformer(local_model_path, device='cpu', local_files_only=False, trust_remote_code=True) # Load to CPU
-            self.tokenizer = self.model.tokenizer # SentenceTransformer loads its own tokenizer internally
-            self.embedding_dim = self.model.get_sentence_embedding_dimension()
-            print(f"TextSearch: Model loaded to CPU. Embedding dim: {self.embedding_dim}")
+            # The TextEmbedder handles its own model loading and management.
+            # We pass the base models folder to its initiate method.
+            models_folder = os.path.dirname(local_model_path)
+            self.embedder.initiate(models_folder=models_folder)
+            
+            # For BaseSearchEngine compatibility, we need to set self.model and self.embedding_dim
+            self.model = self.embedder.model
+            self.tokenizer = self.embedder.tokenizer
+            self.embedding_dim = self.embedder.embedding_dim
+            self.device = self.embedder.device
+            
+            print(f"TextSearch: TextEmbedder initiated. Embedding dim: {self.embedding_dim}")
 
         except Exception as e:
             print(f"ERROR: Failed to load text embedding model from '{local_model_path}'. The download might be incomplete or corrupted.")
@@ -96,73 +103,29 @@ class TextSearch(BaseSearchEngine):
 
     def _process_single_file(self, file_path: str, **kwargs) -> list[np.ndarray]:
         """
-        Reads a text file, splits it into chunks, and generates embeddings for each chunk.
+        Reads a text file and generates embeddings for each chunk using TextEmbedder.
         Returns a list of numpy arrays (each representing a chunk embedding).
         """
-        if self.model is None:
+        if self.embedder is None or not self.embedder._initialized:
             raise RuntimeError(f"{self.__class__.__name__} not initialized. Call initiate() first.")
-
-        # Get the actual model instance (will be on GPU if active)
-        model_instance = self.model
 
         try:
             # 1. Read File Content
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
-
-            # 2. Tokenize and Chunk
-            # Use the model's tokenizer
-            tokens = self.tokenizer(content, add_special_tokens=False, truncation=False)["input_ids"]
-            file_token_length = len(tokens)
-
-            chunk_size = self.cfg.text.chunk_size
-            chunk_overlap = self.cfg.text.chunk_overlap
-
-            chunk_texts = []
-            start_token_idx = 0
-            while start_token_idx < file_token_length:
-                end_token_idx = min(start_token_idx + chunk_size, file_token_length)
-                chunk_content = self.tokenizer.decode(tokens[start_token_idx:end_token_idx])
-                chunk_texts.append(chunk_content)
-
-                next_start_token_idx = start_token_idx + chunk_size - chunk_overlap
-                if next_start_token_idx <= start_token_idx:
-                    next_start_token_idx = start_token_idx + chunk_size
-                if end_token_idx == file_token_length:
-                    break
-                start_token_idx = next_start_token_idx
             
-            if not chunk_texts:
-                print(f"No chunks generated for {file_path}.")
+            if not content.strip():
+                print(f"File {file_path} is empty or contains only whitespace.")
                 return []
 
-            # 3. Generate Embeddings for Chunks
-            embedding_batch_size = 32 # Adjust based on VRAM
-            chunk_embeddings_list_np = []
+            # 2. Generate Embeddings for Chunks via TextEmbedder
+            chunk_embeddings_list_np = self.embedder.embed_text(content)
 
-            for i in range(0, len(chunk_texts), embedding_batch_size):
-                batch_texts = chunk_texts[i:i+embedding_batch_size]
-                try:
-                    batch_embeddings_np = model_instance.encode( # Use the managed model instance
-                        batch_texts,
-                        task="retrieval.passage", # Task for document passages
-                        truncate_dim=self.cfg.text.embedding_dimension,
-                        convert_to_tensor=False, # Get numpy arrays directly
-                        device=model_instance._device, # Use managed device
-                        batch_size=embedding_batch_size
-                    )
-                    chunk_embeddings_list_np.extend(batch_embeddings_np)
-                except Exception as e:
-                    print(f"Error encoding batch for {file_path}: {e}")
-                    traceback.print_exc()
-                    error_batch_size = len(batch_texts)
-                    dim = self.cfg.text.embedding_dimension or self.embedding_dim
-                    if dim:
-                        zero_embeddings = np.zeros((error_batch_size, dim), dtype=np.float32)
-                        chunk_embeddings_list_np.extend(zero_embeddings)
-
-            # Return list of numpy arrays (will be pickled by BaseSearchEngine)
-            return chunk_embeddings_list_np 
+            # embed_text returns a numpy array of embeddings. Convert to a list of arrays.
+            if chunk_embeddings_list_np is not None and len(chunk_embeddings_list_np) > 0:
+                return [emb for emb in chunk_embeddings_list_np]
+            else:
+                return []
 
         except Exception as e:
             print(f"Critical error processing file {file_path}: {e}")
@@ -180,7 +143,7 @@ class TextSearch(BaseSearchEngine):
         it's better to override the *entire* `process_files` method here to handle this list of lists directly
         rather than forcing `_process_single_file` to return a concatenated tensor.
         """
-        if self.model is None:
+        if self.embedder is None or not self.embedder._initialized:
             raise RuntimeError(f"{self.__class__.__name__} not initialized. Call initiate() first.")
         if self.is_busy: 
             raise Exception(f"{self.__class__.__name__} is busy processing another request.")
@@ -253,29 +216,23 @@ class TextSearch(BaseSearchEngine):
 
     def process_text(self, query_text: str) -> torch.Tensor:
         """
-        Generates an embedding for a search query string.
+        Generates an embedding for a search query string using TextEmbedder.
         Uses 'retrieval.query' task and configured truncation dimension.
         """
-        if self.model is None:
+        if self.embedder is None or not self.embedder._initialized:
             raise RuntimeError(f"{self.__class__.__name__} not initialized. Call initiate() first.")
-
-        #model_instance = self.model # Triggers loading to GPU if needed
-        model_instance = self.model # Use the managed model instance
         
         try:
-            query_embedding = model_instance.encode(
-                query_text,
-                task="retrieval.query", # Task for query embedding
-                truncate_dim=self.cfg.text.embedding_dimension,
-                convert_to_tensor=True, # Return as torch tensor
-                device=model_instance._device
-            )
-            return query_embedding # Return as a PyTorch tensor [1, embedding_dim]
+            # Use TextEmbedder to get the numpy array embedding
+            query_embedding_np = self.embedder.embed_query(query_text)
+            
+            # Convert to a PyTorch tensor for compatibility with the rest of the system
+            return torch.from_numpy(query_embedding_np).to(self.device)
         except Exception as e:
             print(f"Error processing text query '{query_text}': {e}")
             traceback.print_exc()
             dim = self.cfg.text.embedding_dimension or self.embedding_dim
-            return torch.zeros((1, dim), device=model_instance._device) if dim else None
+            return torch.zeros((1, dim), device=self.device) if dim else None
         
     def process_metadata(self, file_paths: list[str], callback=None, media_folder: str = None, **kwargs) -> list[list[np.ndarray]]:
         """
@@ -284,10 +241,8 @@ class TextSearch(BaseSearchEngine):
         Generates embeddings for this metadata text.
         Returns a list of lists of numpy arrays (one list per file, each containing one metadata embedding).
         """
-        if self.model is None:
+        if self.embedder is None or not self.embedder._initialized:
             raise RuntimeError(f"{self.__class__.__name__} not initialized. Call initiate() first.")
-
-        model_instance = self.model # Use the managed model instance
 
         all_files_meta_embeddings = []
 
@@ -308,14 +263,15 @@ class TextSearch(BaseSearchEngine):
 
                     meta_text = f"{file_name}\n{relative_path}"
                     
-                    # Generate embedding for the metadata text
-                    meta_embedding_np = model_instance.encode(
-                        meta_text,
-                        task="retrieval.passage", # Treat metadata as passage
-                        truncate_dim=self.cfg.text.embedding_dimension,
-                        convert_to_tensor=False, # Get numpy array
-                        device=model_instance._device
-                    )
+                    # Generate embedding for the metadata text using TextEmbedder
+                    # embed_text returns an array of embeddings, we take the first (and only) one
+                    meta_embeddings = self.embedder.embed_text(meta_text)
+                    if meta_embeddings is not None and len(meta_embeddings) > 0:
+                        meta_embedding_np = meta_embeddings[0]
+                    else:
+                        dim = self.cfg.text.embedding_dimension or self.embedding_dim
+                        meta_embedding_np = np.zeros((dim,), dtype=np.float32) if dim else np.array([], dtype=np.float32)
+
 
                     # Cache the metadata embedding
                     self._fast_cache[cache_key] = meta_embedding_np
@@ -341,25 +297,21 @@ class TextSearch(BaseSearchEngine):
         """
         # Ensure query embedding is numpy array (float32)
         if isinstance(query_embedding, torch.Tensor):
-            query_embedding = query_embedding.to(torch.float32).cpu().numpy()
+            query_embedding_np = query_embedding.to(torch.float32).cpu().numpy()
+        else:
+            query_embedding_np = query_embedding
         
         scores = []
         for file_chunks in file_embeddings:
             if not file_chunks:
                 scores.append(0.0)
                 continue
-                
-            chunk_scores = []
-            for chunk_embedding in file_chunks:
-                if isinstance(chunk_embedding, torch.Tensor):
-                    chunk_embedding = chunk_embedding.to(torch.float32).cpu().numpy()
-                else:
-                    chunk_embedding = chunk_embedding.astype(np.float32)
-                    
-                # Calculate cosine similarity: 1 - cosine distance
-                # Ensure embeddings are 1D for cosine calculation
-                similarity = 1 - cosine(query_embedding.flatten(), chunk_embedding.flatten())
-                chunk_scores.append(similarity)
+            
+            # TextEmbedder's compare method expects a numpy array of embeddings
+            chunk_embeddings_np = np.array(file_chunks, dtype=np.float32)
+            
+            # Use TextEmbedder's compare logic
+            chunk_scores = self.embedder.compare(chunk_embeddings_np, query_embedding_np)
                 
             scores.append(max(chunk_scores) if chunk_scores else 0.0)
             
@@ -447,11 +399,15 @@ if __name__ == "__main__":
             callback=test_callback, 
             media_folder=test_text_dir
         )
+        for f, embs in zip(test_files, embeddings):
+            print(f"File: {os.path.basename(f)}, Chunks: {len(embs)}, Shape: {embs[0].shape}")
         #print(f"Embeddings:", embeddings) # Print number of chunks per file
         # Expect 2 sets of chunk embeddings (dummy_text_path3 fails)
         assert len(embeddings) == 3, f"Expected embeddings for 3 files, got {len(embeddings)}"
         # Check first valid file has at least one chunk and correct dim
-        assert len(embeddings[0]) > 0 and embeddings[0][0].shape[0] == text_search_engine.embedding_dim, "Invalid chunk embedding shape"
+        print(f"Embedding dim: {text_search_engine.embedding_dim}")
+        print(f"First file first chunk shape: {embeddings[0][0].shape}")
+        assert len(embeddings[0]) > 0 and embeddings[0][0].shape[0] == text_search_engine.embedding_dim, f"Invalid chunk embedding shape. {embeddings[0][0].shape} instead of {text_search_engine.embedding_dim}"
         print(f"{colorama.Fore.GREEN}First processing successful.{colorama.Style.RESET_ALL}")
 
         print(f"\n{colorama.Fore.CYAN}Processing files again (should use cache):{colorama.Style.RESET_ALL}")
@@ -514,8 +470,8 @@ if __name__ == "__main__":
     # --- Test ModelManager lazy loading/unloading ---
     print("\n--- Testing ModelManager lazy loading ---")
     print(f"Model manager loaded: {text_search_engine.model._loaded}")
-    print(f"Model device: {text_search_engine.model._model.device}")
-    assert text_search_engine.model._loaded and text_search_engine.model._model.device.type == 'cuda', "Model not loaded to GPU after use."
+    print(f"Model device: {text_search_engine.model.device}")
+    assert text_search_engine.model._loaded and text_search_engine.model.device.type == 'cuda', "Model not loaded to GPU after use."
     
     print("Waiting for idle timeout (120 seconds + for 30s cleanup)...")
     time.sleep(160)
@@ -525,28 +481,13 @@ if __name__ == "__main__":
     print(f"{colorama.Fore.GREEN}ModelManager unloading test successful.{colorama.Style.RESET_ALL}")
 
     print("\nRe-using model to trigger reload...")
-    # reloaded_embeddings = text_search_engine.process_files(
-    #     [dummy_text_path1], 
-    #     callback=test_callback, 
-    #     media_folder=test_text_dir
-    # )
     # Process dummy inputs by the model manager to trigger reloading
     dummy_text = "This is a test text to trigger model reloading."
     query_embedding = text_search_engine.process_text(dummy_text)
-    if text_search_engine._model_manager is None:
-        raise RuntimeError(f"{text_search_engine.__class__.__name__} not initialized. Call initiate() first.")
-    model_instance = text_search_engine._model_manager # Use the managed model instance
-    query_embedding = model_instance.encode(
-                dummy_text,
-                task="retrieval.query", # Task for query embedding
-                truncate_dim=1024,
-                convert_to_tensor=True, # Return as torch tensor
-                device=model_instance._device
-            )
 
     print(f"Model manager loaded after re-use: {text_search_engine.model._loaded}")
-    print(f"Model device after re-use: {text_search_engine.model._model.device}")
-    assert text_search_engine.model._loaded and text_search_engine.model._model.device.type == 'cuda', "Model did not reload to GPU on re-use."
+    print(f"Model device after re-use: {text_search_engine.model.device}")
+    assert text_search_engine.model._loaded and text_search_engine.model.device.type == 'cuda', "Model did not reload to GPU on re-use."
     print(f"{colorama.Fore.GREEN}ModelManager reloading test successful.{colorama.Style.RESET_ALL}")
 
     # Shut down ModelManager gracefully at the end of tests

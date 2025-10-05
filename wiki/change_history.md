@@ -50,6 +50,21 @@ Add new downloadable module for 'Deep Research'-like functionality that uses use
 
 ## Versions History
 
+### Version 0.2.9 (06.10.2025)
+*   **Architecture & Search Enhancements:**
+    *   Refactored text embedding processing into a dedicated `TextEmbedder` class (`src/text_embedder.py`). This improves code organization, maintainability, and allows the module to be reused for metadata-based search across the application.
+    *   Implemented a new metadata-based search feature across the `Images`, `Music`, and `Text` modules. This search currently uses file names and paths, with plans to incorporate more detailed metadata from file contents and `.meta` files in the future.
+    *   The metadata search is powered by a new, more sophisticated two-level caching mechanism (`src/metadata_search.py`) featuring both RAM and persistent disk storage. If this proves effective, it will be adopted project-wide.
+    *   Modified the `compare` method in `base_search_engine.py` to return pure cosine similarity values (in the -1 to 1 range) by removing the final logit scaling step. This ensures a more accurate and interpretable similarity score, especially when combining content and metadata embeddings.
+*   **UX & Debugging Improvements:**
+    *   Added a real-time log viewer, accessible via a ">_" button in the header. This feature uses a new `src/log_streamer.py` module with `watchdog` and WebSockets to stream log file changes directly to the UI for easier development and debugging.
+    *   Search results across all modules now display a breakdown of similarity scores (semantic, metadata, and total), providing better insight into why specific files are returned.
+    *   The `EmbeddingGatheringCallback` now shows the name of the current process (e.g., "metadata"), giving the user clearer feedback on background activities.
+*   **Testing & Deployment:**
+    *   Created a new lightweight Dockerfile and `docker-compose.yaml` in the `tests` folder to facilitate isolated testing of encapsulated features like `src.text_embedder` and `pages.text.engine`.
+*   **General Maintenance:**
+    *   Performed minor code cleanup and refactoring across the project.
+
 ### Version 0.2.8 (30.09.2025)
 *   **Recommendation & Search Enhancements:**
     *   Introduced a `temperature` parameter to the `sort_files_by_recommendation` method in `pages/recommendation_engine.py`. This allows for dynamic control over the randomness of recommendations, where `0` provides a strict, score-based order and higher values increase randomness.

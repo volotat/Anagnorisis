@@ -15,6 +15,7 @@ import imageio
 import torchaudio
 from tinytag import TinyTag
 import base64
+import traceback
 # from huggingface_hub import snapshot_download # Moved to BaseSearchEngine
 
 import src.scoring_models
@@ -22,6 +23,7 @@ import pages.music.db_models as db_models
 import pages.file_manager as file_manager
 from src.base_search_engine import BaseSearchEngine # Import the base class
 from src.model_manager import ModelManager # Still needed for MusicEvaluator
+from src.text_embedder import TextEmbedder # Import the TextEmbedder
 
 def get_audiofile_data(file_path):
     """
@@ -64,6 +66,7 @@ class MusicSearch(BaseSearchEngine):
         super().__init__(cfg) # Call base class __init__
         self.cfg = cfg # Store cfg for reading parameters
         self.tokenizer = None # Will be set in _load_model_and_processor
+        self.text_embedder = TextEmbedder(cfg) # For metadata search
 
     @property
     def model_name(self) -> str:
@@ -91,12 +94,18 @@ class MusicSearch(BaseSearchEngine):
         Ensures the model is loaded to CPU before being wrapped by ModelManager.
         """
         try:
+            # 1. Load primary music model (CLAP)
             self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
             print(f"MusicSearch: Loading model to CPU first...")
             self.model = ClapModel.from_pretrained(local_model_path, local_files_only=True).cpu() # Load to CPU
             self.processor = ClapProcessor.from_pretrained(local_model_path, local_files_only=True)
             self.feature_extractor = AutoFeatureExtractor.from_pretrained(local_model_path, local_files_only=True)
             self.embedding_dim = self.model.config.text_config.projection_dim # CLAP's projection dim
+
+            # 2. Initialize the TextEmbedder for metadata
+            print(f"MusicSearch: Initializing TextEmbedder for metadata search...")
+            models_folder = os.path.dirname(local_model_path)
+            self.text_embedder.initiate(models_folder=models_folder)
 
         except Exception as e:
             print(f"ERROR: Failed to load CLAP model from '{local_model_path}'. The download might be incomplete or corrupted.")
@@ -169,8 +178,65 @@ class MusicSearch(BaseSearchEngine):
         # TODO: Find out why .squeeze(0) is needed here, it was working without it before refactoring
         return text_embeds.squeeze(0)  # Return as 1D tensor
 
-  # The 'compare' method from the original MusicSearch is largely handled by BaseSearchEngine.compare now.
-  # CLAP's compare has specific logit scales, so BaseSearchEngine.compare handles this.
+    def process_metadata(self, file_paths: list[str], callback=None, media_folder: str = None, **kwargs) -> list[list[np.ndarray]]:
+        """
+        Processes metadata for a list of files using TextEmbedder.
+        For music files, we use the filename and relative path as metadata.
+        Generates embeddings for this metadata text.
+        Returns a list of lists of numpy arrays (one list per file, each containing one metadata embedding).
+        """
+        if self.text_embedder is None or not self.text_embedder._initialized:
+            raise RuntimeError(f"TextEmbedder not initialized. Call initiate() first.")
+
+        all_files_meta_embeddings = []
+
+        for ind, file_path in enumerate(file_paths):
+            meta_embedding_np = None
+
+            try:
+                file_hash = self.cached_file_hash.get_file_hash(file_path)
+                cache_key = file_hash + '_meta'
+                
+                if cache_key in self._fast_cache:
+                    meta_embedding_np = self._fast_cache[cache_key]
+                else:
+                    # Get a clean, relative path for the metadata
+                    media_folder = kwargs.get('media_folder', '')
+                    relative_path = os.path.relpath(file_path, media_folder) if media_folder else os.path.basename(file_path)
+                    file_name = os.path.basename(file_path)
+
+                    meta_text = f"{file_name}\n{relative_path}"
+                    
+                    # Generate embedding for the metadata text using TextEmbedder
+                    # embed_text returns an array of embeddings, we take the first (and only) one
+                    meta_embeddings = self.text_embedder.embed_text(meta_text)
+                    if meta_embeddings is not None and len(meta_embeddings) > 0:
+                        meta_embedding_np = meta_embeddings[0]
+                    else:
+                        dim = self.cfg.text.embedding_dimension or self.embedding_dim
+                        meta_embedding_np = np.zeros((dim,), dtype=np.float32) if dim else np.array([], dtype=np.float32)
+
+
+                    # Cache the metadata embedding
+                    self._fast_cache[cache_key] = meta_embedding_np
+
+                all_files_meta_embeddings.append([meta_embedding_np]) # Wrap in list to match List[List[np.ndarray]]
+                    
+
+                if callback:
+                    callback(ind + 1, len(file_paths))
+            except Exception as e:
+                print(f"Error processing metadata for {file_path}: {e}")
+                traceback.print_exc()
+                dim = self.cfg.text.embedding_dimension or self.embedding_dim
+                zero_embedding = np.zeros((dim,), dtype=np.float32) if dim else np.array([], dtype=np.float32)
+                all_files_meta_embeddings.append([zero_embedding]) # Return zero embedding on error
+        
+        return all_files_meta_embeddings
+    
+    
+    # The 'compare' method from the original MusicSearch is largely handled by BaseSearchEngine.compare now.
+    # CLAP's compare has specific logit scales, so BaseSearchEngine.compare handles this.
 
 # Create scoring model singleton class so it easily accessible from other modules
 class MusicEvaluator(src.scoring_models.Evaluator):

@@ -113,6 +113,19 @@ import FileGridComponent from '/pages/FileGridComponent.js';
 
   function renderCustomData(fileData) { // Create renderCustomData function
     const dataContainer = document.createElement('div'); // Or any container element you used before
+
+    // Search matching scores
+    if (fileData.search_total_score > 0) {
+        const searchScoresElement = document.createElement('p');
+        searchScoresElement.className = 'file-info file-search-scores';
+        const searchScores = [
+            (fileData.search_total_score || 0).toFixed(3),
+            (fileData.search_semantic_score || 0).toFixed(3),
+            (fileData.search_meta_score || 0).toFixed(3),
+        ];
+        searchScoresElement.innerHTML = `<b>Search Scores:</b>&nbsp;${searchScores.join('/')}`;
+        dataContainer.appendChild(searchScoresElement);
+    }
   
     const data = document.createElement('p'); // Or whatever element you used
     data.style.wordBreak = 'break-all'; // Keep styling if you had it

@@ -198,7 +198,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
     update_items = []
     last_shown_time = 0
     for ind, full_path in enumerate(filtered_files_list):
-      print(f"Updating model ratings for {ind+1}/{len(filtered_files_list)} images.")
+      # print(f"Updating model ratings for {ind+1}/{len(filtered_files_list)} images.")
 
       hash = files_list_hash_map[full_path]
       model_rating = model_ratings[ind].item()

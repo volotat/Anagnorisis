@@ -93,6 +93,9 @@ class VideoSearch(BaseSearchEngine):
             raise RuntimeError("Embedding dimension not set. Call initiate() first.")
         # Return a dummy text embedding (zeros)
         return torch.zeros(1, self.embedding_dim).to(self.device) 
+    
+    def compare(self, embeds_target, embeds_query):
+        return [0.0] 
 
 # Create scoring model singleton class
 class VideoEvaluator(src.scoring_models.Evaluator):

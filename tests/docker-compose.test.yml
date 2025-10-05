@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  anagnorisis-test:
+    build:
+      context: ..
+      dockerfile: tests/Dockerfile.test
+    container_name: anagnorisis-test-runner
+    # Mount the entire project root directory into /app
+    volumes:
+      - ..:/app
+    # Set the working directory to the project root
+    working_dir: /app
+    # Allocate GPU resources for testing models
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    # Ensure the container runs with the same user as the host to avoid permission issues
+    # with files created during tests (e.g., model downloads).
+    user: "${UID}:${GID}"
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all

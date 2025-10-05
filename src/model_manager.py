@@ -36,6 +36,8 @@ class ModelManager:
         self._loaded = False
         self._last_used = time.time()
         self._idle_timeout = idle_timeout
+        self._busy = False 
+        self._busy_lock = threading.Lock() 
         
         # Store the model's original methods and attributes
         self._original_methods = {}
@@ -61,9 +63,15 @@ class ModelManager:
             # If model is not loaded, load it
             if not self._loaded:
                 self._load_model()
-                
-            # Call the method on the model
-            return self._model(*args, **kwargs)
+            
+            with self._busy_lock:
+                self._busy = True
+            try:
+                # Call the method on the model
+                return self._model(*args, **kwargs)
+            finally:
+                with self._busy_lock:
+                    self._busy = False
         
         
     def __getattr__(self, name):
@@ -87,7 +95,14 @@ class ModelManager:
                     def wrapped_method(*args, **kwargs):
                         with ModelManager._lock:
                             self._last_used = time.time()
-                        return attr(*args, **kwargs)
+                        
+                        with self._busy_lock:
+                            self._busy = True
+                        try:
+                            return attr(*args, **kwargs)
+                        finally:
+                            with self._busy_lock:
+                                self._busy = False
                     return wrapped_method
                 return attr
                 
@@ -180,7 +195,10 @@ class ModelManager:
         current_time = time.time()
         with cls._lock:
             for model_id, manager in list(cls._models.items()):
-                if (manager._loaded and 
+                with manager._busy_lock:
+                    is_busy = manager._busy
+
+                if (not is_busy and manager._loaded and 
                     current_time - manager._last_used > manager._idle_timeout):
                     manager._unload_model()
     

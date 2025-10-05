@@ -426,6 +426,7 @@ class FileManager:
 
         semantic_scores = []
         meta_scores = []
+        total_scores = []
         if text_query and len(text_query) > 0:
             # use first word as filter name
             filter_name, args = parse_terminal_command(text_query)
@@ -444,7 +445,7 @@ class FileManager:
             # In any other case sort by text query
             else:
                 if filters["by_text"] is not None:
-                    all_files, semantic_scores, meta_scores = filters["by_text"](all_files, text_query)
+                    all_files, semantic_scores, meta_scores, total_scores = filters["by_text"](all_files, text_query)
                 else:
                     raise ValueError("No way to filter files. No 'by_text' filter provided.")
 
@@ -457,12 +458,17 @@ class FileManager:
 
         page_files_semantic_scores = np.zeros(len(page_files))
         page_files_meta_scores = np.zeros(len(page_files))
+        page_files_total_scores = np.zeros(len(page_files))
+
          # If there are semantic and meta scores, combine them for the relevant batch
         if semantic_scores is not None and len(semantic_scores) > 0:
             page_files_semantic_scores = semantic_scores[pagination:limit]
 
         if meta_scores is not None and len(meta_scores) > 0:
             page_files_meta_scores = meta_scores[pagination:limit]
+
+        if total_scores is not None and len(total_scores) > 0:
+            page_files_total_scores = total_scores[pagination:limit]
         
         print(f'page_files {pagination}:{limit}', page_files)
 
@@ -527,7 +533,7 @@ class FileManager:
 
                 "search_semantic_score": page_files_semantic_scores[ind],
                 "search_meta_score": page_files_meta_scores[ind],
-                "search_total_score": page_files_semantic_scores[ind] + page_files_meta_scores[ind]
+                "search_total_score": page_files_total_scores[ind],
 
                 # "user_rating": user_rating,
                 # "model_rating": model_rating,

@@ -71,10 +71,11 @@ class SortingProgressCallback:
 # Embedding Gathering Progress Callback
 
 class EmbeddingGatheringCallback:
-    def __init__(self, show_status_function=None):
+    def __init__(self, show_status_function=None, name=""):
         self.last_shown_time = 0
         self.start_time = time.time()
         self.show_status_function = show_status_function
+        self.name = name
 
     def __call__(self, num_extracted, num_total):
         current_time = time.time()
@@ -83,5 +84,5 @@ class EmbeddingGatheringCallback:
             percent = (num_extracted / num_total) * 100
 
             # Show the status
-            self.show_status_function(f"Extracted embeddings for {num_extracted}/{num_total} ({percent:.2f}%) files.")
+            self.show_status_function(f"Extracted {self.name} embeddings for {num_extracted}/{num_total} ({percent:.2f}%) files.")
             self.last_shown_time = current_time

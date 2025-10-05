@@ -21,6 +21,7 @@ from importlib import import_module
 
 from src.db_models import db
 from src.config_loader import load_config
+from src.log_streamer import LogStreamer
 
 # Add after your imports, before loading config
 import argparse
@@ -360,6 +361,19 @@ def block_path_traversal():
             print(f"Path traversal attempt blocked: {value}")
             abort(403)
 
+# --- Real-time Log Streaming Setup ---
+# Assuming your log file is named 'anagnorisis-app.log' in a 'logs' directory
+container_name = os.environ.get('CONTAINER_NAME', 'container')
+log_file_name = f"{container_name}_log.txt"
+log_file_path = os.path.join(script_folder, 'logs', log_file_name)
+log_streamer = LogStreamer(socketio, log_file_path)
+
+@socketio.on('connect')
+def handle_connect():
+    """Send full log history to a client when they connect."""
+    from flask import request
+    log_streamer.send_history(request.sid)
+
 #### RUNNING THE APPLICATION
 if __name__ == '__main__':
     print("Starting the application...")
@@ -369,6 +383,9 @@ if __name__ == '__main__':
 
     # Migrate the database if necessary
     migrate_database()
+
+    # Start the log watcher in a background thread
+    socketio.start_background_task(log_streamer.watch)
 
     # Run the application
     socketio.run(app, 

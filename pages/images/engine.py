@@ -59,7 +59,7 @@ class ImageSearch(BaseSearchEngine):
         return db_models.ImagesLibrary
     
     def _get_model_hash_postfix(self):
-        return ""
+        return "_v1.0.1"
 
     def _load_model_and_processor(self, local_model_path: str):
         """
