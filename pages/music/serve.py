@@ -260,17 +260,9 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
       if none_durations:
         print("Files with None duration:", none_durations)
 
-      return sorted(all_files, key=lambda x: durations[x])
+      return durations
     
-    def filter_by_recommendation(all_files, args):
-      # Get the value for '-t' or '--temperature', defaulting to 1.0 if neither is found.
-      temp_str = args.get('-t', args.get('--temperature', '1.0'))
-      
-      try:
-          temperature = float(temp_str)
-      except (ValueError, TypeError):
-          temperature = 1.0 # Default to 1.0 if conversion fails
-
+    def filter_by_recommendation(all_files, text_query):
       # Update the model ratings of all current files
       update_model_ratings(all_files)
       
@@ -286,9 +278,9 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
 
       keys = ['hash', 'user_rating', 'model_rating', 'full_play_count', 'skip_count', 'last_played']
       music_data_dict = [dict(zip(keys, row)) for row in music_data]
-      all_files_sorted, scores = sort_files_by_recommendation(all_files, music_data_dict, temperature=temperature)
+      scores = sort_files_by_recommendation(all_files, music_data_dict)
 
-      return all_files_sorted
+      return scores
     
     # Create common filters instance
     common_filters = CommonFilters(
@@ -300,11 +292,12 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
     )
 
     # Get parameters
-    path = input_data.get('path', '')
-    pagination = input_data.get('pagination', 0)
-    limit = input_data.get('limit', 100)
-    text_query = input_data.get('text_query', None)
-    seed = input_data.get('seed', None)
+    # path = input_data.get('path', '')
+    # pagination = input_data.get('pagination', 0)
+    # limit = input_data.get('limit', 100)
+    # text_query = input_data.get('text_query', None)
+    # seed = input_data.get('seed', None)
+    # mode = input_data.get('mode', 'file-name') # can be 'file-name', 'semantic-content', 'semantic-metadata'
     
     # Define available filters
     filters = {
@@ -343,7 +336,14 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
         "length": convert_length(audiofile_data['duration']),
       }
 
-    return music_file_manager.get_files(path, pagination, limit, text_query, seed, filters, get_file_info, update_model_ratings)
+    # path, pagination, limit, text_query, seed, filters, get_file_info, update_model_ratings, mode
+    input_params = input_data.copy()
+    input_params.update({
+      "filters": filters,
+      "get_file_info": get_file_info,
+      "update_model_ratings": update_model_ratings,
+    })
+    return music_file_manager.get_files(**input_params)
 
   @socketio.on('emit_music_page_get_song_details')
   def get_song_details(data):

@@ -222,7 +222,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
         return videos_file_manager.get_folders(path)
 
     @socketio.on('emit_videos_page_get_files')
-    def get_files(data):
+    def get_files(input_data):
         # Create common filters instance
         common_filters = CommonFilters(
             engine=videos_search_engine,
@@ -258,19 +258,19 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
                 full_video_data_for_sorting.append(hash_to_db_data.get(file_hash, {
                     'hash': file_hash, 'user_rating': None, 'model_rating': None, 'full_play_count': 0, 'skip_count': 0, 'last_played': None
                 }))
-            all_files_sorted, scores = sort_files_by_recommendation(all_files, full_video_data_for_sorting)
+            scores = sort_files_by_recommendation(all_files, full_video_data_for_sorting)
 
-            return all_files_sorted
+            return scores
 
-        path = data.get('path', '')
-        pagination = data.get('pagination', 0)
-        limit = data.get('limit', 100)
-        text_query = data.get('text_query', None)
-        seed = data.get('seed', None)
+        # path = data.get('path', '')
+        # pagination = data.get('pagination', 0)
+        # limit = data.get('limit', 100)
+        # text_query = data.get('text_query', None)
+        # seed = data.get('seed', None)
 
         filters = {
             # "by_file": filter_by_file, # special sorting case when file path used as query
-            # "by_text": common_filters.filter_by_text, # special sorting case when text used as query, i.e. all other cases wasn't triggered
+            "by_text": common_filters.filter_by_text, # special sorting case when text used as query, i.e. all other cases wasn't triggered
             # "file size": filter_by_file_size,
             # "length": filter_by_length,
             # "similarity": filter_by_similarity, 
@@ -325,7 +325,14 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
                     "last_played": last_played,
                 }
         
-        return videos_file_manager.get_files(path, pagination, limit, text_query, seed, filters, get_file_info, update_model_ratings)
+        #path, pagination, limit, text_query, seed, filters, get_file_info, update_model_ratings
+        input_params = input_data.copy()
+        input_params.update({
+            "filters": filters,
+            "get_file_info": get_file_info,
+            "update_model_ratings": update_model_ratings,
+        })
+        return videos_file_manager.get_files(**input_params)
 
     @socketio.on('emit_videos_page_open_file_in_folder')
     def open_file_in_folder(file_path):

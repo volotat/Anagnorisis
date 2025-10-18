@@ -2,6 +2,7 @@ import FolderViewComponent from '/pages/FolderViewComponent.js';
 import StarRatingComponent from '/pages/StarRating.js';
 import PaginationComponent from '/pages/PaginationComponent.js';
 import FileGridComponent from '/pages/FileGridComponent.js';
+import SearchBarComponent from '/pages/SearchBarComponent.js';
 
 
 // Create a closed scope to avoid any variable collisions  
@@ -17,9 +18,9 @@ import FileGridComponent from '/pages/FileGridComponent.js';
   const urlParams = new URLSearchParams(window.location.search);
   let pageParam = parseInt(urlParams.get('page'));
   let page = (!pageParam || pageParam < 1) ? 1 : pageParam;
-  let text_query = urlParams.get('text_query') || '';
+  // let text_query = urlParams.get('text_query') || '';
   let path = urlParams.get('path') || '';
-  text_query = decodeURIComponent(text_query);
+  // text_query = decodeURIComponent(text_query);
   path = decodeURIComponent(path);
   console.log('path', path);
 
@@ -115,15 +116,10 @@ import FileGridComponent from '/pages/FileGridComponent.js';
     const dataContainer = document.createElement('div'); // Or any container element you used before
 
     // Search matching scores
-    if (fileData.search_total_score > 0) {
+    if (fileData.search_score !== null && fileData.search_score !== undefined) {
         const searchScoresElement = document.createElement('p');
         searchScoresElement.className = 'file-info file-search-scores';
-        const searchScores = [
-            (fileData.search_total_score || 0).toFixed(3),
-            (fileData.search_semantic_score || 0).toFixed(3),
-            (fileData.search_meta_score || 0).toFixed(3),
-        ];
-        searchScoresElement.innerHTML = `<b>Search Scores:</b>&nbsp;${searchScores.join('/')}`;
+        searchScoresElement.innerHTML = `<b>Search Score:</b>&nbsp;${(fileData.search_score || 0).toFixed(3)}`;
         dataContainer.appendChild(searchScoresElement);
     }
   
@@ -210,59 +206,59 @@ import FileGridComponent from '/pages/FileGridComponent.js';
     levelLeft.append(btnsRow2);
 
     // Create buttons for opening the file
-    const btn_open = document.createElement('button');
-    btn_open.className = 'button level-left is-gapless';
-    btn_open.innerHTML = '<span class="icon"><i class="fas fa-folder-open"></i></span><span>Open</span>';
-    btn_open.onclick = function() {
-      console.log('Open file in folder: ' + fileData.full_path);
-      socket.emit('emit_images_page_open_file_in_folder', fileData.full_path);
-    };
-    btnsRow1.append(btn_open);
+    // const btn_open = document.createElement('button');
+    // btn_open.className = 'button level-left is-gapless';
+    // btn_open.innerHTML = '<span class="icon"><i class="fas fa-folder-open"></i></span><span>Open</span>';
+    // btn_open.onclick = function() {
+    //   console.log('Open file in folder: ' + fileData.full_path);
+    //   socket.emit('emit_images_page_open_file_in_folder', fileData.full_path);
+    // };
+    // btnsRow1.append(btn_open);
 
     // Create a button for finding similar images
-    const btn_find_similar = document.createElement('button');
-    btn_find_similar.className = 'button level-left is-gapless';
-    btn_find_similar.innerHTML = '<span class="icon"><i class="fas fa-search"></i></span><span>Find similar</span>';
-    btn_find_similar.onclick = function() {
-      console.log('Find similar images for: ' + fileData.full_path);
+    // const btn_find_similar = document.createElement('button');
+    // btn_find_similar.className = 'button level-left is-gapless';
+    // btn_find_similar.innerHTML = '<span class="icon"><i class="fas fa-search"></i></span><span>Find similar</span>';
+    // btn_find_similar.onclick = function() {
+    //   console.log('Find similar images for: ' + fileData.full_path);
 
-      let url = new URL(window.location.href);
-      let params = new URLSearchParams(url.search);
-      params.set('text_query', fileData.full_path);
-      params.set('page', 1);
-      url.search = params.toString();
-      window.location.href = url.toString();
-    };
-    btnsRow1.append(btn_find_similar);
+    //   let url = new URL(window.location.href);
+    //   let params = new URLSearchParams(url.search);
+    //   params.set('text_query', fileData.full_path);
+    //   params.set('page', 1);
+    //   url.search = params.toString();
+    //   window.location.href = url.toString();
+    // };
+    // btnsRow1.append(btn_find_similar);
 
     // --- Add the Edit Internal Metadata button (temporarily disabled) ---
-    const btn_edit_internal_metadata = document.createElement('button');
-    btn_edit_internal_metadata.disabled = true; // Temporarily disable this button
-    btn_edit_internal_metadata.className = 'button level-left is-gapless';
-    btn_edit_internal_metadata.innerHTML = '<span class="icon"><i class="fas fa-file"></i></span><span>Edit meta</span>';
-    btn_edit_internal_metadata.onclick = function() {
-        // console.log('Edit internal metadata for: ' + fileData.file_path);
-        // currentImageMetadataFilePath = fileData.file_path; // Set the global tracker
-        // $('#metadata_modal_title').text(`Edit ${fileData.base_name}.meta`); // Set modal title
-        // $('#metadata_content_textarea').val('Loading metadata...'); // Show loading state
-        // socket.emit('emit_images_page_get_image_metadata_file_content', fileData.file_path);
-        // $('#metadata_editor_modal').addClass('is-active'); // Show modal
-    };
-    btnsRow2.append(btn_edit_internal_metadata);
+    // const btn_edit_internal_metadata = document.createElement('button');
+    // btn_edit_internal_metadata.disabled = true; // Temporarily disable this button
+    // btn_edit_internal_metadata.className = 'button level-left is-gapless';
+    // btn_edit_internal_metadata.innerHTML = '<span class="icon"><i class="fas fa-file"></i></span><span>Edit meta</span>';
+    // btn_edit_internal_metadata.onclick = function() {
+    //     // console.log('Edit internal metadata for: ' + fileData.file_path);
+    //     // currentImageMetadataFilePath = fileData.file_path; // Set the global tracker
+    //     // $('#metadata_modal_title').text(`Edit ${fileData.base_name}.meta`); // Set modal title
+    //     // $('#metadata_content_textarea').val('Loading metadata...'); // Show loading state
+    //     // socket.emit('emit_images_page_get_image_metadata_file_content', fileData.file_path);
+    //     // $('#metadata_editor_modal').addClass('is-active'); // Show modal
+    // };
+    // btnsRow2.append(btn_edit_internal_metadata);
 
     // --- Add the Edit External Metadata button ---
-    const btn_edit_external_metadata = document.createElement('button');
-    btn_edit_external_metadata.className = 'button level-left is-gapless';
-    btn_edit_external_metadata.innerHTML = '<span class="icon"><i class="fas fa-question"></i></span><span>Edit .meta</span>'; // Changed to 'Edit Meta' for space
-    btn_edit_external_metadata.onclick = function() {
-        console.log('Edit metadata for: ' + fileData.file_path);
-        currentImageMetadataFilePath = fileData.file_path; // Set the global tracker
-        $('#metadata_modal_title').text(`Edit ${fileData.base_name}.meta`); // Set modal title
-        $('#metadata_content_textarea').val('Loading metadata...'); // Show loading state
-        socket.emit('emit_images_page_get_image_metadata_file_content', fileData.file_path);
-        $('#metadata_editor_modal').addClass('is-active'); // Show modal
-    };
-    btnsRow2.append(btn_edit_external_metadata);
+    // const btn_edit_external_metadata = document.createElement('button');
+    // btn_edit_external_metadata.className = 'button level-left is-gapless';
+    // btn_edit_external_metadata.innerHTML = '<span class="icon"><i class="fas fa-question"></i></span><span>Edit .meta</span>'; // Changed to 'Edit Meta' for space
+    // btn_edit_external_metadata.onclick = function() {
+    //     console.log('Edit metadata for: ' + fileData.file_path);
+    //     currentImageMetadataFilePath = fileData.file_path; // Set the global tracker
+    //     $('#metadata_modal_title').text(`Edit ${fileData.base_name}.meta`); // Set modal title
+    //     $('#metadata_content_textarea').val('Loading metadata...'); // Show loading state
+    //     socket.emit('emit_images_page_get_image_metadata_file_content', fileData.file_path);
+    //     $('#metadata_editor_modal').addClass('is-active'); // Show modal
+    // };
+    // btnsRow2.append(btn_edit_external_metadata);
 
     // Create a checkbox for selecting the file for further actions
     const checkboxLabel = document.createElement('label');
@@ -414,6 +410,20 @@ import FileGridComponent from '/pages/FileGridComponent.js';
   $(document).ready(function() {
     let paginationComponent;
 
+    // Instantiate SearchBarComponent
+    const searchBar = new SearchBarComponent({
+      container: '#search_bar_container',
+      enableModes: ['file-name', 'semantic-content', 'semantic-metadata'], // disable here as needed
+      showOrder: true,
+      showTemperature: true,
+      temperatures: [0, 0.2, 1, 2],
+      keywords: ['rating', 'random', 'file_size', 'resolution', 'proportion', 'similarity'],
+      autoSyncUrl: true,
+      ensureDefaultsInUrl: true,
+    });
+
+    const search_state = searchBar.getState();
+
     // Request current media folder path
     socket.emit('emit_images_page_get_path_to_media_folder');
 
@@ -432,9 +442,12 @@ import FileGridComponent from '/pages/FileGridComponent.js';
     socket.emit('emit_images_page_get_files', {
       path: path, 
       pagination: (page-1)*num_files_on_page, 
-      limit: page * num_files_on_page,
-      text_query: text_query,
-      seed: seed
+      limit: num_files_on_page,
+      text_query: search_state.text_query,
+      seed: search_state.seed,
+      mode: search_state.mode,
+      order: search_state.order,
+      temperature: search_state.temperature,
     }, (response)=>{
       console.log('emit_images_page_get_files response', response);
       // Handle the response here
@@ -543,31 +556,6 @@ import FileGridComponent from '/pages/FileGridComponent.js';
       if (file_path_received === currentImageMetadataFilePath) {
         $('#metadata_content_textarea').val(metadata_content);
       }
-    });
-
-    // Set search query in input 
-    $('#search_input').val(text_query);
-
-    // Search for images
-    $('#seach_button').click(function() {
-      let text_query = $('#search_input').val();
-      let url = new URL(window.location.href);
-      let params = new URLSearchParams(url.search);
-      params.set('text_query', text_query);
-      params.set('page', 1);
-      
-      // Generate a new seed for each search
-      let newSeed = Math.floor(Math.random() * 1e9);
-      params.set('seed', newSeed);
-
-      url.search = params.toString();
-      window.location.href = url.toString();
-    });
-
-    // Set search query in input
-    $('.set_search').click(function() {
-      $('#search_input').val($(this).text());
-      $('#seach_button').click();
     });
 
     // Update path to the media folder

@@ -1,47 +1,9 @@
 import datetime
 import numpy as np
+from pages.utils import weighted_shuffle
 
 def sigmoid(x):
     return 1 / (1 + np.exp(-x))
-
-def weighted_shuffle(scores, temperature=1.0):
-    """
-    Returns a permutation (list of indices) from files_list where
-    each item is sampled without replacement. The probability is adjusted by temperature.
-    - temperature = 0: Strict descending order (highest score first).
-    - temperature = 1: Probability proportional to score.
-    - temperature > 1: More random, flattens probability distribution.
-    """
-    remaining = list(range(len(scores)))
-    order = []
-    scores = np.array(scores, dtype=np.float64)  # Use float64 for stability
-
-    if temperature == 0:
-        # Strict mode: sort remaining indices by their scores in descending order
-        # and append them all at once.
-        sorted_remaining_indices = sorted(remaining, key=lambda i: scores[i], reverse=True)
-        return sorted_remaining_indices
-
-    while remaining:
-        # Apply temperature to the scores of the remaining items
-        current_scores = scores[remaining]
-        
-        # Prevent overflow/underflow with very high/low scores
-        current_scores = np.clip(current_scores, 1e-9, None)
-        
-        # The core of the temperature logic
-        adjusted_scores = current_scores ** (1 / temperature)
-
-        total = adjusted_scores.sum()
-        if total == 0 or not np.isfinite(total):
-            # If total is 0 or inf, assign uniform probabilities.
-            probs = np.ones(len(remaining)) / len(remaining)
-        else:
-            probs = adjusted_scores / total
-        
-        pick = np.random.choice(len(remaining), p=probs)
-        order.append(remaining.pop(pick))
-    return order
 
 def sort_files_by_recommendation(files_list, files_data, temperature=1.0):
     """
@@ -96,11 +58,11 @@ def sort_files_by_recommendation(files_list, files_data, temperature=1.0):
         print("Warning: Final scores contain non-finite values.")
         final_scores = np.nan_to_num(final_scores, nan=0.0, posinf=1.0, neginf=0.0)
 
-    order = weighted_shuffle(final_scores, temperature=temperature)
+    # order = weighted_shuffle(final_scores, temperature=temperature)
 
-    sorted_files = [files_list[i] for i in order]
-    sorted_scores = final_scores[order]
-    return sorted_files, sorted_scores
+    # sorted_files = [files_list[i] for i in order]
+    # sorted_scores = final_scores[order]
+    return final_scores
 
 # ------------------- TESTS -------------------
 def test_weighted_shuffle_zero():

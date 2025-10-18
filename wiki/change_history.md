@@ -50,6 +50,18 @@ Add new downloadable module for 'Deep Research'-like functionality that uses use
 
 ## Versions History
 
+### Version 0.2.10 (19.10.2025)
+*   **Architecture & Search Enhancements:**
+    *   Text-based filtering in `common_filters.py` now supports three modes: `file-name`, `semantic-content`, and `semantic-metadata`. Metadata-based search is currently partial (file names and paths only). It will be extended to include richer file's metadata and `{file_name}.meta` contents, using `TextEmbedder` as the backbone.
+    *   Adopted `rapidfuzz` for fast and accurate file-name search; added to `requirements.txt`.
+    *   All filters now return scores (instead of sorted lists). Sorting order and temperature-based sampling are now applied centrally in `file_manager.py -> get_files`, which has been updated to work with `mode`, `order`, and `temperature` parameters.
+*   **UI & Componentization:**
+    *   Added a reusable `SearchBarComponent.js` to provide an advanced search bar with mode/order/temperature controls that can be included across modules.
+    *   `get_files` now accepts `temperature` directly as a parameter (replacing terminal-style flags), so users can adjust it in the UI.
+    *   All modules have been adapted to work with the improved search bar and filtering flow.
+*   **Maintenance:**
+    *   Minor code refactoring.
+
 ### Version 0.2.9 (06.10.2025)
 *   **Architecture & Search Enhancements:**
     *   Refactored text embedding processing into a dedicated `TextEmbedder` class (`src/text_embedder.py`). This improves code organization, maintainability, and allows the module to be reused for metadata-based search across the application.

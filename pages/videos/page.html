@@ -7,48 +7,8 @@
   </aside>
 
   <div class="column">
-    <!-- Search bar, image input, and filter dropdown -->
-    <div class="field has-addons">
-      <div class="control is-expanded">
-        <input class="input is-fullwidth" id="search_input" type="text" placeholder="Write your search query here." 
-              ondragover="event.preventDefault()" 
-              ondrop="handleDrop(event)">
-      </div>
-      <div class="control">
-        <div class="dropdown is-hoverable">
-          <div class="dropdown-trigger">
-            <button class="button" aria-haspopup="true" aria-controls="dropdown-menu">
-              <span>Increasing</span>
-              <span class="icon is-small">
-                <i class="fas fa-angle-down" aria-hidden="true"></i>
-              </span>
-            </button>
-          </div>
-          <div class="dropdown-menu" id="dropdown-menu" role="menu">
-            <div class="dropdown-content">
-              <a href="#" class="dropdown-item">Increasing</a>
-              <a href="#" class="dropdown-item">Decreasing</a>
-            </div>
-          </div>
-        </div>
-      </div>
-      <div class="control">
-        <button class="button is-info" id="search_button">Search</button>
-      </div>
-    </div>
-
-    <!-- Field with helper tags for search -->
-    <div class="field is-grouped is-grouped-multiline mt-4" id="tags_container">
-      <b>Special keywords:</b>
-      <button class="tag is-info is-light set_search">recommendation</button>
-      <!--<button class="tag is-light set_search">rating</button>-->
-      <button class="tag is-info is-light set_search">random</button>
-      <!--<button class="tag is-info is-light set_search">file_size</button>
-      <button class="tag is-info is-light set_search">resolution</button>
-      <button class="tag is-light set_search">effective resolution</button>
-      <button class="tag is-light set_search">rating</button>
-      <button class="tag is-info is-light set_search">similarity</button>-->
-    </div>
+    <!-- Search bar component mount point -->
+    <div id="search_bar_container" class="mb-4"></div>
 
     <!-- Pagination and status on top-->
     <nav class="level mt-6">

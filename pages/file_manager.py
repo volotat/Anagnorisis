@@ -4,6 +4,7 @@ import hashlib
 import datetime
 import shlex
 
+
 ###########################################
 # File Hash Caching
 
@@ -304,8 +305,7 @@ def resolve_subpath(base_dir: str, user_path: str | None) -> Path:
 from pages.socket_events import CommonSocketEvents
 import time
 import numpy as np
-from pages.utils import convert_size
-
+from pages.utils import convert_size, weighted_shuffle
 
 class FileManager:
     def __init__(self, media_directory, engine=None, module_name="FileManager", media_formats=None, socketio=None, db_schema=None):
@@ -382,7 +382,9 @@ class FileManager:
         self.cached_file_hash.save_hash_cache()
         return all_hashes
 
-    def get_files(self, path = "", pagination = 0, limit = 100, text_query = None, seed = None, filters: dict = {}, get_file_info = None, update_model_ratings = None):
+    
+
+    def get_files(self, path = "", pagination = 0, limit = 100, text_query = None, seed = None, filters: dict = {}, get_file_info = None, update_model_ratings = None, mode = 'file-name', order = 'most-relevant', temperature = 0):
 
         if self.media_directory is None:
             self.show_status(f"{self.module_name} media folder is not set.")
@@ -424,51 +426,55 @@ class FileManager:
         # Sort music files by text or file query
         self.show_status(f"Sorting music files by: \"{text_query}\"")
 
-        semantic_scores = []
-        meta_scores = []
-        total_scores = []
+        scores = np.zeros(len(all_files), dtype=np.float32)
         if text_query and len(text_query) > 0:
             # use first word as filter name
-            filter_name, args = parse_terminal_command(text_query)
+            filter_name = text_query
 
 
             # If there is a file path used as a query, this file exists and within specified formats, sort files by similarity to that file
             if os.path.isfile(text_query) and text_query.lower().endswith(tuple(self.media_formats)):
                 if filters["by_file"] is not None:
-                    all_files = filters["by_file"](all_files, text_query) # Set the filter for other components
+                    scores = filters["by_file"](all_files, text_query) # Set the filter for other components
             
             # Custom sorts
             elif filter_name and (filter_name not in ["by_file", "by_text"]) and (filter_name in filters):
                 if filters[filter_name] is not None:
-                    all_files = filters[filter_name](all_files, args) # Set the filter for other components
+                    scores = filters[filter_name](all_files, text_query) # Set the filter for other components
 
             # In any other case sort by text query
             else:
                 if filters["by_text"] is not None:
-                    all_files, semantic_scores, meta_scores, total_scores = filters["by_text"](all_files, text_query)
+                    scores = filters["by_text"](all_files, text_query, mode=mode)
                 else:
                     raise ValueError("No way to filter files. No 'by_text' filter provided.")
 
-        #all_files = sorted(all_files, key=os.path.basename)
+        if scores is None or len(scores) == 0:
+            raise ValueError("No scores calculated for files. Cannot sort.")
+
+
+        if type(scores) is np.ndarray:
+            scores = scores.tolist()
+        print(f"Scores calculated for {len(scores)} files.")
+
+        print(f"Sorting {len(all_files)} files with temperature={temperature}, order={order}...")
+        indices = weighted_shuffle(scores, temperature=temperature) 
+
+        if order == 'most-relevant':
+            pass  # already sorted in descending order
+        elif order == 'least-relevant':
+            indices = indices[::-1]  # reverse for ascending order
+        else:
+            raise ValueError("order must be 'most-relevant' or 'least-relevant'")
+
+        sorted_files = [all_files[i] for i in indices]
+        sorted_scores = [scores[i] for i in indices]
 
         
         # Extracting metadata for relevant batch of music files
         self.show_status(f"Extracting metadata for relevant batch of files.")
-        page_files = all_files[pagination:limit]
-
-        page_files_semantic_scores = np.zeros(len(page_files))
-        page_files_meta_scores = np.zeros(len(page_files))
-        page_files_total_scores = np.zeros(len(page_files))
-
-         # If there are semantic and meta scores, combine them for the relevant batch
-        if semantic_scores is not None and len(semantic_scores) > 0:
-            page_files_semantic_scores = semantic_scores[pagination:limit]
-
-        if meta_scores is not None and len(meta_scores) > 0:
-            page_files_meta_scores = meta_scores[pagination:limit]
-
-        if total_scores is not None and len(total_scores) > 0:
-            page_files_total_scores = total_scores[pagination:limit]
+        page_files = sorted_files[pagination:pagination+limit]
+        page_files_scores = sorted_scores[pagination:pagination+limit]
         
         print(f'page_files {pagination}:{limit}', page_files)
 
@@ -494,10 +500,14 @@ class FileManager:
             # Update the model ratings of all current files
             update_model_ratings(no_model_rating_files)
 
-
         files_data = []
+        
+        self.show_status(f"Extracting metadata for {len(page_files)} files.")
 
         for ind, full_path in enumerate(page_files):
+            # page_hashes = self._get_all_hashes_with_progress(page_files)
+            page_hashes = [self.cached_file_hash.get_file_hash(file_path) for file_path in page_files]
+
             file_path = os.path.relpath(full_path, self.media_directory)
             basename = os.path.basename(full_path)
             file_size = os.path.getsize(full_path)
@@ -531,9 +541,7 @@ class FileManager:
                 "file_size": convert_size(file_size),
                 "file_info": get_file_info(full_path, file_hash),
 
-                "search_semantic_score": page_files_semantic_scores[ind],
-                "search_meta_score": page_files_meta_scores[ind],
-                "search_total_score": page_files_total_scores[ind],
+                "search_score": page_files_scores[ind]
 
                 # "user_rating": user_rating,
                 # "model_rating": model_rating,
@@ -546,31 +554,14 @@ class FileManager:
         # Save all extracted metadata to the cache
         self.cached_metadata.save_metadata_cache()
 
-        # Extract subfolders structure from the path into a dict
-        # folders = get_folder_structure(self.media_directory, self.media_formats)
+        sorted_files_paths = [os.path.relpath(file_path, self.media_directory) for file_path in sorted_files]
 
-        # # Return "No files in the directory" if the path not exist or empty.
-        # if not folders:
-        #     self.show_status(f"No files in the directory.")
-        #     self.socketio.emit('emit_music_page_show_files', {"files_data": files_data, "folder_path": folder_path, "total_files": 0, "folders": folders, "all_files_paths": []})
-        #     return
-
-        # # Extract main folder name
-        # main_folder_name = os.path.basename(os.path.normpath(self.media_directory))
-        # folders['name'] = main_folder_name
-
-        #print(folders)
-
-        all_files_paths = [os.path.relpath(file_path, self.media_directory) for file_path in all_files]
-        
-        #socketio.emit('emit_music_page_show_files', {"files_data": files_data, "folder_path": folder_path, "total_files": len(all_files), "folders": folders, "all_files_paths": all_files_paths})
-
-        self.show_status(f'{len(all_files)} files processed in {time.time() - start_time:.4f} seconds.')
+        self.show_status(f'{len(sorted_files)} files processed in {time.time() - start_time:.4f} seconds.')
 
         return {
             "files_data": files_data, 
             "folder_path": folder_path, 
-            "total_files": len(all_files), 
-            "all_files_paths": all_files_paths
+            "total_files": len(sorted_files), 
+            "all_files_paths": sorted_files_paths
             }
 

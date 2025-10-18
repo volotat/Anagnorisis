@@ -239,6 +239,7 @@ for extension_name in extension_names:
             print(f"Warning: Module {serve_module_path} does not have a callable init_socket_events function.")
     except ImportError as e:
         print(f"Warning: Could not import module {serve_module_path}: {e}")
+        print(traceback.format_exc())
     except Exception as e:
         print(f"Error initializing extension {extension_name}: {e}")
         print(traceback.format_exc())

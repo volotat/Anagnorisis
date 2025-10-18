@@ -249,15 +249,17 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
       show_search_status(f"Gathering resolutions for sorting...") # Initial status message
       all_hashes = [cached_file_hash.get_file_hash(file_path) for file_path in all_files]
       resolutions = gather_resolutions(all_files, all_hashes, media_directory)
-      all_files_sorted = sorted(all_files, key=lambda x: resolutions[x][0] * resolutions[x][1])
-      return all_files_sorted
+      # all_files_sorted = sorted(all_files, key=lambda x: resolutions[x][0] * resolutions[x][1])
+      scores = [resolutions[x][0] * resolutions[x][1] for x in all_files]
+      return scores
 
     def filter_by_proportion(all_files, text_query):
       show_search_status(f"Gathering resolutions for sorting...") # Initial status message
       all_hashes = [cached_file_hash.get_file_hash(file_path) for file_path in all_files]
       resolutions = gather_resolutions(all_files, all_hashes, media_directory)
-      all_files_sorted = sorted(all_files, key=lambda x: resolutions[x][0] / resolutions[x][1])
-      return all_files_sorted
+      #all_files_sorted = sorted(all_files, key=lambda x: resolutions[x][0] / resolutions[x][1])
+      scores = [resolutions[x][0] / resolutions[x][1] for x in all_files]
+      return scores
 
     # Create common filters instance
     common_filters = CommonFilters(
@@ -269,11 +271,11 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
     )
 
     # Get parameters
-    path = input_data.get('path', '')
-    pagination = input_data.get('pagination', 0)
-    limit = input_data.get('limit', 100)
-    text_query = input_data.get('text_query', None)
-    seed = input_data.get('seed', None)
+    # path = input_data.get('path', '')
+    # pagination = input_data.get('pagination', 0)
+    # limit = input_data.get('limit', 100)
+    # text_query = input_data.get('text_query', None)
+    # seed = input_data.get('seed', None)
 
     # Define available filters
     filters = {
@@ -319,7 +321,14 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
         "file_data": file_data
       }
 
-    return images_file_manager.get_files(path, pagination, limit, text_query, seed, filters, get_file_info, update_model_ratings)
+    # path, pagination, limit, text_query, seed, filters, get_file_info, update_model_ratings
+    input_params = input_data.copy()
+    input_params.update({
+      "filters": filters,
+      "get_file_info": get_file_info,
+      "update_model_ratings": update_model_ratings,
+    })
+    return images_file_manager.get_files(**input_params)
 
   @socketio.on('emit_images_page_move_files')
   def move_files(data):

@@ -29,18 +29,8 @@
   </aside>
 
   <div class="column">
-    <!-- Search bar, image input, and filter dropdown -->
-    <div class="field has-addons">
-      <div class="control is-expanded">
-        <input class="input is-fullwidth" id="search_input" type="text" placeholder="Write your search query or place a path to text file to find similar ones." 
-              ondragover="event.preventDefault()" 
-              ondrop="handleDrop(event)"
-              onkeydown="if (event.key === 'Enter') document.getElementById('search_button').click()">
-      </div>
-      <div class="control">
-        <button class="button is-info" id="search_button">Search</button>
-      </div>
-    </div>
+    <!-- Search bar component mount point -->
+    <div id="search_bar_container" class="mb-4"></div>
 
     <!-- Pagination and status on top-->
     <nav class="level mt-6">

@@ -1,6 +1,7 @@
 import FolderViewComponent from '/pages/FolderViewComponent.js'; 
 import FileGridComponent from '/pages/FileGridComponent.js';
 import PaginationComponent from '/pages/PaginationComponent.js';
+import SearchBarComponent from '/pages/SearchBarComponent.js';
 
 //// CONSTANTS AND VARIABLES
 let num_files_on_page = 24;
@@ -14,9 +15,9 @@ let currentFilePath = null; // To store currently opened file path in modal
 const urlParams = new URLSearchParams(window.location.search);
 let pageParam = parseInt(urlParams.get('page'));
 let page = (!pageParam || pageParam < 1) ? 1 : pageParam;
-let text_query = urlParams.get('text_query') || '';
+// let text_query = urlParams.get('text_query') || '';
 let path = urlParams.get('path') || '';
-text_query = decodeURIComponent(text_query);
+// text_query = decodeURIComponent(text_query);
 path = decodeURIComponent(path);
 console.log('path', path);
 
@@ -70,15 +71,10 @@ function renderCustomData(fileData) { // Function for custom data rendering
     dataContainer.style.wordBreak = 'break-word';
 
     // Search matching scores
-    if (fileData.search_total_score > 0) {
+    if (fileData.search_score !== null && fileData.search_score !== undefined) {
         const searchScoresElement = document.createElement('p');
         searchScoresElement.className = 'file-info file-search-scores';
-        const searchScores = [
-            (fileData.search_total_score || 0).toFixed(3),
-            (fileData.search_semantic_score || 0).toFixed(3),
-            (fileData.search_meta_score || 0).toFixed(3),
-        ];
-        searchScoresElement.innerHTML = `<b>Search Scores:</b>&nbsp;${searchScores.join('/')}`;
+        searchScoresElement.innerHTML = `<b>Search Score:</b>&nbsp;${(fileData.search_score || 0).toFixed(3)}`;
         dataContainer.appendChild(searchScoresElement);
     }
 
@@ -177,6 +173,20 @@ function setupAutoUpdate() {
 $(document).ready(function() {
     let paginationComponent;
 
+    // Instantiate SearchBarComponent
+    const searchBar = new SearchBarComponent({
+        container: '#search_bar_container',
+        enableModes: ['file-name', 'semantic-content', 'semantic-metadata'], // disable here as needed
+        showOrder: true,
+        showTemperature: true,
+        temperatures: [0, 0.2, 1, 2],
+        keywords: [], //['recommendation', 'rating', 'random', 'file_size', 'length', 'similarity'],
+        autoSyncUrl: true,
+        ensureDefaultsInUrl: true,
+    });
+
+    const search_state = searchBar.getState();
+
     // Request current media folder path
     socket.emit('emit_text_page_get_path_to_media_folder');
 
@@ -197,8 +207,12 @@ $(document).ready(function() {
     socket.emit('emit_text_page_get_files', {
       path: path, 
       pagination: (page-1)*num_files_on_page, 
-      limit: page * num_files_on_page,
-      text_query: text_query 
+      limit: num_files_on_page,
+      text_query: search_state.text_query,
+      seed: search_state.seed,
+      mode: search_state.mode,
+      order: search_state.order,
+      temperature: search_state.temperature,
     }, (response) => {
         console.log('emit_text_page_show_files', response);
 
@@ -313,26 +327,6 @@ $(document).ready(function() {
     // Show current media folder path
     socket.on('emit_text_page_show_path_to_media_folder', (current_path) => {
         $('#path_to_media_folder').val(current_path);
-    });
-
-    // Set search query in input 
-    $('#search_input').val(text_query);
-
-    // Search for text files
-    $('#search_button').click(function() {
-        let text_query = $('#search_input').val();
-        let url = new URL(window.location.href);
-        let params = new URLSearchParams(url.search);
-        params.set('text_query', text_query);
-        params.set('page', 1);
-        url.search = params.toString();
-        window.location.href = url.toString();
-    });
-
-    // Set search query from tags
-    $('.set_search').click(function() {
-        $('#search_input').val($(this).text());
-        $('#search_button').click();
     });
 
     // Update path to the media folder

@@ -166,7 +166,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
         return text_file_manager.get_folders(path)
 
     @socketio.on('emit_text_page_get_files')
-    def get_files(data):
+    def get_files(input_data):
         # Create common filters instance
         common_filters = CommonFilters(
             engine=text_search_engine,
@@ -177,11 +177,11 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
         )
 
         # Get parameters
-        path = data.get('path', '')
-        pagination = data.get('pagination', 0)
-        limit = data.get('limit', 100)
-        text_query = data.get('text_query', None)
-        seed = data.get('seed', None)
+        # path = data.get('path', '')
+        # pagination = data.get('pagination', 0)
+        # limit = data.get('limit', 100)
+        # text_query = data.get('text_query', None)
+        # seed = data.get('seed', None)
 
         # Define available filters
         filters = {
@@ -211,7 +211,14 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
                     "file_data": file_data,
                 }
 
-        return text_file_manager.get_files(path, pagination, limit, text_query, seed, filters, get_file_info, update_model_ratings)
+        # path, pagination, limit, text_query, seed, filters, get_file_info, update_model_ratings
+        input_params = input_data.copy()
+        input_params.update({
+            "filters": filters,
+            "get_file_info": get_file_info,
+            "update_model_ratings": update_model_ratings,
+        })
+        return text_file_manager.get_files(**input_params)
 
     @socketio.on('emit_text_page_get_file_content')
     def get_file_content(data):
