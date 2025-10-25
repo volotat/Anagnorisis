@@ -45,10 +45,29 @@ When gathering hashes of files make the cache saving once in a while, as this pr
 All active filters should be automatically gathered from the backend and displayed in the UI, instead of being hardcoded in the frontend.
 In the recommendation engine replace `full_play_count` and `skip_count` with `play_time` that dynamically calculate how much time user spent listening or watching the file. This should better reflect user preferences and be consistent across different types of data (at least music and videos).
 
+Remove all embeddings from the database and store them in cache using new advances cache system with fast lookup.
+
 ### Ideas
 Add new downloadable module for 'Deep Research'-like functionality that uses user-trained text evaluating model to search for relative information adjusted to user preferences.
 
 ## Versions History
+
+### Version 0.2.11 (25.10.2025)
+*   **Caching & Storage:**
+    *   Introduced a new, more sophisticated `TwoLevelCache` (`src/caching.py`) that exposes only `get`/`set`, manages RAM/disk tiers internally, defers disk writes (batch flush ~every 5 minutes or on thresholds), and shards key/value files by key hash to reduce I/O. It tries to minimize disk reads and writes. To make reads faster sharding approach is used where (key,values) pairs are stored in multiple files instead of a single big file depending on the key's hash.
+    *   Replaced all legacy caching mechanisms across the project with `TwoLevelCache` instances.
+    *   Moved all file embeddings out of the database and into the cache, significantly reducing DB size while preserving performance due to pinpoint-fast cache reads.
+*   **Embedding Extraction:**
+    *   Simplified extraction procedures for maintainability.
+*   **Search & Metadata:**
+    *   `src/metadata_search.py` now incorporates the contents of `{file_name}.meta` files into metadata search for better results.
+*   **GPU & Model Management:**
+    *   Improved GPU memory handling in `src/model_manager.py` for dynamic load/unload of multiple models and fixed several related memory issues.
+*   **Maintenance:**
+    *   General code cleanup and refactoring.
+*   **Known Issues:**
+    *   Training of recommendation models is temporarily broken and will be fixed in upcoming versions.
+
 
 ### Version 0.2.10 (19.10.2025)
 *   **Architecture & Search Enhancements:**
