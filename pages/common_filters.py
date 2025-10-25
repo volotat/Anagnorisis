@@ -93,7 +93,7 @@ class CommonFilters:
                 base = os.path.basename(p)
                 s_full = scorer(q, _normalize_text(p))
                 s_base = scorer(q, _normalize_text(base))
-                combined = max(1.4 * s_base, s_full)  # extra weight to basename
+                combined = max(1.2 * s_base, s_full)  # extra weight to basename
                 ranked.append((combined, p, s_base, s_full))
 
             # Keep scores in original order (aligned with all_files)
@@ -112,7 +112,6 @@ class CommonFilters:
             self.common_socket_events.show_search_status("Extracting metadata embeddings")
             embeds_meta_text = self.metadata_engine.process_query(text_query)
             embeds_meta_files = self.metadata_engine.process_files(all_files, callback=self.meta_embedding_gathering_callback, media_folder=self.media_directory)
-            #self.engine.process_metadata(all_files, callback=self.embedding_gathering_callback, media_folder=self.media_directory)
             meta_similarity_scores = self.metadata_engine.compare(embeds_meta_files, embeds_meta_text)
                 
             self.common_socket_events.show_search_status("Sorting by relevance")
@@ -130,7 +129,7 @@ class CommonFilters:
 
     def filter_by_rating(self, all_files, text_query):
         self.update_model_ratings_func(all_files)
-        all_hashes = [self.engine.cached_file_hash.get_file_hash(f) for f in all_files]
+        all_hashes = [self.engine.get_file_hash(f) for f in all_files]
         items = self.db_schema.query.filter(self.db_schema.hash.in_(all_hashes)).all()
         hash_to_rating = {item.hash: item.user_rating if item.user_rating is not None else item.model_rating for item in items}
         

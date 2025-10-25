@@ -12,9 +12,6 @@ class TextLibrary(db.Model):
     user_rating_date = db.Column(db.DateTime, nullable=True)
     model_rating = db.Column(db.Float, nullable=True) # For future evaluator model
     model_hash = db.Column(db.String, nullable=True) # Hash of the evaluator model
-    embedder_hash = db.Column(db.String, nullable=True) # Hash of the embedding model
-    chunk_embeddings = db.Column(db.LargeBinary, nullable=True) # Pickled list of chunk embeddings
-
 
     def as_dict(self):
         return {column.name: getattr(self, column.name) for column in self.__table__.columns}

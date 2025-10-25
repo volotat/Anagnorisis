@@ -10,8 +10,6 @@ class ImagesLibrary(db.Model):
   user_rating_date = db.Column(db.DateTime, nullable=True)
   model_rating = db.Column(db.Float, nullable=True)
   model_hash = db.Column(db.String, nullable=True)
-  embedding = db.Column(db.LargeBinary, nullable=True)
-  embedder_hash = db.Column(db.String, nullable=True)
 
   def as_dict(self):
     return {column.name: getattr(self, column.name) for column in self.__table__.columns}

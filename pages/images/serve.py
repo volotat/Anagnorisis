@@ -53,68 +53,6 @@ from pages.utils import convert_size, convert_length, time_difference
 # emit_images_page_show_path_to_media_folder
 # emit_images_page_show_image_metadata_content
 
-def compute_distances_batched(embeds_img, batch_size=1024 * 24):
-  # Ensure input is a torch tensor (on CPU)
-  embeds_img = torch.tensor(embeds_img, dtype=torch.float32)
-
-  num_images = embeds_img.shape[0]
-  # Initialize the distances matrix on the CPU
-  distances = torch.zeros((num_images, num_images), dtype=torch.float32)
-
-  for start_row in range(0, num_images, batch_size):
-    print(f"Processing row {start_row} of {num_images}")
-
-    end_row = min(start_row + batch_size, num_images)
-    # Move only the current batch to GPU
-    batch = embeds_img[start_row:end_row].cuda()
-
-    for start_col in range(0, num_images, batch_size):
-      end_col = min(start_col + batch_size, num_images)
-      # Move the comparison batch to GPU
-      compare_batch = embeds_img[start_col:end_col].cuda()
-      # Compute pairwise distances for the batch on GPU
-      dists_batch = torch.cdist(batch, compare_batch, p=2).cpu()  # Move results back to CPU
-      
-      distances[start_row:end_row, start_col:end_col] = dists_batch
-      if start_col != start_row:  # Fill the symmetric part of the matrix
-        distances[start_col:end_col, start_row:end_row] = dists_batch.T
-
-      del compare_batch  # Free the memory used by the comparison batch
-      del dists_batch  # Free the memory used by the batch
-
-    del batch  # Free the memory used by the batch
-
-  distances.fill_diagonal_(float('inf'))  # Ignore self-distances
-  distances = distances.detach().numpy()  # Convert to a NumPy array
-
-  gc.collect()  # Force garbage collection to free memory
-  torch.cuda.empty_cache()  # Free the memory used by the GPU
-  
-  return distances  # Convert to a NumPy
-
-def get_folder_structure(folder_path, image_extensions=None):
-  def count_images(folder):
-    return sum(1 for f in os.listdir(folder) if os.path.splitext(f)[1].lower() in image_extensions)
-
-  def build_structure(path):
-    folder_dict = {
-      'name': os.path.basename(path),
-      'num_images': count_images(path),
-      'total_images': 0,
-      'subfolders': {}
-    }
-    folder_dict['total_images'] = folder_dict['num_images']
-    
-    for subfolder in os.listdir(path):
-      subfolder_path = os.path.join(path, subfolder)
-      if os.path.isdir(subfolder_path):
-        subfolder_structure = build_structure(subfolder_path)
-        folder_dict['subfolders'][subfolder] = subfolder_structure
-        folder_dict['total_images'] += subfolder_structure['total_images']
-    
-    return folder_dict
-  return build_structure(folder_path)
-
 def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data'):
   if cfg.images.media_directory is None:
     print("Images media folder is not set.")
@@ -126,9 +64,8 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
   images_search_engine = ImageSearch(cfg=cfg)
   images_search_engine.initiate(models_folder=cfg.main.embedding_models_path, cache_folder=cfg.main.cache_path)
 
-  cached_file_list = images_search_engine.cached_file_list
-  cached_file_hash = images_search_engine.cached_file_hash
-  cached_metadata = images_search_engine.cached_metadata
+  # cached_file_hash = images_search_engine.cached_file_hash
+  # cached_metadata = images_search_engine.cached_metadata
 
   image_evaluator = ImageEvaluator() #src.scoring_models.Evaluator(embedding_dim=768)
   image_evaluator.load(os.path.join(cfg.main.personal_models_path, 'image_evaluator.pt'))
@@ -142,9 +79,9 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
 
     for ind, full_path in enumerate(all_files):
       file_path = os.path.relpath(full_path, media_directory)
-      file_hash = all_hashes[ind]
+      # file_hash = all_hashes[ind]
 
-      image_metadata = images_search_engine.cached_metadata.get_metadata(full_path, file_hash)
+      image_metadata = images_search_engine.get_metadata(full_path)
       if 'resolution' not in image_metadata:
         raise Exception(f"Resolution not found for image: {file_path}")
       
@@ -158,6 +95,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
   embedding_gathering_callback = EmbeddingGatheringCallback(show_search_status)
 
   images_file_manager = file_manager.FileManager(
+    cfg=cfg,
     media_directory=media_directory,
     engine=images_search_engine,
     module_name="images",
@@ -170,7 +108,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
   def update_model_ratings(files_list):
     print(files_list)
     # filter out files that already have a rating in the DB
-    files_list_hash_map = {file_path: images_search_engine.cached_file_hash.get_file_hash(file_path) for file_path in files_list}
+    files_list_hash_map = {file_path: images_search_engine.get_file_hash(file_path) for file_path in files_list}
     hash_list = list(files_list_hash_map.values())
 
     # Fetch rated images from the database in a single query
@@ -247,7 +185,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
     # Define domain specific filters 
     def filter_by_resolution(all_files, text_query):
       show_search_status(f"Gathering resolutions for sorting...") # Initial status message
-      all_hashes = [cached_file_hash.get_file_hash(file_path) for file_path in all_files]
+      all_hashes = [images_search_engine.get_file_hash(file_path) for file_path in all_files]
       resolutions = gather_resolutions(all_files, all_hashes, media_directory)
       # all_files_sorted = sorted(all_files, key=lambda x: resolutions[x][0] * resolutions[x][1])
       scores = [resolutions[x][0] * resolutions[x][1] for x in all_files]
@@ -255,7 +193,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
 
     def filter_by_proportion(all_files, text_query):
       show_search_status(f"Gathering resolutions for sorting...") # Initial status message
-      all_hashes = [cached_file_hash.get_file_hash(file_path) for file_path in all_files]
+      all_hashes = [images_search_engine.get_file_hash(file_path) for file_path in all_files]
       resolutions = gather_resolutions(all_files, all_hashes, media_directory)
       #all_files_sorted = sorted(all_files, key=lambda x: resolutions[x][0] / resolutions[x][1])
       scores = [resolutions[x][0] / resolutions[x][1] for x in all_files]
@@ -296,7 +234,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
       basename = os.path.basename(full_path)
       file_size = os.path.getsize(full_path)
 
-      image_metadata = images_search_engine.cached_metadata.get_metadata(full_path, file_hash)
+      image_metadata = images_search_engine.get_metadata(full_path)
       resolution = image_metadata.get('resolution')  # Returns a tuple (width, height)
     
       user_rating = None
@@ -307,7 +245,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
       if db_item:
         user_rating = db_item.user_rating
         model_rating = db_item.model_rating
-        file_data = images_search_engine.cached_metadata.get_metadata(full_path, file_hash)
+        file_data = images_search_engine.get_metadata(full_path)
       else:
         raise Exception(f"File '{full_path}' with hash '{file_hash}' not found in the database.")
 

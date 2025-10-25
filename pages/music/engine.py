@@ -25,7 +25,9 @@ from src.base_search_engine import BaseSearchEngine # Import the base class
 from src.model_manager import ModelManager # Still needed for MusicEvaluator
 from src.text_embedder import TextEmbedder # Import the TextEmbedder
 
-def get_audiofile_data(file_path):
+from typing import List, Tuple
+
+def get_audiofile_data(file_path, full_image: bool = False) -> dict:
     """
     Extracts metadata from an audio file using TinyTag.
     Also attempts to extract album art and convert it to base64.
@@ -48,8 +50,19 @@ def get_audiofile_data(file_path):
 
         img = tag.get_image()
         if img is not None:
+            if not full_image:
+                # resize image to a maximum of 512 pixels in the longest dimension
+                image = Image.open(io.BytesIO(img))
+                max_size = 512
+                ratio = min(max_size / image.width, max_size / image.height, 1.0)
+                new_size = (int(image.width * ratio), int(image.height * ratio))
+                image = image.resize(new_size, Image.ANTIALIAS)
+                buffered = io.BytesIO()
+                image.save(buffered, format="PNG")
+                img = buffered.getvalue()
+                
             base64_image = base64.b64encode(img).decode('utf-8')
-            metadata['image'] = f"data:image/png;base64,{base64_image}" # Assuming PNG, adjust if needed
+            metadata['image'] = f"data:image/png;base64,{base64_image}" # Assuming PNG
         else:
             metadata['image'] = None
     except Exception as e:
@@ -120,27 +133,110 @@ class MusicSearch(BaseSearchEngine):
         if waveform is None: 
             raise Exception(f"Failed to read audio file: {file_path}")
 
-        # Convert waveform to 48kHz if not (required by CLAP)
+        # Resample to 48kHz mono on CPU
         if sample_rate != 48000:
             waveform = torchaudio.transforms.Resample(orig_freq=sample_rate, new_freq=48000)(waveform)
             sample_rate = 48000
-
-        # Convert to mono if not
-        if waveform.shape[0] > 1: # If stereo or multi-channel
+        if waveform.dim() > 1 and waveform.shape[0] > 1:
             waveform = waveform.mean(dim=0, keepdim=False)
+        if waveform.dim() > 1:
+            waveform = waveform.squeeze()
+        waveform = waveform.to(torch.float32).contiguous()
         
         # Use the wrapped model (self.model is now ModelManager instance)
         model_instance = self.model
+
+        # Use the CLAP processor; feed plain float arrays
+        proc = self.processor(
+            audios=[waveform.cpu().numpy()],
+            sampling_rate=sample_rate,
+            return_tensors="pt",
+            padding=False,
+        )
+
+        # Move to device and sanitize any bad values
+        inputs_audio = {k: v.to(model_instance._device) for k, v in proc.items()}
+        if "input_features" in inputs_audio:
+            inputs_audio["input_features"] = torch.nan_to_num(
+                inputs_audio["input_features"], nan=0.0, posinf=0.0, neginf=0.0
+            )
         
-        inputs_audio = self.feature_extractor(waveform, sampling_rate=sample_rate, return_tensors="pt").to(model_instance._device)
+        # inputs_audio = self.feature_extractor(waveform, sampling_rate=sample_rate, return_tensors="pt").to(model_instance._device)
         
         with torch.no_grad():
-            outputs = model_instance.get_audio_features(**inputs_audio)
+            out = model_instance.get_audio_features(**inputs_audio)
 
-        # CLAP audio features are typically normalized by default but can be re-normalized if needed
-        audio_embeds = outputs # Assume CLAP returns normalized features or handle here if not
+        if out.dim() == 1:
+            out = out.unsqueeze(0)
+        out = torch.nan_to_num(out, nan=0.0, posinf=0.0, neginf=0.0)
         
-        return audio_embeds
+        return out
+    
+    # def _process_batch_files(self, file_paths: List[str], **kwargs) -> List[torch.Tensor | None]:
+    #     """
+    #     Batched audio processing. Returns list[Tensor | None] aligned with file_paths.
+    #     Each tensor should be shape [1, D]. Failures yield None.
+    #     """
+    #     # 1) Read and preprocess audio (resample to 48kHz, mono)
+    #     valid_indices: List[int] = []
+    #     audio_list: List[np.ndarray] = []
+
+    #     for i, p in enumerate(file_paths):
+    #         try:
+    #             waveform, sample_rate = self._read_audio(p)
+    #             if waveform is None:
+    #                 continue
+    #             # Resample to 48kHz mono on CPU
+    #             if sample_rate != 48000:
+    #                 waveform = torchaudio.transforms.Resample(orig_freq=sample_rate, new_freq=48000)(waveform)
+    #             if waveform.dim() > 1 and waveform.shape[0] > 1:
+    #                 waveform = waveform.mean(dim=0, keepdim=False)
+    #             if waveform.dim() > 1:
+    #                 waveform = waveform.squeeze()
+    #             wf = waveform.to(torch.float32).contiguous().cpu().numpy()
+    #             if wf.size == 0 or not np.isfinite(wf).all():
+    #                 continue
+    #             valid_indices.append(i)
+    #             audio_list.append(wf)
+    #         except Exception:
+    #             continue
+
+    #     # 2) If nothing valid, return all None       
+    #     if not audio_list:
+    #         return [None] * len(file_paths)
+
+    #     # 3) Feature extraction + model forward in batch
+    #     model_instance = self.model
+    #     try:
+    #         # Use CLAP processor for batch; pad to longest
+    #         proc = self.processor(
+    #             audios=audio_list,
+    #             sampling_rate=48000,
+    #             return_tensors="pt",
+    #             padding="longest",
+    #         )
+    #         inputs_audio = {k: v.to(model_instance._device) for k, v in proc.items()}
+
+    #         # Defensive: sanitize precomputed features (avoid -inf/NaN)
+    #         if "input_features" in inputs_audio:
+    #             inputs_audio["input_features"] = torch.nan_to_num(
+    #                 inputs_audio["input_features"], nan=0.0, posinf=0.0, neginf=0.0
+    #             )
+
+    #         with torch.no_grad():
+    #             batch_out = model_instance.get_audio_features(**inputs_audio)  # [B, D] or [D]
+
+    #         if batch_out.dim() == 1:
+    #             batch_out = batch_out.unsqueeze(0)
+    #         batch_out = torch.nan_to_num(batch_out, nan=0.0, posinf=0.0, neginf=0.0)
+
+    #         # Scatter back
+    #         results: List[torch.Tensor | None] = [None] * len(file_paths)
+    #         for k, idx in enumerate(valid_indices):
+    #             results[idx] = batch_out[k].unsqueeze(0)  # [1, D]
+    #         return results
+    #     except Exception:
+    #         return [None] * len(file_paths)
   
     def _read_audio(self, audio_path: str):
         """Helper method to read audio files using torchaudio."""
@@ -177,66 +273,6 @@ class MusicSearch(BaseSearchEngine):
         
         # TODO: Find out why .squeeze(0) is needed here, it was working without it before refactoring
         return text_embeds.squeeze(0)  # Return as 1D tensor
-
-    def process_metadata(self, file_paths: list[str], callback=None, media_folder: str = None, **kwargs) -> list[list[np.ndarray]]:
-        """
-        Processes metadata for a list of files using TextEmbedder.
-        For music files, we use the filename and relative path as metadata.
-        Generates embeddings for this metadata text.
-        Returns a list of lists of numpy arrays (one list per file, each containing one metadata embedding).
-        """
-        if self.text_embedder is None or not self.text_embedder._initialized:
-            raise RuntimeError(f"TextEmbedder not initialized. Call initiate() first.")
-
-        all_files_meta_embeddings = []
-
-        for ind, file_path in enumerate(file_paths):
-            meta_embedding_np = None
-
-            try:
-                file_hash = self.cached_file_hash.get_file_hash(file_path)
-                cache_key = file_hash + '_meta'
-                
-                if cache_key in self._fast_cache:
-                    meta_embedding_np = self._fast_cache[cache_key]
-                else:
-                    # Get a clean, relative path for the metadata
-                    media_folder = kwargs.get('media_folder', '')
-                    relative_path = os.path.relpath(file_path, media_folder) if media_folder else os.path.basename(file_path)
-                    file_name = os.path.basename(file_path)
-
-                    meta_text = f"{file_name}\n{relative_path}"
-                    
-                    # Generate embedding for the metadata text using TextEmbedder
-                    # embed_text returns an array of embeddings, we take the first (and only) one
-                    meta_embeddings = self.text_embedder.embed_text(meta_text)
-                    if meta_embeddings is not None and len(meta_embeddings) > 0:
-                        meta_embedding_np = meta_embeddings[0]
-                    else:
-                        dim = self.cfg.text.embedding_dimension or self.embedding_dim
-                        meta_embedding_np = np.zeros((dim,), dtype=np.float32) if dim else np.array([], dtype=np.float32)
-
-
-                    # Cache the metadata embedding
-                    self._fast_cache[cache_key] = meta_embedding_np
-
-                all_files_meta_embeddings.append([meta_embedding_np]) # Wrap in list to match List[List[np.ndarray]]
-                    
-
-                if callback:
-                    callback(ind + 1, len(file_paths))
-            except Exception as e:
-                print(f"Error processing metadata for {file_path}: {e}")
-                traceback.print_exc()
-                dim = self.cfg.text.embedding_dimension or self.embedding_dim
-                zero_embedding = np.zeros((dim,), dtype=np.float32) if dim else np.array([], dtype=np.float32)
-                all_files_meta_embeddings.append([zero_embedding]) # Return zero embedding on error
-        
-        return all_files_meta_embeddings
-    
-    
-    # The 'compare' method from the original MusicSearch is largely handled by BaseSearchEngine.compare now.
-    # CLAP's compare has specific logit scales, so BaseSearchEngine.compare handles this.
 
 # Create scoring model singleton class so it easily accessible from other modules
 class MusicEvaluator(src.scoring_models.Evaluator):

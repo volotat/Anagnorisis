@@ -5,13 +5,16 @@ import pickle
 import hashlib
 import flask
 import io
+import traceback
 from abc import ABC, abstractmethod
 from huggingface_hub import snapshot_download
 from tqdm import tqdm
 import pages.images.db_models as db_models
 import pages.file_manager as file_manager
 import numpy as np
+from src.caching import TwoLevelCache
 from src.model_manager import ModelManager # Assuming ModelManager is already implemented and works
+from typing import List
 
 class BaseSearchEngine(ABC):
     """
@@ -40,10 +43,10 @@ class BaseSearchEngine(ABC):
         self.embedding_dim = None
 
         # Caching mechanisms
-        self.cached_file_list = None
-        self.cached_file_hash = None
-        self.cached_metadata = None
-        self._fast_cache = {} # In-memory cache for embeddings
+        # self.cached_metadata = None
+
+        cache_folder = os.path.join(cfg.main.cache_path, self.cache_prefix)
+        self._fast_cache = TwoLevelCache(cache_dir=cache_folder, name=f"{self.cache_prefix}")
 
         self._initialized = True # Mark as initialized
 
@@ -133,9 +136,6 @@ class BaseSearchEngine(ABC):
         self.model = self._model_manager # Override self.model with the manager instance
         self.model_hash = self._get_model_hash_from_instance() # Get hash from the *actual* loaded model
         
-        # Setup caches
-        self._setup_caches(cache_folder)
-        
         print(f"{self.__class__.__name__} initiated successfully.")
     
     def _ensure_model_downloaded(self, local_model_path: str):
@@ -164,20 +164,6 @@ class BaseSearchEngine(ABC):
         else:
             print(f"Found existing model '{self.model_name}' at '{local_model_path}'.")
     
-    def _setup_caches(self, cache_folder: str):
-        """Sets up the file list, file hash, and metadata caching mechanisms."""
-        os.makedirs(cache_folder, exist_ok=True)
-        self.cached_file_list = file_manager.CachedFileList(
-            os.path.join(cache_folder, f'{self.cache_prefix}_file_list.pkl')
-        )
-        self.cached_file_hash = file_manager.CachedFileHash(
-            os.path.join(cache_folder, f'{self.cache_prefix}_file_hash.pkl')
-        )
-        self.cached_metadata = file_manager.CachedMetadata(
-            os.path.join(cache_folder, f'{self.cache_prefix}_metadata.pkl'),
-            self._get_metadata_function() # Pass the modality-specific metadata function
-        )
-    
     def _get_model_hash_from_instance(self) -> str:
         """
         Calculates a hash of the currently loaded model's state dictionary.
@@ -194,101 +180,130 @@ class BaseSearchEngine(ABC):
         model_hash = hashlib.md5(buffer.read()).hexdigest() + self._get_model_hash_postfix()
         return model_hash
     
-    def process_files(self, file_paths: list[str], callback=None, media_folder: str = None, **kwargs) -> torch.Tensor:
+    def get_file_hash(self, file_path: str) -> str:
+        """Returns the cached hash for a given file."""
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"File not found: {file_path}")
+
+        # Get the last modified time of the file
+        last_modified_time = os.path.getmtime(file_path)
+
+        cache_key = f"HASH_OF_FILE::{file_path}::{last_modified_time}"
+        file_hash = self._fast_cache.get(cache_key)
+
+        if file_hash is not None:
+            return file_hash
+        
+        # If not in cache or file has been modified, calculate the hash
+        with open(file_path, "rb") as f:
+            bytes = f.read()  # Read the entire file as bytes
+            file_hash = hashlib.md5(bytes).hexdigest()
+        
+        # Update the cache
+        self._fast_cache.set(cache_key, file_hash)
+        return file_hash
+
+    def get_metadata(self, file_path, file_hash=None) -> dict:
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"File not found: {file_path}")
+
+        # Get the last modified time of the file (still used for time-based invalidation)
+        last_modified_time = os.path.getmtime(file_path)
+
+        cache_key = f"METADATA_OF_FILE::{file_path}::{last_modified_time}"
+        file_metadata = self._fast_cache.get(cache_key)
+
+        if file_metadata is not None:
+            return file_metadata
+
+        # If not in cache or file has been modified, extract metadata using _get_metadata_function
+        metadata = self._get_metadata_function()(file_path) # Method expected to return a dictionary of metadata attributes
+        metadata['file_path'] = file_path
+
+        # Update the cache 
+        self._fast_cache.set(cache_key, metadata)
+        return metadata
+
+    def _process_batch_files(self, file_paths: List[str], **kwargs) -> List[torch.Tensor]:
         """
-        Processes a list of files to generate their embeddings.
-        Handles caching and database interaction.
+        Default batching: call _process_single_file per path.
+        Engines can override to do true vectorized/batched inference.
+        Must return a list aligned with file_paths; any failed item can be None.
         """
-        # Ensure the engine is initialized and not busy
+        results: List[torch.Tensor | None] = []
+        for p in file_paths:
+            try:
+                emb = self._process_single_file(p, **kwargs)
+            except Exception:
+                print(f"ERROR: Failed to process file '{p}'.")
+                traceback.print_exc()
+                emb = None
+            results.append(emb)
+        return results
+    
+    def process_files(self, file_paths: list[str], callback=None, media_folder: str = None, batch_size: int = 1, **kwargs) -> torch.Tensor:
+        """
+        Processes files with per-file caching and batched inference for cache misses.
+        Returns a single tensor [N, D]. Failed files get zeros([1, D]).
+        """
         if self._model_manager is None:
             raise RuntimeError(f"{self.__class__.__name__} not initialized. Call initiate() first.")
-        if self.is_busy: 
-            raise Exception(f"{self.__class__.__name__} is busy processing another request.")
-        
-        self.is_busy = True
-        
-        try:
-            all_embeddings = []
-            new_db_entries = [] # List to accumulate new database model instances
-            db_model_class = self._get_db_model_class()
-            
-            for ind, file_path in enumerate(tqdm(file_paths, desc=f"Processing {self.cache_prefix} files")):
-                current_file_embeddings = None
-                try:
-                    # Get file hash for caching
-                    file_hash = self.cached_file_hash.get_file_hash(file_path)
-                    
-                    # 1. Check in-memory fast cache first
-                    if file_hash in self._fast_cache:
-                        current_file_embeddings = self._fast_cache[file_hash]
-                    else:
-                        if not flask.has_app_context():
-                            current_file_embeddings = self._process_single_file(file_path)
-                            self._fast_cache[file_hash] = current_file_embeddings
-                        else:
-                            # 2. Check database for existing embedding
-                            db_record = db_model_class.query.filter_by(hash=file_hash).first()
 
-                            if db_record and db_record.embedding and db_record.embedder_hash == self.model_hash:
-                                current_file_embeddings = pickle.loads(db_record.embedding)
-                                self._fast_cache[file_hash] = current_file_embeddings # Add to fast cache
-                            else:
-                                # 3. If not in cache or DB, process the file to get embeddings
-                                current_file_embeddings = self._process_single_file(file_path, **kwargs)
-                                
-                                # Ensure embeddings are on CPU for pickling, will be moved to GPU by ModelManager when used
-                                if isinstance(current_file_embeddings, torch.Tensor):
-                                    current_file_embeddings = current_file_embeddings.cpu()
+        N = len(file_paths)
+        outputs: list[torch.Tensor | None] = [None] * N
 
-                                # 4. Prepare for database update/insert
-                                if db_record:
-                                    db_record.embedding = pickle.dumps(current_file_embeddings)
-                                    db_record.embedder_hash = self.model_hash
-                                    # No need to add to session for updates managed by SQLAlchemy
-                                else:
-                                    # Create new record if none exists
-                                    new_entry_data = {
-                                        'hash': file_hash,
-                                        'file_path': os.path.relpath(file_path, media_folder) if media_folder else file_path,
-                                        'embedding': pickle.dumps(current_file_embeddings),
-                                        'embedder_hash': self.model_hash
-                                    }
-                                    new_db_entries.append(db_model_class(**new_entry_data))
-                                
-                                self._fast_cache[file_hash] = current_file_embeddings # Add to fast cache
-                
-                except Exception as e:
-                    print(f"Error processing file {file_path}: {e}")
-                    # Return a zero vector on error to maintain batch shape
-                    if self.embedding_dim:
-                        current_file_embeddings = torch.zeros(1, self.embedding_dim).cpu()
-                    else: # Fallback if embedding_dim not determined yet
-                        current_file_embeddings = None # Handle this case in calling function
-                
-                if current_file_embeddings is not None:
-                    all_embeddings.append(current_file_embeddings)
-                
+        # 1) Build items with hashes and check cache
+        items = []
+        for i, path in enumerate(file_paths):
+            try:
+                file_hash = self.get_file_hash(path)
+            except Exception:
+                # If hash fails, force compute with a synthetic key
+                file_hash = f"INVALID::{path}"
+            cache_key = f"{file_hash}::{self.model_hash}{self._get_model_hash_postfix()}"
+            cached = self._fast_cache.get(cache_key)
+            if cached is not None:
+                outputs[i] = cached  # expected to be CPU tensor
                 if callback:
-                    callback(ind + 1, len(file_paths))
-            
-            # Commit new database entries and updated ones (if any were modified directly)
-            if new_db_entries and flask.has_app_context():
-                db_models.db.session.bulk_save_objects(new_db_entries)
-                db_models.db.session.commit()
-
-            # Move all embeddings to the same device
-            all_embeddings = [embed.to(self._model_manager._device) for embed in all_embeddings if embed is not None]
-
-            # Concatenate all embeddings into a single tensor, move to active device
-            if all_embeddings:
-                return torch.cat(all_embeddings, dim=0).to(self._model_manager._device)
+                    callback(sum(1 for o in outputs if o is not None), N)
             else:
-                return torch.empty(0, self.embedding_dim).to(self._model_manager._device)
-            
-        finally:
-            self.is_busy = False # Reset busy flag
-            self.cached_file_hash.save_hash_cache()
-            self.cached_metadata.save_metadata_cache()
+                items.append((i, path, cache_key))
+
+        # 2) Batch process only misses
+        for start in range(0, len(items), batch_size):
+            batch = items[start:start + batch_size]
+            idxs = [i for (i, _, _) in batch]
+            paths = [p for (_, p, _) in batch]
+            keys = [k for (_, _, k) in batch]
+
+            try:
+                batch_embs = self._process_batch_files(paths, media_folder=media_folder, **kwargs)
+            except Exception:
+                # catastrophic batch failure
+                batch_embs = [None] * len(paths)
+
+            # 3) Normalize results, cache, and place in outputs
+            for j, emb in enumerate(batch_embs):
+                out_idx = idxs[j]
+                key = keys[j]
+                if emb is None:
+                    emb = torch.zeros(1, self.embedding_dim)
+                # Move to CPU for caching; keep single-file [1, D] shape
+                emb_cpu = emb.detach().to("cpu")
+                if emb is not None: 
+                    self._fast_cache.set(key, emb_cpu)
+                outputs[out_idx] = emb_cpu
+                if callback:
+                    callback(sum(1 for o in outputs if o is not None), N)
+
+        # 4) Safety: fill any remaining gaps with zeros
+        for i in range(N):
+            if outputs[i] is None:
+                outputs[i] = torch.zeros(1, self.embedding_dim)
+
+        # 5) Concatenate and move to active device
+        out = torch.cat([t for t in outputs], dim=0)
+        return out.to(self._model_manager._device)
 
     def process_text(self, text: str, **kwargs) -> torch.Tensor:
         """

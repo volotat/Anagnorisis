@@ -29,10 +29,23 @@ class ModelManager:
             device: The device to load the model to (default: current model device)
             idle_timeout: Time in seconds after which to unload idle models (default: 120s)
         """
+        # Unwrap if someone accidentally passes a ModelManager
+        if isinstance(model, ModelManager):
+            model = model._model
+
+
         # Store the model and its original state
         self._model = model
         self._model_id = id(model)
-        self._device = device or (model.device if hasattr(model, 'device') else 'cuda')
+
+        # Choose a sensible default device
+        if device is not None:
+            self._device = device
+        elif hasattr(model, 'device'):
+            self._device = model.device
+        else:
+            self._device = 'cuda' if torch.cuda.is_available() else 'cpu'
+       
         self._loaded = False
         self._last_used = time.time()
         self._idle_timeout = idle_timeout
@@ -54,60 +67,53 @@ class ModelManager:
 
     def __call__(self, *args, **kwargs):
         """
-        Handle method calls, loading the model if needed.
-        This is called when the model instance is called like a function.
+        Handle direct calls to the model (e.g., forward). Load lazily here.
         """
         with ModelManager._lock:
             self._last_used = time.time()
-            
-            # If model is not loaded, load it
             if not self._loaded:
                 self._load_model()
-            
+            target = self._model  # bound __call__/forward
+        with self._busy_lock:
+            self._busy = True
+        try:
+            return target(*args, **kwargs)
+        finally:
             with self._busy_lock:
-                self._busy = True
-            try:
-                # Call the method on the model
-                return self._model(*args, **kwargs)
-            finally:
-                with self._busy_lock:
-                    self._busy = False
+                self._busy = False
         
         
     def __getattr__(self, name):
         """
-        Handle attribute access, loading the model if needed.
-        This is called when Python can't find the attribute through normal means.
+        Lazily resolve attributes. For callables, return a wrapper that ensures the
+        model is (re)loaded right before invocation. Do NOT load just to read attributes.
         """
         with ModelManager._lock:
             self._last_used = time.time()
-            
-            # If model is not loaded, load it
-            if not self._loaded:
-                self._load_model()
-                
-            # Try to get the attribute from the model
+
             if hasattr(self._model, name):
                 attr = getattr(self._model, name)
-                
-                # If it's a method, wrap it to update last_used timestamp
-                if callable(attr) and not name.startswith('__'):
-                    def wrapped_method(*args, **kwargs):
-                        with ModelManager._lock:
-                            self._last_used = time.time()
-                        
+            else:
+                raise AttributeError(f"'{self._model.__class__.__name__}' object has no attribute '{name}'")
+
+            if callable(attr) and not name.startswith('__'):
+                def wrapped_method(*args, **kwargs):
+                    with ModelManager._lock:
+                        self._last_used = time.time()
+                        if not self._loaded:
+                            self._load_model()
+                        target = getattr(self._model, name)
+                    with self._busy_lock:
+                        self._busy = True
+                    try:
+                        return target(*args, **kwargs)
+                    finally:
                         with self._busy_lock:
-                            self._busy = True
-                        try:
-                            return attr(*args, **kwargs)
-                        finally:
-                            with self._busy_lock:
-                                self._busy = False
-                    return wrapped_method
-                return attr
-                
-            # If the attribute doesn't exist, raise an AttributeError
-            raise AttributeError(f"'{self._model.__class__.__name__}' object has no attribute '{name}'")
+                            self._busy = False
+                return wrapped_method
+
+            # Non-callables: return without forcing a load
+            return attr
     
     def __dir__(self):
         """Return all attributes of the wrapped model plus our own"""
@@ -120,15 +126,10 @@ class ModelManager:
         return list(set(own_attrs + model_attrs))
     
     def _load_model(self):
-        """Load the model back to the device"""
+        """Load the model back to the desired device (lazy)."""
         if not self._loaded:
             try:
                 print(f"Loading model {self._model.__class__.__name__} to {self._device}...")
-                # Create a new instance of the model
-                #self._model = self._model_class()
-                # Load the state dict
-                #self._model.load_state_dict(self._state_dict)
-                # Move to device
                 self._model = self._model.to(self._device)
                 self._loaded = True
             except Exception as e:
@@ -140,16 +141,10 @@ class ModelManager:
         if self._loaded:
             try:
                 print(f"Unloading model {self._model.__class__.__name__} from GPU (idle for {time.time() - self._last_used:.1f}s)...")
-                # Cache important attributes before unloading
                 self._cache_attributes()
-                # Move to CPU first to properly free CUDA memory
                 self._model = self._model.cpu()
-                # Delete the model to free memory
-                #del self._model
-                # Set a placeholder to avoid errors
-                #self._model = None
-                # Trigger garbage collection to free memory
-                torch.cuda.empty_cache()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
                 self._loaded = False
             except Exception as e:
                 print(f"Error unloading model: {e}")
@@ -172,14 +167,15 @@ class ModelManager:
             return self._model.state_dict()
 
     def to(self, device):
-        """Move the model to the specified device"""
+        """
+        Set the desired device. If already loaded, move now; otherwise defer until first use.
+        """
         with ModelManager._lock:
             self._last_used = time.time()
-            if not self._loaded:
-                self._load_model()
             self._device = device
-            self._model = self._model.to(device)
-            return self
+            if self._loaded:
+                self._model = self._model.to(device)
+        return self
     
     # def config(self):
     #     """Access the model's configuration"""

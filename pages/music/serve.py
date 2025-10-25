@@ -44,45 +44,6 @@ from pages.common_filters import CommonFilters
 # emit_music_page_show_song_details
 # emit_music_page_show_path_to_media_folder
 
-def compute_distances_batched(embeds_img, batch_size=1024 * 24):
-  # Ensure input is a torch tensor (on CPU)
-  embeds_img = torch.tensor(embeds_img, dtype=torch.float32)
-
-  num_images = embeds_img.shape[0]
-  # Initialize the distances matrix on the CPU
-  distances = torch.zeros((num_images, num_images), dtype=torch.float32)
-
-  for start_row in range(0, num_images, batch_size):
-    print(f"Processing row {start_row} of {num_images}")
-
-    end_row = min(start_row + batch_size, num_images)
-    # Move only the current batch to GPU
-    batch = embeds_img[start_row:end_row].cuda()
-
-    for start_col in range(0, num_images, batch_size):
-      end_col = min(start_col + batch_size, num_images)
-      # Move the comparison batch to GPU
-      compare_batch = embeds_img[start_col:end_col].cuda()
-      # Compute pairwise distances for the batch on GPU
-      dists_batch = torch.cdist(batch, compare_batch, p=2).cpu()  # Move results back to CPU
-      
-      distances[start_row:end_row, start_col:end_col] = dists_batch
-      if start_col != start_row:  # Fill the symmetric part of the matrix
-        distances[start_col:end_col, start_row:end_row] = dists_batch.T
-
-      del compare_batch  # Free the memory used by the comparison batch
-      del dists_batch  # Free the memory used by the batch
-
-    del batch  # Free the memory used by the batch
-
-  distances.fill_diagonal_(float('inf'))  # Ignore self-distances
-  distances = distances.detach().numpy()  # Convert to a NumPy array
-
-  gc.collect()  # Force garbage collection to free memory
-  torch.cuda.empty_cache()  # Free the memory used by the GPU
-  
-  return distances  # Convert to a NumPy
-
 def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data'):
   if cfg.music.media_directory is None:
     print("Music media folder is not set.")
@@ -96,9 +57,8 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
   music_search_engine = MusicSearch(cfg=cfg) 
   music_search_engine.initiate(models_folder=cfg.main.embedding_models_path, cache_folder=cfg.main.cache_path)
 
-  cached_file_list = music_search_engine.cached_file_list
-  cached_file_hash = music_search_engine.cached_file_hash
-  cached_metadata = music_search_engine.cached_metadata
+  # cached_file_hash = music_search_engine.cached_file_hash
+  # cached_metadata = music_search_engine.cached_metadata
 
   music_evaluator = MusicEvaluator(embedding_dim=music_search_engine.embedding_dim) #src.scoring_models.Evaluator(embedding_dim=768)
 
@@ -112,6 +72,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
   embedding_gathering_callback = EmbeddingGatheringCallback(common_socket_events.show_search_status)
 
   music_file_manager = file_manager.FileManager(
+    cfg=cfg,
     media_directory=media_directory,
     engine=music_search_engine,
     module_name="music",
@@ -146,7 +107,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
     print('update_model_ratings')
 
     # filter out files that already have a rating in the DB
-    files_list_hash_map = {file_path: cached_file_hash.get_file_hash(file_path) for file_path in files_list}
+    files_list_hash_map = {file_path: music_search_engine.get_file_hash(file_path) for file_path in files_list}
     hash_list = list(files_list_hash_map.values())
 
     # Fetch rated files from the database in a single query
@@ -240,15 +201,15 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
     def filter_by_length(all_files, text_query):
       common_socket_events.show_search_status(f"Gathering resolutions for sorting...") # Initial status message
 
-      all_hashes = [cached_file_hash.get_file_hash(file_path) for file_path in all_files]
+      all_hashes = [music_search_engine.get_file_hash(file_path) for file_path in all_files]
 
       durations = {}
       progress_callback = SortingProgressCallback(common_socket_events.show_search_status, operation_name="Gathering music duration ") # Create callback
       for ind, full_path in enumerate(all_files):
         file_path = os.path.relpath(full_path, media_directory)
-        file_hash = all_hashes[ind]
+        # file_hash = all_hashes[ind]
 
-        file_metadata = cached_metadata.get_metadata(full_path, file_hash)
+        file_metadata = music_search_engine.get_metadata(full_path)
         if 'duration' not in file_metadata:
           raise Exception(f"Duration not found for file: {file_path}")
         
@@ -266,7 +227,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
       # Update the model ratings of all current files
       update_model_ratings(all_files)
       
-      all_hashes = [cached_file_hash.get_file_hash(file_path) for file_path in all_files]
+      all_hashes = [music_search_engine.get_file_hash(file_path) for file_path in all_files]
       music_data = db_models.MusicLibrary.query.with_entities(
           db_models.MusicLibrary.hash,
           db_models.MusicLibrary.user_rating,
@@ -322,7 +283,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
             last_played_timestamp = db_item.last_played.timestamp()
             last_played = time_difference(last_played_timestamp, datetime.datetime.now().timestamp())
 
-        audiofile_data = music_search_engine.cached_metadata.get_metadata(full_path, file_hash)
+        audiofile_data = music_search_engine.get_metadata(full_path)
       else:
         raise Exception(f"File '{full_path}' with hash '{file_hash}' not found in the database.")
 
@@ -350,9 +311,8 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
     file_path = data.get('file_path', '')
 
     full_path = os.path.join(media_directory, file_path)
-    file_hash = cached_file_hash.get_file_hash(full_path)
-    audiofile_data = cached_metadata.get_metadata(full_path, file_hash)
-    audiofile_data['hash'] = cached_file_hash.get_file_hash(full_path)
+    audiofile_data = music_search_engine.get_metadata(full_path)
+    audiofile_data['hash'] = music_search_engine.get_file_hash(full_path)
     db_item = db_models.MusicLibrary.query.filter_by(hash=audiofile_data['hash']).first()
     audiofile_data['user_rating'] = db_item.user_rating
     audiofile_data['model_rating'] = db_item.model_rating

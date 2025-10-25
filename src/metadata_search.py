@@ -2,141 +2,16 @@ import os
 import torch
 import numpy as np
 import traceback
-import threading
-import time
-import pickle
-import hashlib
 from src.text_embedder import TextEmbedder
-
-
-class RAMCache:
-    """
-    A simple thread-safe in-memory cache with a Time-To-Live (TTL) for each item.
-    """
-    def __init__(self, ttl_seconds: int):
-        self.ttl = ttl_seconds
-        self._data = {}
-        self._lock = threading.Lock()
-
-    def get(self, key: str):
-        """
-        Retrieves an item from the cache. Returns the item if it exists and has not
-        expired, otherwise returns None.
-        """
-        with self._lock:
-            if key not in self._data:
-                return None
-            
-            value, timestamp = self._data[key]
-            
-            # Check if the item has expired
-            if time.time() - timestamp > self.ttl:
-                del self._data[key] # Remove expired item
-                return None
-            
-            return value
-
-    def set(self, key: str, value):
-        """
-        Adds an item to the cache with the current timestamp.
-        """
-        with self._lock:
-            self._data[key] = (value, time.time())
-
-class DiskCache:
-    """
-    A two-level cache: a fast in-memory RAM cache backed by a persistent,
-    sharded disk cache using pickle files.
-    """
-    def __init__(self, cache_dir: str, disk_ttl_seconds: int, ram_ttl_seconds: int):
-        self.cache_dir = cache_dir
-        self.disk_ttl = disk_ttl_seconds
-        self.ram_cache = RAMCache(ttl_seconds=ram_ttl_seconds)
-        self._disk_locks = {} # One lock per shard file
-        self._master_lock = threading.Lock() # To manage creation of shard locks
-        os.makedirs(self.cache_dir, exist_ok=True)
-
-    def _get_shard_path_and_lock(self, key: str):
-        """Hashes the key to find the shard path and its corresponding lock."""
-        key_hash = hashlib.sha256(key.encode()).hexdigest()
-        shard_filename = key_hash[:2] + '.pkl'
-        shard_path = os.path.join(self.cache_dir, shard_filename)
-
-        with self._master_lock:
-            if shard_path not in self._disk_locks:
-                self._disk_locks[shard_path] = threading.Lock()
-        
-        return shard_path, self._disk_locks[shard_path]
-
-    def _load_and_clean_shard(self, shard_path: str) -> dict:
-        """Loads a shard from disk and removes expired entries."""
-        try:
-            with open(shard_path, 'rb') as f:
-                shard_data = pickle.load(f)
-        except (FileNotFoundError, EOFError, pickle.UnpicklingError):
-            return {}
-
-        current_time = time.time()
-        # Filter out entries older than the disk TTL (e.g., 3 months)
-        cleaned_data = {
-            k: (v, ts) for k, (v, ts) in shard_data.items()
-            if current_time - ts <= self.disk_ttl
-        }
-
-        # If any entries were removed, rewrite the cleaned shard to disk
-        if len(cleaned_data) < len(shard_data):
-            try:
-                with open(shard_path, 'wb') as f:
-                    pickle.dump(cleaned_data, f)
-            except Exception as e:
-                print(f"Warning: Could not rewrite cleaned cache shard {shard_path}: {e}")
-
-        return cleaned_data
-
-    def get(self, key: str):
-        """
-        Tries to get a value from RAM cache first, then falls back to disk cache.
-        """
-        # 1. Check RAM cache (fastest)
-        value = self.ram_cache.get(key)
-        if value is not None:
-            return value
-
-        # 2. Check Disk cache
-        shard_path, lock = self._get_shard_path_and_lock(key)
-        with lock:
-            shard_data = self._load_and_clean_shard(shard_path)
-            if key in shard_data:
-                value, _ = shard_data[key]
-                # Promote the found value to the faster RAM cache for next time
-                self.ram_cache.set(key, value)
-                return value
-        
-        return None # Cache miss
-
-    def set(self, key: str, value):
-        """Sets a value in both RAM and disk caches."""
-        # 1. Set in RAM cache
-        self.ram_cache.set(key, value)
-
-        # 2. Set in Disk cache
-        shard_path, lock = self._get_shard_path_and_lock(key)
-        with lock:
-            # Load existing data to avoid overwriting other keys in the shard
-            shard_data = self._load_and_clean_shard(shard_path)
-            shard_data[key] = (value, time.time())
-            try:
-                with open(shard_path, 'wb') as f:
-                    pickle.dump(shard_data, f)
-            except Exception as e:
-                print(f"Warning: Could not write to cache shard {shard_path}: {e}")
-
+from src.caching import TwoLevelCache
 
 class MetadataSearch:
     """
     A singleton class to handle metadata-based search.
     """
     _instance = None
+    _MAX_META_LINES = 300
+    _MAX_META_CHARS = 40_000
 
     def __new__(cls, *args, **kwargs):
         if cls._instance is None:
@@ -156,18 +31,30 @@ class MetadataSearch:
 
         # Define cache location and TTLs
         cache_folder = os.path.join(self.cfg.main.cache_path, 'metadata_cache')
-        three_months_in_seconds = 90 * 24 * 60 * 60
-        one_hour_in_seconds = 3600
-
-        # Use the new DiskCache
-        self._fast_cache = DiskCache(
-            cache_dir=cache_folder,
-            disk_ttl_seconds=three_months_in_seconds,
-            ram_ttl_seconds=one_hour_in_seconds
-        )
+        self._fast_cache = TwoLevelCache(cache_dir=cache_folder, name="metadata_search")
 
         self._initialized = True
 
+    def _read_meta_snippet(self, meta_path: str) -> tuple[str, bool]:
+        """
+        Read only the first N lines (and cap total chars) to avoid huge I/O and
+        long embeddings. Returns (text, truncated_flag).
+        """
+        lines = []
+        total = 0
+        truncated = False
+        try:
+            print(f"Reading metadata file: {meta_path}")
+            with open(meta_path, 'r', encoding='utf-8', errors='ignore') as f:
+                for i, line in enumerate(f):
+                    if i >= self._MAX_META_LINES or total + len(line) > self._MAX_META_CHARS:
+                        truncated = True
+                        break
+                    lines.append(line)
+                    total += len(line)
+        except Exception as e:
+            print(f"Error reading metadata file {meta_path}: {e}")
+        return ''.join(lines), truncated
 
     def process_query(self, query_text: str) -> np.ndarray:
         return self.text_embedder.embed_query(query_text)
@@ -178,7 +65,15 @@ class MetadataSearch:
         relative_path = os.path.relpath(file_path, media_folder) if media_folder else os.path.basename(file_path)
         file_name = os.path.basename(file_path)
         
-        meta_text = f"{file_name}\n{relative_path}"
+        #meta_text = f"{file_name}\n{relative_path}"
+        meta_text = f"File Name: {file_name}\nFile Path: {relative_path}\n"
+        
+        if os.path.exists(file_path + '.meta'):
+            meta_text += "Metadata from respective .meta file:\n"
+            meta_content, truncated = self._read_meta_snippet(file_path + '.meta')
+            meta_text += meta_content
+            if truncated:
+                meta_text += "\n[truncated]\n"
         
         meta_embeddings = self.text_embedder.embed_text(meta_text)
         
@@ -197,7 +92,21 @@ class MetadataSearch:
         try:
             # 1. Generate a robust cache key from file stats
             file_stat = os.stat(file_path)
-            cache_key = f"meta::{file_path}::{file_stat.st_mtime}::{file_stat.st_size}"
+            meta_path = file_path + '.meta'
+            if os.path.exists(meta_path):
+                try:
+                    meta_stat = os.stat(meta_path)
+                    meta_sig = f"{meta_stat.st_mtime}::{meta_stat.st_size}"
+                except Exception:
+                    meta_sig = "meta_stat_error"
+            else:
+                meta_sig = "no_meta"
+
+            cache_key = (
+                f"meta::{file_path}::"
+                f"{file_stat.st_mtime}::{file_stat.st_size}::"
+                f"meta::{meta_sig}"
+            )
 
             # 2. Check cache
             cached_embedding = self._fast_cache.get(cache_key)

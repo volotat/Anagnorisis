@@ -10,8 +10,6 @@ class VideosLibrary(db.Model):
   user_rating_date = db.Column(db.DateTime, nullable=True)
   model_rating = db.Column(db.Float, nullable=True)
   model_hash = db.Column(db.String, nullable=True) 
-  embedding = db.Column(db.LargeBinary, nullable=True) 
-  embedder_hash = db.Column(db.String, nullable=True) 
   full_play_count = db.Column(db.Integer, nullable=True, default=0, server_default='0')
   skip_count = db.Column(db.Integer, nullable=True, default=0, server_default='0')
   last_played = db.Column(db.DateTime, nullable=True, default=None)

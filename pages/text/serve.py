@@ -69,22 +69,18 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
 
     text_search_engine = TextSearch(cfg=cfg)
     text_search_engine.initiate(models_folder=cfg.main.embedding_models_path, cache_folder=cfg.main.cache_path)
-    cached_file_list = text_search_engine.cached_file_list
-    cached_file_hash = text_search_engine.cached_file_hash
-    cached_metadata = text_search_engine.cached_metadata
+
+    # cached_file_hash = text_search_engine.cached_file_hash
+    # cached_metadata = text_search_engine.cached_metadata
 
     text_evaluator = TextEvaluator(embedding_dim=text_search_engine.embedding_dim)
-
-    #TextSearch.initiate(cfg, models_folder=cfg.main.embedding_models_path, cache_folder=cfg.main.cache_path)
-    #cached_file_list = TextSearch.cached_file_list
-    #cached_file_hash = TextSearch.cached_file_hash
-    #cached_metadata = TextSearch.cached_metadata
 
     common_socket_events = CommonSocketEvents(socketio)
 
     embedding_gathering_callback = EmbeddingGatheringCallback(common_socket_events.show_search_status)
 
     text_file_manager = file_manager.FileManager(
+        cfg=cfg,
         media_directory=media_directory,
         engine=text_search_engine,
         module_name="text",
@@ -97,7 +93,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
         print('update_model_ratings')
 
         # filter out files that already have a rating in the DB
-        files_list_hash_map = {file_path: cached_file_hash.get_file_hash(file_path) for file_path in files_list}
+        files_list_hash_map = {file_path: text_search_engine.get_file_hash(file_path) for file_path in files_list}
         hash_list = list(files_list_hash_map.values())
 
         # Fetch rated files from the database in a single query
@@ -200,7 +196,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
             db_item = db_models.TextLibrary.query.filter_by(hash=file_hash).first()
                     
             if db_item:
-                file_data = text_search_engine.cached_metadata.get_metadata(full_path, file_hash)     
+                file_data = text_search_engine.get_metadata(full_path)     
             else:
                 raise Exception(f"File '{full_path}' with hash '{file_hash}' not found in the database.")
             

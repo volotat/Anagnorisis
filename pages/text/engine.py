@@ -5,7 +5,8 @@ import datetime
 import io
 import time
 import gc
-import traceback # Import traceback
+import traceback
+import threading
 
 import flask
 import torch
@@ -53,6 +54,8 @@ class TextSearch(BaseSearchEngine):
         self.cfg = cfg # Store cfg for chunking parameters
         self.embedder = TextEmbedder(cfg)
         self.tokenizer = None # Will be set in _load_model_and_processor
+        self._embedder_lock = threading.Lock()
+        self.is_embedder_busy = False
 
     @property
     def model_name(self) -> str:
@@ -113,13 +116,14 @@ class TextSearch(BaseSearchEngine):
             # 1. Read File Content
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
-            
-            if not content.strip():
-                print(f"File {file_path} is empty or contains only whitespace.")
-                return []
 
             # 2. Generate Embeddings for Chunks via TextEmbedder
-            chunk_embeddings_list_np = self.embedder.embed_text(content)
+            with self._embedder_lock:
+                self.is_embedder_busy = True
+                try:
+                    chunk_embeddings_list_np = self.embedder.embed_text(content)
+                finally:
+                    self.is_embedder_busy = False
 
             # embed_text returns a numpy array of embeddings. Convert to a list of arrays.
             if chunk_embeddings_list_np is not None and len(chunk_embeddings_list_np) > 0:
@@ -143,76 +147,33 @@ class TextSearch(BaseSearchEngine):
         it's better to override the *entire* `process_files` method here to handle this list of lists directly
         rather than forcing `_process_single_file` to return a concatenated tensor.
         """
-        if self.embedder is None or not self.embedder._initialized:
-            raise RuntimeError(f"{self.__class__.__name__} not initialized. Call initiate() first.")
-        if self.is_busy: 
-            raise Exception(f"{self.__class__.__name__} is busy processing another request.")
         
-        self.is_busy = True
+        all_files_chunk_embeddings = [] # Accumulate list of list of numpy arrays
+        
+        for ind, file_path in enumerate(tqdm(file_paths, desc=f"Processing {self.cache_prefix} files")):
+            current_file_embeddings = None
+            try:
+                file_hash = self.get_file_hash(file_path)
+                cache_key = f"{file_hash}::{self.model_hash}{self._get_model_hash_postfix()}"
 
-        
-        
-        try:
-            all_files_chunk_embeddings = [] # Accumulate list of list of numpy arrays
-            db_model_class = self._get_db_model_class()
-            new_db_entries = []
-            
-            for ind, file_path in enumerate(tqdm(file_paths, desc=f"Processing {self.cache_prefix} files")):
-                current_file_embeddings = None
-                try:
-                    file_hash = self.cached_file_hash.get_file_hash(file_path)
-                    
-                    if file_hash in self._fast_cache:
-                        current_file_embeddings = self._fast_cache[file_hash]
-                    else:
-                        # Check if the database is accessible in the current context
-                        if not flask.has_app_context():
-                            current_file_embeddings = self._process_single_file(file_path, media_folder=media_folder)
-                            self._fast_cache[file_hash] = current_file_embeddings
-                        else:
-                            db_record = db_model_class.query.filter_by(hash=file_hash).first()
+                cached_chunk_embeddings = self._fast_cache.get(cache_key)
+                if cached_chunk_embeddings is not None:
+                    current_file_embeddings = cached_chunk_embeddings
+                else:
+                    current_file_embeddings = self._process_single_file(file_path, media_folder=media_folder)
+                    self._fast_cache.set(cache_key, current_file_embeddings)
 
-                            if db_record and db_record.chunk_embeddings and db_record.embedder_hash == self.model_hash:
-                                current_file_embeddings = pickle.loads(db_record.chunk_embeddings)
-                                self._fast_cache[file_hash] = current_file_embeddings
-                            else:
-                                current_file_embeddings = self._process_single_file(file_path, media_folder=media_folder)
-                                
-                                # Save to database (as pickled list of numpy arrays)
-                                if db_record:
-                                    db_record.chunk_embeddings = pickle.dumps(current_file_embeddings)
-                                    db_record.embedder_hash = self.model_hash
-                                else:
-                                    new_entry_data = {
-                                        'hash': file_hash,
-                                        'file_path': os.path.relpath(file_path, media_folder) if media_folder else file_path,
-                                        'chunk_embeddings': pickle.dumps(current_file_embeddings),
-                                        'embedder_hash': self.model_hash
-                                    }
-                                    new_db_entries.append(db_model_class(**new_entry_data))
-                                
-                                self._fast_cache[file_hash] = current_file_embeddings
-                
-                except Exception as e:
-                    print(f"Error processing file {file_path}: {e}")
-                    traceback.print_exc()
-                    current_file_embeddings = [] # On error, return empty list of chunks
-                
-                all_files_chunk_embeddings.append(current_file_embeddings)
-                
-                if callback:
-                    callback(ind + 1, len(file_paths))
+            except Exception as e:
+                print(f"Error processing file {file_path}: {e}")
+                traceback.print_exc()
+                current_file_embeddings = [] # On error, return empty list of chunks
             
-            if new_db_entries and flask.has_app_context():
-                db_models.db.session.bulk_save_objects(new_db_entries)
-                db_models.db.session.commit()
+            all_files_chunk_embeddings.append(current_file_embeddings)
             
-            return all_files_chunk_embeddings # Returns List[List[np.ndarray]]
-            
-        finally:
-            self.is_busy = False
-            self.cached_file_hash.save_hash_cache()
-            # self.cached_metadata.save_metadata_cache() # TextSearch doesn't use cached_metadata actively for now
+            if callback:
+                callback(ind + 1, len(file_paths))
+        
+        return all_files_chunk_embeddings # Returns List[List[np.ndarray]]
 
     def process_text(self, query_text: str) -> torch.Tensor:
         """
@@ -234,62 +195,6 @@ class TextSearch(BaseSearchEngine):
             dim = self.cfg.text.embedding_dimension or self.embedding_dim
             return torch.zeros((1, dim), device=self.device) if dim else None
         
-    def process_metadata(self, file_paths: list[str], callback=None, media_folder: str = None, **kwargs) -> list[list[np.ndarray]]:
-        """
-        Processes metadata for a list of files.
-        For text files, we can use the filename and relative path as metadata.
-        Generates embeddings for this metadata text.
-        Returns a list of lists of numpy arrays (one list per file, each containing one metadata embedding).
-        """
-        if self.embedder is None or not self.embedder._initialized:
-            raise RuntimeError(f"{self.__class__.__name__} not initialized. Call initiate() first.")
-
-        all_files_meta_embeddings = []
-
-        for ind, file_path in enumerate(file_paths):
-            meta_embedding_np = None
-
-            try:
-                file_hash = self.cached_file_hash.get_file_hash(file_path)
-                cache_key = file_hash + '_meta'
-                
-                if cache_key in self._fast_cache:
-                    meta_embedding_np = self._fast_cache[cache_key]
-                else:
-                    # Get a clean, relative path for the metadata
-                    media_folder = kwargs.get('media_folder', '')
-                    relative_path = os.path.relpath(file_path, media_folder) if media_folder else os.path.basename(file_path)
-                    file_name = os.path.basename(file_path)
-
-                    meta_text = f"{file_name}\n{relative_path}"
-                    
-                    # Generate embedding for the metadata text using TextEmbedder
-                    # embed_text returns an array of embeddings, we take the first (and only) one
-                    meta_embeddings = self.embedder.embed_text(meta_text)
-                    if meta_embeddings is not None and len(meta_embeddings) > 0:
-                        meta_embedding_np = meta_embeddings[0]
-                    else:
-                        dim = self.cfg.text.embedding_dimension or self.embedding_dim
-                        meta_embedding_np = np.zeros((dim,), dtype=np.float32) if dim else np.array([], dtype=np.float32)
-
-
-                    # Cache the metadata embedding
-                    self._fast_cache[cache_key] = meta_embedding_np
-
-                all_files_meta_embeddings.append([meta_embedding_np]) # Wrap in list to match List[List[np.ndarray]]
-                    
-
-                if callback:
-                    callback(ind + 1, len(file_paths))
-            except Exception as e:
-                print(f"Error processing metadata for {file_path}: {e}")
-                traceback.print_exc()
-                dim = self.cfg.text.embedding_dimension or self.embedding_dim
-                zero_embedding = np.zeros((dim,), dtype=np.float32) if dim else np.array([], dtype=np.float32)
-                all_files_meta_embeddings.append([zero_embedding]) # Return zero embedding on error
-        
-        return all_files_meta_embeddings
-
     def compare(self, file_embeddings: list[list[np.ndarray]], query_embedding: torch.Tensor) -> np.ndarray:
         """
         Compares a query embedding against file embeddings (list of lists of chunk embeddings).
@@ -411,6 +316,10 @@ if __name__ == "__main__":
         print(f"{colorama.Fore.GREEN}First processing successful.{colorama.Style.RESET_ALL}")
 
         print(f"\n{colorama.Fore.CYAN}Processing files again (should use cache):{colorama.Style.RESET_ALL}")
+        
+        # TODO: New caching is working with TwoLevelCache instead of in-memory dict
+        # The test related to caching needs to be adapted accordingly.
+
         text_search_engine._fast_cache = {} # Clear in-memory cache
         embeddings_cached = text_search_engine.process_files(
             test_files, 

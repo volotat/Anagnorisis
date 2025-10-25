@@ -3,157 +3,8 @@ import pickle
 import hashlib
 import datetime
 import shlex
-
-
-###########################################
-# File Hash Caching
-
-class CachedFileHash:
-    def __init__(self, cache_file_path):
-        self.cache_file_path = cache_file_path
-        self.file_hash_cache = {}
-        self.load_hash_cache()
-
-    def load_hash_cache(self):
-        if os.path.exists(self.cache_file_path):
-            with open(self.cache_file_path, 'rb') as cache_file:
-                self.file_hash_cache = pickle.load(cache_file)
-            
-            # Remove entries older than three months
-            three_months_ago = datetime.datetime.now() - datetime.timedelta(days=90)
-            self.file_hash_cache = {k: v for k, v in self.file_hash_cache.items() if v[2] > three_months_ago}
-
-    def save_hash_cache(self):
-        # Save the updated cache to the file
-        with open(self.cache_file_path, 'wb') as cache_file:
-            pickle.dump(self.file_hash_cache, cache_file)
-
-    def get_file_hash(self, file_path):
-        if not os.path.exists(file_path):
-            raise FileNotFoundError(f"File not found: {file_path}")
-
-        # Get the last modified time of the file
-        last_modified_time = os.path.getmtime(file_path)
-        
-        # Check if the file is in the cache and if the last modified time matches
-        if file_path in self.file_hash_cache:
-            cached_last_modified_time, cached_hash, timestamp = self.file_hash_cache[file_path]
-            if cached_last_modified_time == last_modified_time:
-                return cached_hash
-        
-        # If not in cache or file has been modified, calculate the hash
-        with open(file_path, "rb") as f:
-            bytes = f.read()  # Read the entire file as bytes
-            file_hash = hashlib.md5(bytes).hexdigest()
-        
-        # Update the cache
-        self.file_hash_cache[file_path] = (last_modified_time, file_hash, datetime.datetime.now())
-
-        return file_hash
-
-###########################################
-# File List Caching
-
-class CachedFileList:
-    def __init__(self, cache_file_path):
-        self.cache_file_path = cache_file_path
-        self.file_list_cache = {}
-        self.cache_changed = False # Flag to track changes
-        self.load_file_list_cache()
-
-    def load_file_list_cache(self):
-        if os.path.exists(self.cache_file_path):
-            with open(self.cache_file_path, 'rb') as cache_file:
-                self.file_list_cache = pickle.load(cache_file)
-
-            # Remove entries older than three months
-            three_months_ago = datetime.datetime.now() - datetime.timedelta(days=90)
-            self.file_list_cache = {k: v for k, v in self.file_list_cache.items() if v[2] > three_months_ago}
-
-    def save_file_list_cache(self):
-        with open(self.cache_file_path, 'wb') as cache_file:
-            pickle.dump(self.file_list_cache, cache_file)
-
-    def get_files_in_folder(self, folder_path, media_formats):
-        # Get the last modified time of the folder
-        folder_last_modified_time = os.path.getmtime(folder_path)
-        
-        # Check if the folder is in the cache and if the last modified time matches
-        if folder_path in self.file_list_cache:
-            cached_last_modified_time, cached_file_list, timestamp = self.file_list_cache[folder_path]
-            if cached_last_modified_time == folder_last_modified_time:
-                return cached_file_list
-        
-        # If not in cache or folder has been modified, list the files in the folder
-        file_list = [os.path.join(folder_path, f) for f in os.listdir(folder_path) if os.path.isfile(os.path.join(folder_path, f)) and f.lower().endswith(tuple(media_formats))]
-        
-        # Update the cache with the current timestamp and file list
-        self.file_list_cache[folder_path] = (folder_last_modified_time, file_list, datetime.datetime.now())
-        self.cache_changed = True  # Set the flag to indicate changes
-        
-        return file_list
-
-    def get_all_files(self, current_path, media_formats):
-        # Load the cache from the file if it exists and file_list_cache is empty
-        if not self.file_list_cache:
-            self.load_file_list_cache()
-
-        all_files = []
-        for root, dirs, files in os.walk(current_path):
-            all_files.extend(self.get_files_in_folder(root, media_formats))
-
-        # Save the updated cache to the file
-        if self.cache_changed:
-            self.save_file_list_cache()
-        
-        return all_files
-
-###########################################
-# Cached Metadata (Hash-Dependent Version)
-
-class CachedMetadata:
-    def __init__(self, cache_file_path, metadata_func):
-        self.cache_file_path = cache_file_path
-        self.metadata_cache = {}
-        self.load_metadata_cache()
-        self.metadata_func = metadata_func
-
-    def load_metadata_cache(self):
-        if os.path.exists(self.cache_file_path):
-            with open(self.cache_file_path, 'rb') as cache_file:
-                self.metadata_cache = pickle.load(cache_file)
-
-            # Remove entries older than three months
-            three_months_ago = datetime.datetime.now() - datetime.timedelta(days=90)
-            self.metadata_cache = {k: v for k, v in self.metadata_cache.items() if v[2] > three_months_ago}
-
-    def save_metadata_cache(self):
-        with open(self.cache_file_path, 'wb') as cache_file:
-            pickle.dump(self.metadata_cache, cache_file)
-
-    def get_metadata(self, file_path, file_hash):
-        if not os.path.exists(file_path):
-            raise FileNotFoundError(f"File not found: {file_path}")
-
-        # Get the last modified time of the file (still used for time-based invalidation)
-        last_modified_time = os.path.getmtime(file_path)
-
-        cache_key = file_hash # Use file_hash as the cache key
-
-        # Check if metadata for file_hash is in the cache and if the last modified time is still valid
-        if cache_key in self.metadata_cache:
-            cached_last_modified_time, cached_metadata, timestamp = self.metadata_cache[cache_key]
-            if cached_last_modified_time == last_modified_time: # Keep time-based invalidation
-                return cached_metadata
-
-        # If not in cache or file has been modified, extract metadata using metadata_func
-        metadata = self.metadata_func(file_path) # Method expected to return a dictionary of metadata attributes
-        metadata['file_path'] = file_path
-
-        # Update the cache using file_hash as the key
-        self.metadata_cache[cache_key] = (last_modified_time, metadata, datetime.datetime.now())
-        return metadata
-
+import json
+import torch
 
 def parse_terminal_command(input_string: str) -> tuple[str | None, dict]:
     """
@@ -306,9 +157,29 @@ from pages.socket_events import CommonSocketEvents
 import time
 import numpy as np
 from pages.utils import convert_size, weighted_shuffle
+from src.caching import TwoLevelCache 
+import threading
+from typing import Dict
+
+_TLC_SINGLETONS: Dict[str, "TwoLevelCache"] = {}
+_TLC_LOCK = threading.Lock()
+
+def get_two_level_cache(cache_dir: str, **kwargs) -> "TwoLevelCache":
+    """
+    Return a shared TwoLevelCache instance for this cache_dir within the process.
+    First caller’s kwargs win; later calls ignore differing kwargs.
+    """
+    abs_dir = os.path.abspath(cache_dir)
+    with _TLC_LOCK:
+        inst = _TLC_SINGLETONS.get(abs_dir)
+        if inst is not None:
+            return inst
+        inst = TwoLevelCache(cache_dir=abs_dir, **kwargs)
+        _TLC_SINGLETONS[abs_dir] = inst
+        return inst
 
 class FileManager:
-    def __init__(self, media_directory, engine=None, module_name="FileManager", media_formats=None, socketio=None, db_schema=None):
+    def __init__(self, cfg, media_directory, engine=None, module_name="FileManager", media_formats=None, socketio=None, db_schema=None):
         assert media_directory is not None, "Media directory must be specified"
         assert engine is not None, "Engine must be specified"
         assert socketio is not None, "SocketIO instance must be specified"
@@ -320,10 +191,15 @@ class FileManager:
         self.media_formats = media_formats
         self.common_socket_events = CommonSocketEvents(socketio)
         self.db_schema = db_schema
+        self.engine = engine
 
-        self.cached_file_list = engine.cached_file_list
-        self.cached_file_hash = engine.cached_file_hash
-        self.cached_metadata = engine.cached_metadata
+        # self.cached_file_list = engine.cached_file_list
+        # self.cached_file_hash = engine.cached_file_hash
+        # self.cached_metadata = engine.cached_metadata
+
+        # Folder tree cache (persisted across many instances of FileManager as a singleton object)
+        cache_folder = os.path.join(cfg.main.cache_path, "file_manager")
+        self._fast_cache = get_two_level_cache(cache_dir=cache_folder, name="file_manager")
 
     def show_status(self, message):
         self.common_socket_events.show_search_status(message)
@@ -334,13 +210,57 @@ class FileManager:
             return self.media_directory
         return os.path.abspath(os.path.join(self.media_directory, '..', path))
 
+    def _build_folder_tree_cached(self, path: str, media_extensions: set[str]) -> dict:
+        """
+        Build folder tree with per-directory caching keyed by (dir_path, dir_mtime).
+        Only recurses into subdirs whose own mtime changed (or not cached yet).
+        """
+        name = os.path.basename(path)
+        num_files = 0
+        subfolders = {}
+
+        try:
+            it = os.scandir(path)
+        except FileNotFoundError:
+            return {"name": name, "num_files": 0, "total_files": 0, "subfolders": {}}
+
+        with it:
+            for entry in it:
+                try:
+                    if entry.is_file(follow_symlinks=False):
+                        ext = os.path.splitext(entry.name)[1].lower()
+                        if ext in media_extensions:
+                            num_files += 1
+                    elif entry.is_dir(follow_symlinks=False):
+                        try:
+                            st = entry.stat(follow_symlinks=False)
+                            child_key = f"SUBFOLDERS_OF::{entry.path}|{st.st_mtime_ns}"
+                        except FileNotFoundError:
+                            continue
+                        child = self._fast_cache.get(child_key)
+                        if child is None:
+                            child = self._build_folder_tree_cached(entry.path, media_extensions)
+                            self._fast_cache.set(child_key, child)
+                        subfolders[entry.name] = child
+                except Exception:
+                    # Skip entries that vanish mid-scan or are inaccessible
+                    continue
+
+        total_files = num_files + sum(sf["total_files"] for sf in subfolders.values())
+        return {"name": name, "num_files": num_files, "total_files": total_files, "subfolders": subfolders}
+
+
     def get_folders(self, path = ""):
         current_path = self.resolve_media_path(path)
         folder_path = os.path.relpath(current_path, os.path.join(self.media_directory, '..')) + os.path.sep
         print('folder_path', folder_path)
 
         # Extract subfolders structure from the path into a dict
-        folders = get_folder_structure(self.media_directory, self.media_formats)
+        #folders = get_folder_structure(self.media_directory, self.media_formats)
+
+        # Build from cache-aware walker
+        media_exts = set(self.media_formats)
+        folders = self._build_folder_tree_cached(self.media_directory, media_exts)
 
         # Extract main folder name
         main_folder_name = os.path.basename(os.path.normpath(self.media_directory))
@@ -367,22 +287,56 @@ class FileManager:
                 percent = (ind + 1) / total_files * 100
                 self.show_status(f"Gathering hashes: {ind+1}/{total_files} ({percent:.2f}%)")
                 last_shown_time = current_time
-
-            # Save progress every 60 seconds
-            if current_time - last_saved_time > 60:
-                percent = (ind + 1) / total_files * 100
-                self.show_status(f"Gathering hashes: {ind+1}/{total_files} ({percent:.2f}%) (Saving progress...)")
-                self.cached_file_hash.save_hash_cache()
-                last_saved_time = current_time
-                last_shown_time = current_time # Reset show time to avoid immediate re-trigger
                 
-            all_hashes.append(self.cached_file_hash.get_file_hash(file_path))
+            all_hashes.append(self.engine.get_file_hash(file_path))
 
-        # Final save after the loop completes
-        self.cached_file_hash.save_hash_cache()
         return all_hashes
 
-    
+    def _list_dir_cached(self, path: str, media_exts: set[str]) -> tuple[list[str], list[str]]:
+        """
+        Return (files_in_dir, subdirs) for path using TwoLevelCache keyed by dir mtime.
+        """
+        try:
+            st = os.stat(path, follow_symlinks=False)
+        except FileNotFoundError:
+            return [], []
+        except Exception:
+            return [], []
+
+        ext_sig = ",".join(sorted(media_exts)) if media_exts else "-"
+        key = f"MEDIAFILES_OF:{path}|{st.st_mtime_ns}|{ext_sig}"
+
+        cached = self._fast_cache.get(key)
+        if cached is not None:
+            return cached
+
+        files: list[str] = []
+        subdirs: list[str] = []
+        try:
+            with os.scandir(path) as it:
+                for e in it:
+                    try:
+                        if e.is_file(follow_symlinks=False):
+                            ext = os.path.splitext(e.name)[1].lower()
+                            if not media_exts or ext in media_exts:
+                                files.append(os.path.join(path, e.name))
+                        elif e.is_dir(follow_symlinks=False):
+                            subdirs.append(e.path)
+                    except Exception:
+                        # Skip entries that change/disappear mid-scan
+                        continue
+        except Exception:
+            return [], []
+
+        self._fast_cache.set(key, (files, subdirs))
+        return files, subdirs
+
+    def _walk_files_cached(self, root: str, media_exts: set[str]) -> list[str]:
+        files, subdirs = self._list_dir_cached(root, media_exts)
+        all_files = list(files)
+        for d in subdirs:
+            all_files.extend(self._walk_files_cached(d, media_exts))
+        return all_files
 
     def get_files(self, path = "", pagination = 0, limit = 100, text_query = None, seed = None, filters: dict = {}, get_file_info = None, update_model_ratings = None, mode = 'file-name', order = 'most-relevant', temperature = 0):
 
@@ -408,12 +362,12 @@ class FileManager:
         folder_path = os.path.relpath(current_path, os.path.join(self.media_directory, '..')) + os.path.sep
         print('get_files', 'folder_path', folder_path)
 
-        self.show_status(f"Searching for music files in '{folder_path}'.")
+        self.show_status(f"Searching for files in '{folder_path}'.")
 
         all_files = []
         
         # Walk with cache 1.5s for 66k files
-        all_files = self.cached_file_list.get_all_files(current_path, self.media_formats)
+        all_files = self._walk_files_cached(current_path, self.media_formats)
 
         self.show_status(f"Gathering hashes for {len(all_files)} files.")
         all_hashes = self._get_all_hashes_with_progress(all_files)
@@ -423,8 +377,8 @@ class FileManager:
         # update_none_hashes_in_db(all_files, all_hashes)
 
 
-        # Sort music files by text or file query
-        self.show_status(f"Sorting music files by: \"{text_query}\"")
+        # Sort files by text or file query
+        self.show_status(f"Sorting files by: \"{text_query}\"")
 
         scores = np.zeros(len(all_files), dtype=np.float32)
         if text_query and len(text_query) > 0:
@@ -452,9 +406,15 @@ class FileManager:
         if scores is None or len(scores) == 0:
             raise ValueError("No scores calculated for files. Cannot sort.")
 
+        #if type(scores) not in [list, torch.Tensor, np.ndarray]:
+        #    raise ValueError("Scores should be a flat list or array of floats.")
+
+        if type(scores) is torch.Tensor:
+            scores = scores.cpu().numpy().tolist()
 
         if type(scores) is np.ndarray:
             scores = scores.tolist()
+
         print(f"Scores calculated for {len(scores)} files.")
 
         print(f"Sorting {len(all_files)} files with temperature={temperature}, order={order}...")
@@ -471,16 +431,16 @@ class FileManager:
         sorted_scores = [scores[i] for i in indices]
 
         
-        # Extracting metadata for relevant batch of music files
+        # Extracting metadata for relevant batch of files
         self.show_status(f"Extracting metadata for relevant batch of files.")
         page_files = sorted_files[pagination:pagination+limit]
         page_files_scores = sorted_scores[pagination:pagination+limit]
         
         print(f'page_files {pagination}:{limit}', page_files)
 
-        page_hashes = [self.cached_file_hash.get_file_hash(file_path) for file_path in page_files]
+        page_hashes = [self.engine.get_file_hash(file_path) for file_path in page_files]
 
-        # Extract DB data for the relevant batch of music files
+        # Extract DB data for the relevant batch of files
         db_items = self.db_schema.query.filter(self.db_schema.hash.in_(page_hashes)).all()
         db_items_map = {item.hash: item for item in db_items}
 
@@ -490,7 +450,7 @@ class FileManager:
         print('no_model_rating_files size', len(no_model_rating_files))
 
         # Add files that are not in the database yet
-        new_files_list = [file_path for file_path in page_files if self.cached_file_hash.get_file_hash(file_path) not in db_items_map]
+        new_files_list = [file_path for file_path in page_files if self.engine.get_file_hash(file_path) not in db_items_map]
         no_model_rating_files.extend(new_files_list)
 
         # Remove from list files that do not exist anymore
@@ -506,14 +466,14 @@ class FileManager:
 
         for ind, full_path in enumerate(page_files):
             # page_hashes = self._get_all_hashes_with_progress(page_files)
-            page_hashes = [self.cached_file_hash.get_file_hash(file_path) for file_path in page_files]
+            page_hashes = [self.engine.get_file_hash(file_path) for file_path in page_files]
 
             file_path = os.path.relpath(full_path, self.media_directory)
             basename = os.path.basename(full_path)
             file_size = os.path.getsize(full_path)
             file_hash = page_hashes[ind]
 
-            #audiofile_data = self.cached_metadata.get_metadata(full_path, file_hash)
+            #audiofile_data = self.get_metadata(full_path)
 
             
             #resolution = get_image_resolution(full_path)  # Returns a tuple (width, height)
@@ -552,11 +512,20 @@ class FileManager:
             files_data.append(data)
         
         # Save all extracted metadata to the cache
-        self.cached_metadata.save_metadata_cache()
+        # self.cached_metadata.save_metadata_cache()
 
         sorted_files_paths = [os.path.relpath(file_path, self.media_directory) for file_path in sorted_files]
 
         self.show_status(f'{len(sorted_files)} files processed in {time.time() - start_time:.4f} seconds.')
+
+        print(f'get_files returning {len(files_data)} files data.')
+
+        # Check if all the data is serializable and if not print the non-serializable data
+        for file_data in files_data:
+            try:
+                json.dumps(file_data, indent=2)
+            except (TypeError, OverflowError) as e:
+                raise ValueError(f'Non-serializable data found in file: {file_data["full_path"]}, error: {e}')
 
         return {
             "files_data": files_data, 

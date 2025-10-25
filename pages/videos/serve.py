@@ -49,24 +49,6 @@ from pages.utils import convert_size, convert_length, time_difference
 # emit_videos_page_show_files
 
 
-def get_folder_structure(root_folder):
-    folder_dict = {}
-    for root, dirs, _ in os.walk(root_folder):
-        # Extract the relative path from the root_folder to the current root
-        rel_path = os.path.relpath(root, root_folder)
-        # Skip the root folder itself
-        if rel_path == ".":
-            rel_path = ""
-        # Navigate/create nested dictionaries based on the relative path
-        current_level = folder_dict
-        for part in rel_path.split(os.sep):
-            if part:    # Avoid empty strings
-                current_level = current_level.setdefault(part, {})
-        # Add subdirectories to the current level
-        for d in dirs:
-            current_level[d] = {}
-    return folder_dict
-
 def print_emb_extracting_status(num_extracted, num_total):
     if num_extracted % 100 == 0:
         print(f"Extracted embeddings for {num_extracted} out of {num_total} videos.")
@@ -115,14 +97,11 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
   
     videos_search_engine = VideoSearch(cfg=cfg)
     videos_search_engine.initiate(models_folder=cfg.main.embedding_models_path, cache_folder=cfg.main.cache_path) # Needs actual models path
-    
-    # For now, cached_file_list and cached_file_hash can be from the base search engine
-    cached_file_list = videos_search_engine.cached_file_list
-    cached_file_hash = videos_search_engine.cached_file_hash
 
     common_socket_events = CommonSocketEvents(socketio)
 
     videos_file_manager = file_manager.FileManager(
+            cfg=cfg,
             media_directory=media_directory,
             engine=videos_search_engine,
             module_name="videos",
@@ -134,7 +113,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
     def update_model_ratings(files_list):
         print('update_model_ratings')
 
-        files_list_hash_map = {file_path: cached_file_hash.get_file_hash(file_path) for file_path in files_list}
+        files_list_hash_map = {file_path: videos_search_engine.get_file_hash(file_path) for file_path in files_list}
         hash_list = list(files_list_hash_map.values())
 
         # Update file paths in the DB if none
@@ -153,7 +132,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
         db_models.db.session.commit()
 
         # # filter out files that already have a rating in the DB
-        # files_list_hash_map = {file_path: cached_file_hash.get_file_hash(file_path) for file_path in files_list}
+        # files_list_hash_map = {file_path: videos_search_engine.get_file_hash(file_path) for file_path in files_list}
         # hash_list = list(files_list_hash_map.values())
 
         # # Fetch rated files from the database in a single query
@@ -234,7 +213,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
 
         def filter_by_recommendation(all_files, text_query):
             # For now, we only need basic info from DB for sorting.
-            all_hashes = [cached_file_hash.get_file_hash(file_path) for file_path in all_files]
+            all_hashes = [videos_search_engine.get_file_hash(file_path) for file_path in all_files]
 
             # Model ratings update logic can be added later if needed.
             video_data = db_models.VideosLibrary.query.with_entities(

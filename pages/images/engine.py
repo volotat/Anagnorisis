@@ -12,6 +12,7 @@ import io
 import time
 import cv2
 import imageio
+import threading
 
 import src.scoring_models
 import pages.images.db_models as db_models
@@ -39,7 +40,8 @@ class ImageSearch(BaseSearchEngine):
         super().__init__(cfg) # Call base class __init__ to set up singleton and flags
         self.cfg = cfg # Store cfg for reading parameters
         self.tokenizer = None # Will be set in _load_model_and_processor
-
+        self._embedder_lock = threading.Lock()
+        self.is_embedder_busy = False
   
     @property
     def model_name(self) -> str:
@@ -91,18 +93,27 @@ class ImageSearch(BaseSearchEngine):
         if self._model_manager is None:
             raise RuntimeError(f"{self.__class__.__name__} not initialized. Call initiate() first.")
 
-        # Use the wrapped model (self.model is now ModelManager instance)
-        # Calling model_instance.get_image_features() will trigger ModelManager to load to GPU
-        model_instance = self.model 
+        image_embeds = None
         
-        inputs_images = self.processor(images=[image], padding="max_length", return_tensors="pt").to(model_instance._device) # Use managed device
-        
-        with torch.no_grad():
-            outputs = model_instance.get_image_features(**inputs_images)
+        with self._embedder_lock:
+            self.is_embedder_busy = True
+            try:
+                # Use the wrapped model (self.model is now ModelManager instance)
+                # Calling model_instance.get_image_features() will trigger ModelManager to load to GPU
+                model_instance = self.model 
+                
+                inputs_images = self.processor(images=[image], padding="max_length", return_tensors="pt").to(model_instance._device) # Use managed device
+                
+                with torch.no_grad():
+                    outputs = model_instance.get_image_features(**inputs_images)
 
-        # Normalize the image embeddings (important for similarity)
-        image_embeds = outputs / outputs.norm(p=2, dim=-1, keepdim=True)
-        return image_embeds
+                # Normalize the image embeddings (important for similarity)
+                image_embeds = outputs / outputs.norm(p=2, dim=-1, keepdim=True)
+
+                return image_embeds
+            finally:
+                self.is_embedder_busy = False
+
 
     def _read_image(self, image_path: str):
         """Helper method to read image files, handling various formats and conversions."""
@@ -145,17 +156,22 @@ class ImageSearch(BaseSearchEngine):
         if self.model is None:
             raise RuntimeError(f"{self.__class__.__name__} not initialized. Call initiate() first.")
 
-        model_instance = self.model # Triggers loading to GPU if needed
-        
-        inputs_text = self.processor(text=text, padding="max_length", return_tensors="pt").to(model_instance._device)
+        with self._embedder_lock:
+            self.is_embedder_busy = True
+            try:
+                model_instance = self.model # Triggers loading to GPU if needed
+                
+                inputs_text = self.processor(text=text, padding="max_length", return_tensors="pt").to(model_instance._device)
 
-        with torch.no_grad():
-            outputs = model_instance.get_text_features(**inputs_text)
+                with torch.no_grad():
+                    outputs = model_instance.get_text_features(**inputs_text)
 
-        text_embeds = outputs / outputs.norm(p=2, dim=-1, keepdim=True)
+                text_embeds = outputs / outputs.norm(p=2, dim=-1, keepdim=True)
 
-        # TODO: Find out why .squeeze(0) is needed here, it was working without it before refactoring
-        return text_embeds.squeeze(0)  # Return as 1D tensor
+                # TODO: Find out why .squeeze(0) is needed here, it was working without it before refactoring
+                return text_embeds.squeeze(0)  # Return as 1D tensor
+            finally:
+                self.is_embedder_busy = False
 
 # Create scoring model singleton class so it easily accessible from other modules
 class ImageEvaluator(src.scoring_models.Evaluator):
@@ -243,6 +259,10 @@ if __name__ == "__main__":
         print(f"{colorama.Fore.GREEN}First processing successful.{colorama.Style.RESET_ALL}")
 
         print(f"\n{colorama.Fore.CYAN}Processing files again (should use cache):{colorama.Style.RESET_ALL}")
+
+        # TODO: New caching is working with TwoLevelCache instead of in-memory dict
+        # The test related to caching needs to be adapted accordingly.
+
         # Clear in-memory cache to force loading from disk/DB cache
         image_search_engine._fast_cache = {} 
         embeddings_cached = image_search_engine.process_images(
