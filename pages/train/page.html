@@ -202,22 +202,31 @@
     
     //update_chart(''[1,2,3,4,5], [5,5,4,4,3]) 
 
+    function setTrainingActive(active) {
+      document.getElementById('startMusic').disabled = !!active;
+      document.getElementById('startImages').disabled = !!active;
+    }
+
     $("document").ready(function(){
-      socket.on('connect', function(data){
-        //socket.send("User connected!")
-      })
+      socket.on('connect', function(){
+        socket.emit('emit_train_page_get_training_status');
+      });
+
+      socket.on('emit_train_page_status', function(data){
+        setTrainingActive(data && data.active);
+      });
 
       socket.on('emit_train_page_display_train_data', function(data){
         update_chart(data)
-      })
+      });
       
       $('#startMusic').on('click', function(){
         socket.emit("emit_train_page_start_music_evaluator_training")
-      })
+      });
 
       $('#startImages').on('click', function(){
         socket.emit("emit_train_page_start_image_evaluator_training")
-      })
+      });
     });
   </script>    
 </div>

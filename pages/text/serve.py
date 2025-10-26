@@ -142,10 +142,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
                 }
                 new_items.append(db_models.TextLibrary(**file_data))
 
-            current_time = time.time()
-            if current_time - last_shown_time >= 1:
-                common_socket_events.show_search_status(f"Updated model ratings for {ind+1}/{len(filtered_files_list)} files.")
-                last_shown_time = current_time     
+            common_socket_events.show_search_status(f"Updated model ratings for {ind+1}/{len(filtered_files_list)} files.")   
 
         # Bulk update and insert
         if update_items:

@@ -68,11 +68,11 @@ class TextSearch(BaseSearchEngine):
     def cache_prefix(self) -> str:
         return 'text'
         
-    def _get_metadata_function(self):
+    def _get_metadata(self, file_path):
         # TextSearch does not currently use cached_metadata, but the function is needed for BaseSearchEngine
         # It's okay to return a dummy if metadata isn't actively extracted and cached in the same way
         # For now, get_text_metadata is a simple function
-        return get_text_metadata
+        return get_text_metadata(file_path)
 
     def _get_db_model_class(self):
         return db_models.TextLibrary

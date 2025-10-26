@@ -54,8 +54,8 @@ class ImageSearch(BaseSearchEngine):
     def cache_prefix(self) -> str:
         return 'images'
       
-    def _get_metadata_function(self):
-        return get_image_metadata
+    def _get_metadata(self, file_path):
+        return get_image_metadata(file_path)
 
     def _get_db_model_class(self):
         return db_models.ImagesLibrary

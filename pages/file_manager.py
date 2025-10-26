@@ -6,6 +6,8 @@ import shlex
 import json
 import torch
 
+from src.db_models import db
+
 def parse_terminal_command(input_string: str) -> tuple[str | None, dict]:
     """
     Parses a terminal-like command string into a command and a dictionary of arguments.
@@ -268,18 +270,17 @@ class FileManager:
 
         return {"folders": folders, "folder_path": folder_path}
     
-    def _get_all_hashes_with_progress(self, all_files):
+    def _get_hashes_with_progress(self, files: list[str]) -> list[str]:
         """
-        Gathers hashes for all files, providing progress updates and periodic cache saving.
+        Gathers hashes for all files
         """
-        self.show_status(f"Gathering hashes for {len(all_files)} files.")
+        self.show_status(f"Gathering hashes for {len(files)} files.")
         
-        all_hashes = []
+        hashes = []
         last_shown_time = 0
-        last_saved_time = time.time()
-        total_files = len(all_files)
+        total_files = len(files)
 
-        for ind, file_path in enumerate(all_files):
+        for ind, file_path in enumerate(files):
             current_time = time.time()
             
             # Show progress every second
@@ -288,9 +289,9 @@ class FileManager:
                 self.show_status(f"Gathering hashes: {ind+1}/{total_files} ({percent:.2f}%)")
                 last_shown_time = current_time
                 
-            all_hashes.append(self.engine.get_file_hash(file_path))
+            hashes.append(self.engine.get_file_hash(file_path))
 
-        return all_hashes
+        return hashes
 
     def _list_dir_cached(self, path: str, media_exts: set[str]) -> tuple[list[str], list[str]]:
         """
@@ -369,13 +370,8 @@ class FileManager:
         # Walk with cache 1.5s for 66k files
         all_files = self._walk_files_cached(current_path, self.media_formats)
 
-        self.show_status(f"Gathering hashes for {len(all_files)} files.")
-        all_hashes = self._get_all_hashes_with_progress(all_files)
-
-        # Update the hashes in the database if there are instances without a hash
-        # self.show_status(f"Update hashes for imported files...")
-        # update_none_hashes_in_db(all_files, all_hashes)
-
+        # self.show_status(f"Gathering hashes for {len(all_files)} files.")
+        # all_hashes = self._get_all_hashes_with_progress(all_files)
 
         # Sort files by text or file query
         self.show_status(f"Sorting files by: \"{text_query}\"")
@@ -430,20 +426,34 @@ class FileManager:
         sorted_files = [all_files[i] for i in indices]
         sorted_scores = [scores[i] for i in indices]
 
-        
-        # Extracting metadata for relevant batch of files
-        self.show_status(f"Extracting metadata for relevant batch of files.")
+        # Select files for the current page
         page_files = sorted_files[pagination:pagination+limit]
         page_files_scores = sorted_scores[pagination:pagination+limit]
         
         print(f'page_files {pagination}:{limit}', page_files)
 
-        page_hashes = [self.engine.get_file_hash(file_path) for file_path in page_files]
+        self.show_status(f"Gathering hashes for {len(page_files)} files.")
+        page_hashes = self._get_hashes_with_progress(page_files) #[self.engine.get_file_hash(file_path) for file_path in page_files]
 
         # Extract DB data for the relevant batch of files
+        self.show_status(f"Extracting database info for relevant files.")
         db_items = self.db_schema.query.filter(self.db_schema.hash.in_(page_hashes)).all()
         db_items_map = {item.hash: item for item in db_items}
 
+        # Keep DB path in sync if file was moved/renamed for all files in the page
+        self.show_status(f"Syncing database paths for relevant files.")
+        db_updated = False
+        for ind, full_path in enumerate(page_files):
+            file_hash = page_hashes[ind]
+            if file_hash in db_items_map:
+                db_item = db_items_map[file_hash]
+                rel_path = os.path.relpath(full_path, self.media_directory)
+                if db_item.file_path != rel_path:
+                    db_item.file_path = rel_path
+                    db_updated = True
+
+        if db_updated:
+            db.session.commit()
 
         # Check if there files without model rating
         no_model_rating_files = [os.path.join(self.media_directory, item.file_path) for item in db_items if item.model_rating is None and item.file_path is not None]
@@ -456,16 +466,19 @@ class FileManager:
         # Remove from list files that do not exist anymore
         no_model_rating_files = [file_path for file_path in no_model_rating_files if os.path.exists(file_path)]
 
+        self.show_status(f"Upgrade ratings of {len(no_model_rating_files)} files.")
         if len(no_model_rating_files) > 0:
             # Update the model ratings of all current files
             update_model_ratings(no_model_rating_files)
 
         files_data = []
         
-        self.show_status(f"Extracting metadata for {len(page_files)} files.")
+        # self.show_status(f"Extracting metadata for {len(page_files)} files.")
 
         for ind, full_path in enumerate(page_files):
-            # page_hashes = self._get_all_hashes_with_progress(page_files)
+            self.show_status(f"Extracting metadata for {ind+1}/{len(page_files)} files.")
+
+            # page_hashes = self._get_hashes_with_progress(page_files)
             page_hashes = [self.engine.get_file_hash(file_path) for file_path in page_files]
 
             file_path = os.path.relpath(full_path, self.media_directory)

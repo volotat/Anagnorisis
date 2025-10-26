@@ -84,25 +84,6 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
   # def show_search_status(status):
   #   socketio.emit('emit_music_page_show_search_status', status)
 
-  def update_none_hashes_in_db(files_list, all_hashes):
-    """
-    Update the hash for all instances in the DB that do not have a hash.
-    """
-    for file_path, file_hash in zip(files_list, all_hashes):
-        # Get the relative file path
-        relative_file_path = os.path.relpath(file_path, media_directory)
-        
-        # Query the database for the file with the given file path and no hash
-        db_item = db_models.MusicLibrary.query.filter_by(file_path=relative_file_path, hash=None).first()
-        
-        if db_item:
-            # Update the hash
-            db_item.hash = file_hash
-            db_models.db.session.add(db_item)
-    
-    # Commit the changes to the database
-    db_models.db.session.commit()
-
   def update_model_ratings(files_list):
     print('update_model_ratings')
 
@@ -133,7 +114,6 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
     common_socket_events.show_search_status(f"Updating model ratings of files...") 
     new_items = []
     update_items = []
-    last_shown_time = 0
     for ind, full_path in enumerate(filtered_files_list):
       # print(f"Updating model ratings for {ind+1}/{len(filtered_files_list)} files.")
 
@@ -154,10 +134,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
         }
         new_items.append(db_models.MusicLibrary(**file_data))
 
-      current_time = time.time()
-      if current_time - last_shown_time >= 1:
-        common_socket_events.show_search_status(f"Updated model ratings for {ind+1}/{len(filtered_files_list)} files.")
-        last_shown_time = current_time   
+      common_socket_events.show_search_status(f"Updated model ratings for {ind+1}/{len(filtered_files_list)} files.")
 
     # Bulk update and insert
     if update_items:
@@ -227,7 +204,12 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
       # Update the model ratings of all current files
       update_model_ratings(all_files)
       
-      all_hashes = [music_search_engine.get_file_hash(file_path) for file_path in all_files]
+      all_hashes = []
+      for ind, file_path in enumerate(all_files):
+          common_socket_events.show_search_status(f"Filtering by recommendation: computing files hashes {ind+1}/{len(all_files)}")
+          file_hash = music_search_engine.get_file_hash(file_path)
+          all_hashes.append(file_hash)
+
       music_data = db_models.MusicLibrary.query.with_entities(
           db_models.MusicLibrary.hash,
           db_models.MusicLibrary.user_rating,

@@ -86,9 +86,6 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
             print(f"Warning: Videos media directory '{os.path.join(data_folder, cfg.videos.media_directory)}' does not exist. Setting media folder to None.")
             media_directory = None
 
-    def show_search_status(status):
-        socketio.emit('emit_videos_page_show_search_status', status)
-
     # necessary to allow web application access to music files
     @app.route('/video_files/<path:filename>')
     def serve_video_files(filename):
@@ -113,23 +110,25 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
     def update_model_ratings(files_list):
         print('update_model_ratings')
 
-        files_list_hash_map = {file_path: videos_search_engine.get_file_hash(file_path) for file_path in files_list}
-        hash_list = list(files_list_hash_map.values())
+        # files_list_hash_map = {file_path: videos_search_engine.get_file_hash(file_path) for file_path in files_list}
+        # hash_list = list(files_list_hash_map.values())
 
-        # Update file paths in the DB if none
-        for file_path, file_hash in files_list_hash_map.items():
-            db_item = db_models.VideosLibrary.query.filter_by(hash=file_hash).first()
-            if db_item is None or db_item.file_path is None:
-                file_data = {
-                    "hash": file_hash,
-                    "file_path": os.path.relpath(file_path, media_directory),
-                    "model_rating": None,
-                    "model_hash": None
-                }
-                new_item = db_models.VideosLibrary(**file_data)
-                db_models.db.session.add(new_item)
+        # # Update file paths in the DB if none
+        # for file_path, file_hash in files_list_hash_map.items():
+        #     db_item = db_models.VideosLibrary.query.filter_by(hash=file_hash).first()
+        #     if db_item is None or db_item.file_path is None:
+        #         file_data = {
+        #             "hash": file_hash,
+        #             "file_path": os.path.relpath(file_path, media_directory),
+        #             "model_rating": None,
+        #             "model_hash": None
+        #         }
+        #         new_item = db_models.VideosLibrary(**file_data)
+        #         db_models.db.session.add(new_item)
 
-        db_models.db.session.commit()
+        # db_models.db.session.commit()
+
+        # ==== ????
 
         # # filter out files that already have a rating in the DB
         # files_list_hash_map = {file_path: videos_search_engine.get_file_hash(file_path) for file_path in files_list}
@@ -213,9 +212,15 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
 
         def filter_by_recommendation(all_files, text_query):
             # For now, we only need basic info from DB for sorting.
-            all_hashes = [videos_search_engine.get_file_hash(file_path) for file_path in all_files]
+            
+            all_hashes = []
+            for ind, file_path in enumerate(all_files):
+                common_socket_events.show_search_status(f"Filtering by recommendation: computing files hashes {ind+1}/{len(all_files)}")
+                file_hash = videos_search_engine.get_file_hash(file_path)
+                all_hashes.append(file_hash)
 
             # Model ratings update logic can be added later if needed.
+            common_socket_events.show_search_status("Filtering by recommendation: loading video data from DB")
             video_data = db_models.VideosLibrary.query.with_entities(
                 db_models.VideosLibrary.hash,
                 db_models.VideosLibrary.user_rating,
@@ -232,11 +237,14 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
             hash_to_db_data = {item['hash']: item for item in video_data_dict}
             
             # Create a list of dictionaries with all necessary fields for sort_files_by_recommendation
+            common_socket_events.show_search_status("Filtering by recommendation: preparing data for sorting")
             full_video_data_for_sorting = []
             for file_path, file_hash in zip(all_files, all_hashes):
                 full_video_data_for_sorting.append(hash_to_db_data.get(file_hash, {
                     'hash': file_hash, 'user_rating': None, 'model_rating': None, 'full_play_count': 0, 'skip_count': 0, 'last_played': None
                 }))
+
+            common_socket_events.show_search_status("Filtering by recommendation: sorting files")
             scores = sort_files_by_recommendation(all_files, full_video_data_for_sorting)
 
             return scores
@@ -264,13 +272,13 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
 
             # Generate preview if it does not exist
             if not os.path.exists(preview_path):
-                show_search_status(f"Generating preview for {basename}...")
+                common_socket_events.show_search_status(f"Generating preview for {basename}...")
                 try:
                     generate_preview(full_path, preview_path)
-                    show_search_status(f"Generated preview for {basename}.")
+                    common_socket_events.show_search_status(f"Generated preview for {basename}.")
                 except Exception as e:
                     print(f"Error generating preview for {basename}: {e}")
-                    show_search_status(f"Failed to generate preview for {basename}. Using placeholder.")
+                    common_socket_events.show_search_status(f"Failed to generate preview for {basename}. Using placeholder.")
 
             file_size = os.path.getsize(full_path)
 

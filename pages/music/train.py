@@ -13,16 +13,28 @@ def train_music_evaluator(cfg, callback=None):
   evaluator = MusicEvaluator() #src.scoring_models.Evaluator(embedding_dim=768, rate_classes=11)
   evaluator.reinitialize() # In case the model was already loaded 
 
+  # Initialize MusicSearch to access the cache and model hash
+  music_engine = MusicSearch(cfg=cfg)
+  music_engine.initiate(models_folder=cfg.main.embedding_models_path, cache_folder=cfg.main.cache_path)
+
   # Create dataset from DB, select only music with user rating
   music_library_entries = db_models.MusicLibrary.query.filter(
     db_models.MusicLibrary.user_rating.isnot(None),
-    db_models.MusicLibrary.embedding.isnot(None)
   ).all()
 
-  # Get embeddings and scores
-  music_scores = [entry.user_rating for entry in music_library_entries]
-  music_embeddings = [pickle.loads(entry.embedding) for entry in music_library_entries]
-  music_embeddings = torch.cat(music_embeddings, axis=0).to(evaluator.device)
+  # Build file paths and labels from DB, then extract embeddings via engine
+  media_dir = cfg.music.media_directory
+  file_paths = [os.path.join(media_dir, e.file_path) for e in music_library_entries]
+  music_scores = [e.user_rating for e in music_library_entries]
+
+  embeddings = music_engine.process_audio(file_paths, media_folder=media_dir)
+  # Keep only non-zero embeddings (failed or missing files become zero vectors)
+  mask = embeddings.abs().sum(dim=1) > 0
+  if mask.sum().item() == 0:
+    print("No valid embeddings found for rated tracks. Abort training.")
+    return
+  music_embeddings = embeddings[mask].to(evaluator.device)
+  music_scores = [s for s, m in zip(music_scores, mask.tolist()) if m]
 
   # Split to train and eval sets
   status = 'Training the model...'
@@ -44,14 +56,16 @@ def train_music_evaluator(cfg, callback=None):
   total_epochs = 5001
 
   # Initialize the progress bar
-  pbar = tqdm(range(total_epochs))
+  #pbar = tqdm(range(total_epochs))
 
-  for epoch in pbar:
+  print("Starting training music-evaluation model for", total_epochs, "epochs...")
+
+  for epoch in range(total_epochs):
     # Train the model
     train_accuracy, test_accuracy = evaluator.train(X_train, y_train, X_test, y_test, batch_size=64)
 
     # Update the progress bar description
-    pbar.set_description(f'Epoch: {epoch+1}, Train Metric: {train_accuracy * 100:.2f}%, Test Metric: {test_accuracy * 100:.2f}%')
+    #pbar.set_description(f'Epoch: {epoch+1}, Train Metric: {train_accuracy * 100:.2f}%, Test Metric: {test_accuracy * 100:.2f}%')
 
     if callback:
       percent = (epoch+1) / total_epochs

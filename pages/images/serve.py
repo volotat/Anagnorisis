@@ -134,7 +134,6 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
     show_search_status(f"Updating model ratings of images...") 
     new_items = []
     update_items = []
-    last_shown_time = 0
     for ind, full_path in enumerate(filtered_files_list):
       # print(f"Updating model ratings for {ind+1}/{len(filtered_files_list)} images.")
 
@@ -155,10 +154,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
         }
         new_items.append(db_models.ImagesLibrary(**image_data))
 
-      current_time = time.time()
-      if current_time - last_shown_time >= 1:
-        show_search_status(f"Updated model ratings for {ind+1}/{len(filtered_files_list)} images.")
-        last_shown_time = current_time   
+      show_search_status(f"Updated model ratings for {ind+1}/{len(filtered_files_list)} images.")  
 
     # Bulk update and insert
     if update_items:

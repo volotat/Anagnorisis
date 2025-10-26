@@ -92,8 +92,8 @@ class MusicSearch(BaseSearchEngine):
     def cache_prefix(self) -> str:
         return 'music'
         
-    def _get_metadata_function(self):
-        return get_audiofile_data
+    def _get_metadata(self, file_path):
+        return get_audiofile_data(file_path)
 
     def _get_db_model_class(self):
         return db_models.MusicLibrary

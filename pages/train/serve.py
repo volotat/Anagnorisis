@@ -30,6 +30,8 @@ import pages.images.train
 
 import time
 
+# Global, process-local flag. Simple and survives page refresh in the same server process.
+TRAINING_ACTIVE = False
 
 def init_socket_events(socketio, cfg=None, app=None, data_folder='./project_data'):
     '''data = {
@@ -61,21 +63,48 @@ def init_socket_events(socketio, cfg=None, app=None, data_folder='./project_data
             }
         socketio.emit("emit_train_page_display_train_data", data)
 
+    @socketio.on("emit_train_page_get_training_status")
+    def handle_emit_get_training_status():
+        # return current status to just this client
+        socketio.emit("emit_train_page_status", {"active": TRAINING_ACTIVE}, room=request.sid)
+
     @socketio.on("emit_train_page_start_music_evaluator_training")
     def handle_emit_start_music_evaluator_training():
+        global TRAINING_ACTIVE
         nonlocal train_accuracy_hist, test_accuracy_hist # Access the outer scope variables
         train_accuracy_hist = []
         test_accuracy_hist = []
 
-        pages.music.train.train_music_evaluator(cfg, callback)
+        if TRAINING_ACTIVE:
+            socketio.emit("emit_train_page_status", {"active": True}, room=request.sid)
+            return
+
+        TRAINING_ACTIVE = True
+        socketio.emit("emit_train_page_status", {"active": True})
+        try:
+            pages.music.train.train_music_evaluator(cfg, callback)
+        finally:
+            TRAINING_ACTIVE = False
+            socketio.emit("emit_train_page_status", {"active": False})
     
     @socketio.on("emit_train_page_start_image_evaluator_training")
     def handle_emit_start_image_evaluator_training():
+        global TRAINING_ACTIVE
         nonlocal train_accuracy_hist, test_accuracy_hist # Access the outer scope variables
         train_accuracy_hist = []
         test_accuracy_hist = []
 
-        pages.images.train.train_image_evaluator(cfg, callback)
+        if TRAINING_ACTIVE:
+            socketio.emit("emit_train_page_status", {"active": True}, room=request.sid)
+            return
+        
+        TRAINING_ACTIVE = True
+        socketio.emit("emit_train_page_status", {"active": True})
+        try:
+            pages.images.train.train_image_evaluator(cfg, callback)
+        finally:
+            TRAINING_ACTIVE = False
+            socketio.emit("emit_train_page_status", {"active": False})
 
     '''@socketio.on("emit_train_page_export_audio_dataset")
     def handle_emit_export_audio_dataset():

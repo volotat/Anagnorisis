@@ -6,6 +6,8 @@ from src.base_search_engine import BaseSearchEngine
 from src.model_manager import ModelManager
 import src.scoring_models
 import pages.videos.db_models as db_models
+import hashlib
+import xxhash
 
 def get_video_metadata_stub(file_path):
     """
@@ -39,10 +41,77 @@ class VideoSearch(BaseSearchEngine):
     @property
     def cache_prefix(self) -> str:
         return 'videos'
+    
+    def get_file_hash(self, file_path: str) -> str:
+        """
+        Extremely fast content fingerprint for large files using sampled xxh3_128:
+        - Reads fixed-size blocks from head, middle, and tail (samples=3) to minimize I/O.
+        - Mixes in file size to reduce collisions between similar files.
+        - For small files (<= total sampled bytes), falls back to full-file streaming xxh3_128.
+        The cache key includes size and mtime_ns, so recomputation happens only on change.
+        """
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"File not found: {file_path}")
+
+        st = os.stat(file_path, follow_symlinks=False)
+        size = st.st_size
+        mtime_ns = getattr(st, "st_mtime_ns", int(st.st_mtime * 1e9))
+
+        # Sampling params (tuned for speed vs. collision resistance)
+        block = 1 * 1024 * 1024  # 1 MiB per sample
+        samples = 5               # head, middle, tail pattern
+
+        cache_key = f"HASH_OF_FILE::{file_path}::{size}::{mtime_ns}::xxh3-sampled::{block}::{samples}"
+        cached = self._fast_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        if size <= block * samples:
+            # Small files: stream whole file (still very fast)
+            digest = self._xxh3_hash_stream(file_path)
+            result = f"xxh3:{digest}"
+        else:
+            # Large files: sample head/middle/tail
+            digest = self._xxh3_hash_sampled(file_path, size=size, block=block, samples=samples)
+            result = f"xxh3s:s{samples}m1:{digest}"
+
+        self._fast_cache.set(cache_key, result)
+        return result
+    
+    def _xxh3_hash_stream(self, file_path: str, chunk_size: int = 16 * 1024 * 1024) -> str:
+        h = xxhash.xxh3_128()
+        with open(file_path, 'rb', buffering=0) as f:
+            for chunk in iter(lambda: f.read(chunk_size), b''):
+                h.update(chunk)
+        return h.hexdigest()
+
+    def _xxh3_hash_sampled(self, file_path: str, size: int, block: int, samples: int) -> str:
+        # Compute positions: head, evenly spaced, tail
+        if samples <= 1:
+            positions = [0]
+        elif samples == 2:
+            positions = [0, max(0, size - block)]
+        else:
+            step = (size - block) // (samples - 1)
+            positions = [min(i * step, max(0, size - block)) for i in range(samples)]
+            positions[0] = 0
+            positions[-1] = max(0, size - block)
+
+        h = xxhash.xxh3_128()
+        with open(file_path, 'rb', buffering=0) as f:
+            for pos in positions:
+                f.seek(pos, os.SEEK_SET)
+                chunk = f.read(block)
+                if not chunk:
+                    break
+                h.update(chunk)
+        # Mix file size to reduce collisions across similarly sampled files
+        h.update(size.to_bytes(8, byteorder='little', signed=False))
+        return h.hexdigest()
         
-    def _get_metadata_function(self):
+    def _get_metadata(self, file_path):
         # Even if not actively caching metadata right now, BaseSearchEngine requires this.
-        return get_video_metadata_stub
+        return get_video_metadata_stub(file_path)
 
     def _get_db_model_class(self):
         return db_models.VideosLibrary

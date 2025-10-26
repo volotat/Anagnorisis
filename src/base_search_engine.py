@@ -72,10 +72,10 @@ class BaseSearchEngine(ABC):
         pass
     
     @abstractmethod
-    def _get_metadata_function(self):
+    def _get_metadata(self, file_path):
         """
-        Abstract method: Returns the function responsible for extracting metadata
-        specific to this modality (e.g., get_image_metadata, get_audiofile_data).
+        Abstract method: Returns the metadata of a file
+        specific to its modality (e.g., get_image_metadata, get_audiofile_data).
         """
         pass
     
@@ -217,7 +217,7 @@ class BaseSearchEngine(ABC):
             return file_metadata
 
         # If not in cache or file has been modified, extract metadata using _get_metadata_function
-        metadata = self._get_metadata_function()(file_path) # Method expected to return a dictionary of metadata attributes
+        metadata = self._get_metadata(file_path) # Method expected to return a dictionary of metadata attributes
         metadata['file_path'] = file_path
 
         # Update the cache 

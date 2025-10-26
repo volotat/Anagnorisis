@@ -13,16 +13,28 @@ def train_image_evaluator(cfg, callback=None):
   evaluator = ImageEvaluator() #src.scoring_models.Evaluator(embedding_dim=768, rate_classes=11)
   evaluator.reinitialize() # In case the model was already loaded 
 
+  # Initialize ImagesSearch to access the cache and model hash
+  images_engine = ImageSearch(cfg=cfg)
+  images_engine.initiate(models_folder=cfg.main.embedding_models_path, cache_folder=cfg.main.cache_path)
+
   # Create dataset from DB, select only images with user rating
   images_library_entries = db_models.ImagesLibrary.query.filter(
-    db_models.ImagesLibrary.user_rating.isnot(None),
-    db_models.ImagesLibrary.embedding.isnot(None)
+    db_models.ImagesLibrary.user_rating.isnot(None)
   ).all()
 
-  # Get embeddings and scores
-  image_scores = [entry.user_rating for entry in images_library_entries]
-  image_embeddings = [pickle.loads(entry.embedding) for entry in images_library_entries]
-  image_embeddings = torch.cat(image_embeddings, axis=0).to(evaluator.device)
+  # Build file paths and labels from DB, then extract embeddings via engine
+  media_dir = cfg.images.media_directory
+  file_paths = [os.path.join(media_dir, e.file_path) for e in images_library_entries]
+  image_scores = [e.user_rating for e in images_library_entries]
+
+  embeddings = images_engine.process_audio(file_paths, media_folder=media_dir)
+  # Keep only non-zero embeddings (failed or missing files become zero vectors)
+  mask = embeddings.abs().sum(dim=1) > 0
+  if mask.sum().item() == 0:
+    print("No valid embeddings found for rated tracks. Abort training.")
+    return
+  image_embeddings = embeddings[mask].to(evaluator.device)
+  image_scores = [s for s, m in zip(image_scores, mask.tolist()) if m]
 
   # Split to train and eval sets
   status = 'Training the model...'

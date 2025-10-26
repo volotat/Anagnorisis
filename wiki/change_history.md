@@ -50,7 +50,22 @@ Remove all embeddings from the database and store them in cache using new advanc
 ### Ideas
 Add new downloadable module for 'Deep Research'-like functionality that uses user-trained text evaluating model to search for relative information adjusted to user preferences.
 
+
 ## Versions History
+
+### Version 0.2.12 (27.10.2025)
+*   **Database & Path Sync:**
+    *   Paths in the DB are now automatically kept in sync when a file with a known hash is encountered (to have a relevant path to the file if it was moved/renamed). This ensures stored relative paths remain valid without manual reindexing.
+*   **Socket Messaging & UX:**
+    *   Centralized status throttling in `CommonSocketEvents` (pages/socket_events.py) with a per-sid 0.25s interval and “last message wins” guarantee. Prevents UI floods and removes the need for ad‑hoc throttling across modules. All modules using socket events have been updated accordingly.
+*   **Training:**
+    *   Training of recommendation models in both `Music` and `Images` modules is fixed and operates as expected.
+    *   Global in‑memory training lock added: when training is active, start buttons on the Train page are disabled to prevent concurrent runs. State survives page refresh within the same server process.
+*   **Hashing & File Operations:**
+    *   Implemented a fast `Videos` module hashing scheme that reads large files partially and uses `xxh3` for significant speedups.
+    *   Improved status tracking for long operations (hash gathering, embedding extraction) and fixed several issues in file management and hash collection flows.
+*   **Maintenance:**
+    *   Minor code refactoring and cleanup.
 
 ### Version 0.2.11 (25.10.2025)
 *   **Caching & Storage:**
@@ -67,7 +82,6 @@ Add new downloadable module for 'Deep Research'-like functionality that uses use
     *   General code cleanup and refactoring.
 *   **Known Issues:**
     *   Training of recommendation models is temporarily broken and will be fixed in upcoming versions.
-
 
 ### Version 0.2.10 (19.10.2025)
 *   **Architecture & Search Enhancements:**
