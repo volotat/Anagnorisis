@@ -50,19 +50,31 @@ def get_audiofile_data(file_path, full_image: bool = False) -> dict:
 
         img = tag.get_image()
         if img is not None:
-            if not full_image:
-                # resize image to a maximum of 512 pixels in the longest dimension
-                image = Image.open(io.BytesIO(img))
-                max_size = 512
-                ratio = min(max_size / image.width, max_size / image.height, 1.0)
-                new_size = (int(image.width * ratio), int(image.height * ratio))
-                image = image.resize(new_size, Image.ANTIALIAS)
-                buffered = io.BytesIO()
-                image.save(buffered, format="PNG")
-                img = buffered.getvalue()
-                
-            base64_image = base64.b64encode(img).decode('utf-8')
-            metadata['image'] = f"data:image/png;base64,{base64_image}" # Assuming PNG
+            try:
+                if not full_image:
+                    image = Image.open(io.BytesIO(img))
+                    max_size = 512
+                    ratio = min(max_size / image.width, max_size / image.height, 1.0)
+                    new_size = (int(image.width * ratio), int(image.height * ratio))
+
+                    # Pillow 10+ compatibility: ANTIALIAS moved to Resampling.LANCZOS
+                    try:
+                        resample = Image.Resampling.LANCZOS  # Pillow >= 10
+                    except AttributeError:
+                        resample = getattr(Image, 'LANCZOS', Image.BICUBIC)  # Pillow < 10 fallback
+
+                    image = image.resize(new_size, resample=resample)
+                    buffered = io.BytesIO()
+                    image.save(buffered, format="PNG")
+                    img_bytes = buffered.getvalue()
+                else:
+                    img_bytes = img
+
+                base64_image = base64.b64encode(img_bytes).decode('utf-8')
+                metadata['image'] = f"data:image/png;base64,{base64_image}"
+            except Exception as e:
+                print(f"Cover art processing failed for {file_path}: {e}")
+                metadata['image'] = None
         else:
             metadata['image'] = None
     except Exception as e:
@@ -80,6 +92,8 @@ class MusicSearch(BaseSearchEngine):
         self.cfg = cfg # Store cfg for reading parameters
         self.tokenizer = None # Will be set in _load_model_and_processor
         self.text_embedder = TextEmbedder(cfg) # For metadata search
+
+        # self._batch_processing_size = 16  # Set batch size for audio processing
 
     @property
     def model_name(self) -> str:
@@ -141,30 +155,30 @@ class MusicSearch(BaseSearchEngine):
             waveform = waveform.mean(dim=0, keepdim=False)
         if waveform.dim() > 1:
             waveform = waveform.squeeze()
-        waveform = waveform.to(torch.float32).contiguous()
+        waveform = waveform.to(torch.float32).contiguous().cpu().numpy()
         
         # Use the wrapped model (self.model is now ModelManager instance)
         model_instance = self.model
 
         # Use the CLAP processor; feed plain float arrays
         proc = self.processor(
-            audios=[waveform.cpu().numpy()],
+            audio=[waveform], #.cpu().numpy()
             sampling_rate=sample_rate,
             return_tensors="pt",
             padding=False,
         )
 
         # Move to device and sanitize any bad values
-        inputs_audio = {k: v.to(model_instance._device) for k, v in proc.items()}
+        inputs_audio = {k: v.to(self.device) for k, v in proc.items()}
         if "input_features" in inputs_audio:
             inputs_audio["input_features"] = torch.nan_to_num(
                 inputs_audio["input_features"], nan=0.0, posinf=0.0, neginf=0.0
             )
         
-        # inputs_audio = self.feature_extractor(waveform, sampling_rate=sample_rate, return_tensors="pt").to(model_instance._device)
+        # inputs_audio = self.feature_extractor(waveform, sampling_rate=sample_rate, return_tensors="pt").to(self.device)
         
         with torch.no_grad():
-            out = model_instance.get_audio_features(**inputs_audio)
+            out = model_instance.get_audio_features(**inputs_audio)  # [1, D]
 
         if out.dim() == 1:
             out = out.unsqueeze(0)
@@ -193,8 +207,8 @@ class MusicSearch(BaseSearchEngine):
     #                 waveform = waveform.mean(dim=0, keepdim=False)
     #             if waveform.dim() > 1:
     #                 waveform = waveform.squeeze()
-    #             wf = waveform.to(torch.float32).contiguous().cpu().numpy()
-    #             if wf.size == 0 or not np.isfinite(wf).all():
+    #             wf = waveform.to(torch.float32).contiguous().cpu().numpy() #.to(self.device) 
+    #             if wf.numel() == 0 or not torch.isfinite(wf).all():
     #                 continue
     #             valid_indices.append(i)
     #             audio_list.append(wf)
@@ -210,12 +224,12 @@ class MusicSearch(BaseSearchEngine):
     #     try:
     #         # Use CLAP processor for batch; pad to longest
     #         proc = self.processor(
-    #             audios=audio_list,
+    #             audio=audio_list,
     #             sampling_rate=48000,
     #             return_tensors="pt",
     #             padding="longest",
     #         )
-    #         inputs_audio = {k: v.to(model_instance._device) for k, v in proc.items()}
+    #         inputs_audio = {k: v.to(self.device) for k, v in proc.items()}
 
     #         # Defensive: sanitize precomputed features (avoid -inf/NaN)
     #         if "input_features" in inputs_audio:
@@ -224,7 +238,7 @@ class MusicSearch(BaseSearchEngine):
     #             )
 
     #         with torch.no_grad():
-    #             batch_out = model_instance.get_audio_features(**inputs_audio)  # [B, D] or [D]
+    #             batch_out = model_instance.get_audio_features(**inputs_audio)  # [B, D] 
 
     #         if batch_out.dim() == 1:
     #             batch_out = batch_out.unsqueeze(0)
@@ -263,7 +277,7 @@ class MusicSearch(BaseSearchEngine):
 
         model_instance = self.model # Triggers loading to GPU if needed
         
-        inputs_text = self.processor(text=text, padding=True, return_tensors="pt").to(model_instance._device)
+        inputs_text = self.processor(text=text, padding=True, return_tensors="pt").to(self.device)
 
         with torch.no_grad():
             outputs = model_instance.get_text_features(**inputs_text)
@@ -285,7 +299,7 @@ class MusicEvaluator(src.scoring_models.Evaluator):
 
     def __init__(self, embedding_dim=768, rate_classes=11):
         if not hasattr(self, '_initialized'):
-            super(MusicEvaluator, self).__init__(embedding_dim, rate_classes)
+            super(MusicEvaluator, self).__init__(embedding_dim, rate_classes, name="MusicEvaluator")
             self._initialized = True
 
 

@@ -385,6 +385,47 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
             db_models.db.session.add(new_video)
             db_models.db.session.commit()
 
+    @socketio.on('emit_videos_page_get_external_metadata_file_content')
+    def get_external_metadata_file_content(file_path):
+        """
+        Reads the content of the external .meta file associated with a file.
+        If the file does not exist, returns an empty string.
+        """
+        nonlocal media_directory
+        full_path = os.path.join(media_directory, file_path)
+        metadata_file_path = full_path + ".meta"
+
+        content = ""
+        try:
+            if os.path.exists(metadata_file_path):
+                with open(metadata_file_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+            print(f"Read external metadata for {file_path}")
+        except Exception as e:
+            print(f"Error reading external metadata for {file_path}: {e}")
+
+        return {"content": content, "file_path": file_path}
+
+    @socketio.on('emit_videos_page_save_external_metadata_file_content')
+    def save_external_metadata_file_content(data):
+        """
+        Saves the provided content to the .meta file associated with a file.
+        """
+        nonlocal media_directory
+        file_path = data['file_path']
+        metadata_content = data['metadata_content']
+        
+        full_path = os.path.join(media_directory, file_path)
+        metadata_file_path = full_path + ".meta"
+
+        try:
+            # Ensure the directory exists before writing the file
+            os.makedirs(os.path.dirname(metadata_file_path), exist_ok=True)
+            with open(metadata_file_path, 'w', encoding='utf-8') as f:
+                f.write(metadata_content)
+            print(f"Saved metadata for {file_path}")
+        except Exception as e:
+            print(f"Error saving metadata for {file_path}: {e}")
 
     # ----------------------------------------
     # HSL Streaming test

@@ -513,7 +513,7 @@ class FileManager:
                 "hash": file_hash,
                 "file_size": convert_size(file_size),
                 "file_info": get_file_info(full_path, file_hash),
-
+                "has_meta": os.path.exists(full_path + ".meta"),
                 "search_score": page_files_scores[ind]
 
                 # "user_rating": user_rating,

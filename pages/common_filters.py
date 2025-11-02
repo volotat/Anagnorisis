@@ -72,7 +72,8 @@ class CommonFilters:
         target_emb = self.engine.process_files([target_path], callback=self.embedding_gathering_callback, media_folder=self.media_directory)
 
         self.common_socket_events.show_search_status("Computing distances between embeddings")
-        scores = torch.cdist(embeds_all, target_emb, p=2).cpu().detach().numpy()
+        dists = torch.cdist(embeds_all, target_emb, p=2).squeeze(-1)
+        scores = (1.0 / (1.0 + dists)).cpu().detach().numpy()
         return scores
 
     def filter_by_text(self, all_files, text_query, **kwargs):

@@ -42,6 +42,8 @@ class BaseSearchEngine(ABC):
         self.model_hash = None
         self.embedding_dim = None
 
+        self._batch_processing_size = 1
+
         # Caching mechanisms
         # self.cached_metadata = None
 
@@ -137,6 +139,9 @@ class BaseSearchEngine(ABC):
         self.model_hash = self._get_model_hash_from_instance() # Get hash from the *actual* loaded model
         
         print(f"{self.__class__.__name__} initiated successfully.")
+
+        # Force unload after wrapping as this usually cause the model to be loaded to GPU
+        self._model_manager.unload_model()
     
     def _ensure_model_downloaded(self, local_model_path: str):
         """
@@ -180,15 +185,24 @@ class BaseSearchEngine(ABC):
         model_hash = hashlib.md5(buffer.read()).hexdigest() + self._get_model_hash_postfix()
         return model_hash
     
+    def get_hash_algorithm(self) -> str:
+        """
+        Returns the current hashing algorithm identifier used by this engine.
+        This is useful for storing in the DB alongside file hashes.
+        """
+        return "md5:v1" # Currently only md5 is implemented; can be extended in subclasses
+    
     def get_file_hash(self, file_path: str) -> str:
         """Returns the cached hash for a given file."""
         if not os.path.exists(file_path):
             raise FileNotFoundError(f"File not found: {file_path}")
 
         # Get the last modified time of the file
-        last_modified_time = os.path.getmtime(file_path)
+        st = os.stat(file_path, follow_symlinks=False)
+        size = st.st_size
+        mtime_ns = getattr(st, "st_mtime_ns", int(st.st_mtime * 1e9))
 
-        cache_key = f"HASH_OF_FILE::{file_path}::{last_modified_time}"
+        cache_key = f"HASH_OF_FILE::{file_path}::{size}::{mtime_ns}::{self.get_hash_algorithm()}"
         file_hash = self._fast_cache.get(cache_key)
 
         if file_hash is not None:
@@ -246,6 +260,8 @@ class BaseSearchEngine(ABC):
         Processes files with per-file caching and batched inference for cache misses.
         Returns a single tensor [N, D]. Failed files get zeros([1, D]).
         """
+        batch_size = self._batch_processing_size
+
         if self._model_manager is None:
             raise RuntimeError(f"{self.__class__.__name__} not initialized. Call initiate() first.")
 
@@ -301,9 +317,13 @@ class BaseSearchEngine(ABC):
             if outputs[i] is None:
                 outputs[i] = torch.zeros(1, self.embedding_dim)
 
-        # 5) Concatenate and move to active device
+        # 5) Sanity check: move all the outputs to the same device before concatenation
+        for i in range(N):
+            outputs[i] = outputs[i].to(device=self.device)
+        
+        # 6) Concatenate and move to active device
         out = torch.cat([t for t in outputs], dim=0)
-        return out.to(self._model_manager._device)
+        return out.to(self.device)
 
     def process_text(self, text: str, **kwargs) -> torch.Tensor:
         """
@@ -344,8 +364,8 @@ class BaseSearchEngine(ABC):
         #     embeds_query = torch.tensor(embeds_query) 
 
         # Ensure embeddings are on the correct device
-        embeds_target = embeds_target.to(self._model_manager._device)
-        embeds_query = embeds_query.to(self._model_manager._device)
+        embeds_target = embeds_target.to(self.device)
+        embeds_query = embeds_query.to(self.device)
 
         # Normalize features
         embeds_target = embeds_target / embeds_target.norm(p=2, dim=-1, keepdim=True)

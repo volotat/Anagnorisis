@@ -61,54 +61,19 @@ The preferred way to run the project is from Docker. This should be much more st
     Note: if you are using Docker Desktop you have to explicitly provide access to `/path/to/your/data` folders in the Docker settings. Otherwise, you will not be able to access it from the container. To do so, go to Docker Desktop settings, then to Resources -> File Sharing and add the path to your data folder.
 4. Access the application at http://localhost:5001 (or whichever port you configured) in your web browser.
 
-## Running from the local environment
-> [!WARNING]
-> **Since version 0.2.5 running project from the local environment is most likely broken, without heavy adjustments to the code.** I am reconsidering how the project is getting set up to make this project as streamlined and simple as possible, as well as removing fragile elements that might cause unexpected issues.
-
-In case you do not want to use Docker, you can also install the project manually with this commands. Notice that the project has only been tested on Ubuntu 22.04 with Python 3.10, there is no guarantee that it will work on any other platforms or different version of Python. For Windows users I highly recommend to use Docker as there might be some unexpected issues.
-
-1. Clone this repository:
-    ```bash
-        git clone https://github.com/volotat/Anagnorisis.git
-        cd Anagnorisis
-    ```
-
-2. Recreate the Environment with following commands: 
-    ```bash 
-        # For Linux
-        python3 -m venv .venv  # recreate the virtual environment
-        source .venv/bin/activate  # activate the virtual environment
-        pip install -r requirements.txt  # install the required packages
-        # For Windows
-        python -m venv .venv  # recreate the virtual environment
-        .venv\Scripts\activate  # activate the virtual environment
-        pip install -r requirements.txt  # install the required packages
-    ```
-
-3. Then run the project with command:
-    ```bash  
-        # For Linux
-        DATA_PATH=/path/to/your/data bash run.sh
-        # For Windows
-        DATA_PATH=/path/to/your/data bash run.bat
-    ```
-4. Access the application at http://localhost:5001 (or whichever port you configured) in your web browser.
-
 ## Additional notes for installation
-The Docker container includes Ubuntu 22.04, CUDA drives and several large machine learning models and dependencies, which results in a significant storage footprint. After the container is built it will take about 45GB of storage on your disk. If you want to avoid that, consider running the project from the local environment.
+The Docker container includes Ubuntu 22.04, CUDA drives and several large machine learning models and dependencies, which results in a significant storage footprint. After the container is built it will take about 45GB of storage on your disk. 
 
-If `DATA_PATH` is not provided, `/project_data` folder in the project root will be used. 
+For best user experience I would recommend running the project with relatively modern Nvidia GPU with at least 8Gb of VRAM and 32Gb of RAM . At least this is the configuration I am using myself. However, the project should be able to run on lower configurations, but performance might be poor especially without CUDA-friendly GPU. It is usually take less then 4GB of VRAM to run the project, however when training recommendation models it usually spikes up to 5-7Gb of VRAM usage.
 
 After initializing the project, you will find new `Anagnorisis-app` folder inside of `PROJECT_CONFIG_FOLDER_PATH` folder. In this folder project's database, migrations, models and configuration file will be stored. After running the project for the first time, `{PROJECT_CONFIG_FOLDER_PATH}/Anagnorisis-app/database/project.db` file will be crated. That DB will store your preferences, that will be used later to fine-tune evaluation models. Try to make backups of this file from time to time, as it contains all of your preferences, and some additional data, such as playback history.
-
-Running the project from the local environment should be somewhat more efficient as there is no Docker overhead when reading the data. 
 
 If you have a lot of data in your data folder, for the first time hash cache and embedding cache will be gathered. Please be patient, as it may take a while. The percentage of the progress will be shown in the status bar.
 
 The project requires GPU to run properly. When running the project inside the Docker container, make sure that `NVIDIA Container Toolkit` is installed for Linux and `WSL2` for Windows.
 
 ## Security notes
-When running the project in a local environment, the default address is set to 0.0.0.0 (this setting is necessery for proper work inside the Docker container). This configuration means the application listens on all available network interfaces, making it accessible from any device on your local network (i.e., any computer connected to the same router). However, this does not automatically expose the service to the internet. Access from outside your local network will depend on your firewall settings and router configuration.
+The project is meant to be run on the localhost only for now. The default configuration ip address is set to `127.0.0.1` inside `docker-compose.yml` file. This means that the application will only be accessible from the machine it is running on. If you want to access it from other devices on your local network, you can change this address to `0.0.0.0`. You can even tunnel it to the internet using services like [ngrok](https://ngrok.com/) or [cloudflare tunnel](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/). However, I would strongly recommend against exposing the service to the internet (unless you are 100% know what you are doing) as there is no proper security work has been done yet. 
 
 ## Embedding models
 To make audio, visual and text search possible the project uses these models:  

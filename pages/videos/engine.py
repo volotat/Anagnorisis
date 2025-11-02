@@ -41,6 +41,13 @@ class VideoSearch(BaseSearchEngine):
     @property
     def cache_prefix(self) -> str:
         return 'videos'
+
+    def get_hash_algorithm(self) -> str:
+        """
+        Returns the current hashing algorithm identifier used by this engine.
+        This is useful for storing in the DB alongside file hashes.
+        """
+        return "xxh3s:s5m1:v1" # Sampled xxh3_128 with 5 samples of 1 MiB each
     
     def get_file_hash(self, file_path: str) -> str:
         """
@@ -61,7 +68,7 @@ class VideoSearch(BaseSearchEngine):
         block = 1 * 1024 * 1024  # 1 MiB per sample
         samples = 5               # head, middle, tail pattern
 
-        cache_key = f"HASH_OF_FILE::{file_path}::{size}::{mtime_ns}::xxh3-sampled::{block}::{samples}"
+        cache_key = f"HASH_OF_FILE::{file_path}::{size}::{mtime_ns}::{self.get_hash_algorithm()}"
         cached = self._fast_cache.get(cache_key)
         if cached is not None:
             return cached
@@ -69,11 +76,11 @@ class VideoSearch(BaseSearchEngine):
         if size <= block * samples:
             # Small files: stream whole file (still very fast)
             digest = self._xxh3_hash_stream(file_path)
-            result = f"xxh3:{digest}"
+            result = f"{digest}"
         else:
             # Large files: sample head/middle/tail
             digest = self._xxh3_hash_sampled(file_path, size=size, block=block, samples=samples)
-            result = f"xxh3s:s{samples}m1:{digest}"
+            result = f"{digest}"
 
         self._fast_cache.set(cache_key, result)
         return result
@@ -177,5 +184,5 @@ class VideoEvaluator(src.scoring_models.Evaluator):
 
     def __init__(self, embedding_dim=512, rate_classes=11): # Use 512 for now for consistency with VideoSearch stub
         if not hasattr(self, '_initialized'): # Prevent re-initialization on subsequent __new__ calls
-            super(VideoEvaluator, self).__init__(embedding_dim, rate_classes)
+            super(VideoEvaluator, self).__init__(embedding_dim, rate_classes, name="VideoEvaluator")
             self._initialized = True

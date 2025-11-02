@@ -2,6 +2,8 @@ import FolderViewComponent from '/pages/FolderViewComponent.js';
 import FileGridComponent from '/pages/FileGridComponent.js';
 import PaginationComponent from '/pages/PaginationComponent.js';
 import SearchBarComponent from '/pages/SearchBarComponent.js';
+import ContextMenuComponent from '/pages/ContextMenuComponent.js';
+import MetaEditor from '/pages/MetaEditor.js';
 
 // Create a closed scope to avoid any variable collisions  
 (function() {
@@ -130,6 +132,76 @@ import SearchBarComponent from '/pages/SearchBarComponent.js';
     return dataContainer;
   }
 
+  // Create generic .meta editor wired to Images socket events
+  const metaEditor = new MetaEditor({
+    api: {
+      // Load .meta (Images backend expects the file_path string, returns {content, file_path})
+      load: (filePath, onLoaded) => {
+        socket.emit('emit_videos_page_get_external_metadata_file_content', filePath, (response)=>{
+          onLoaded(response.content || '');
+        });
+      },
+      // Save .meta
+      save: async (filePath, content) => {
+        socket.emit('emit_videos_page_save_external_metadata_file_content', {
+          file_path: filePath,
+          metadata_content: content
+        });
+      }
+    }
+  });  
+  function openMetaEditorForFile(fileData) {
+    metaEditor.open({
+      filePath: fileData.file_path,           // relative path inside media dir
+      displayName: fileData.base_name || ''   // optional nice title
+    });
+  }
+
+  // Create context menu for file items
+  const ctxMenu = new ContextMenuComponent();
+  function createContextMenuForFile(fileData, event) {
+    ctxMenu.show(event.pageX, event.pageY, [
+      {
+        label: 'Open in new tab',
+        action: () => {
+          window.open('video_files/'+fileData.file_path, '_blank');
+        }
+      },
+      {
+        label: 'Edit internal metadata',
+        action: () => {
+          alert('Not yet implemented action: "Edit internal metadata"');
+        }
+      },
+      {
+        label: 'Edit .meta file',
+        icon: 'fas fa-file-pen',
+        action: () => { openMetaEditorForFile(fileData); }
+      },
+      { type: 'divider'},
+      {
+        label: 'Rename',
+        icon: 'fas fa-edit',
+        action: () => {
+          alert('Not yet implemented action: "Rename"');
+        }
+      },
+      {
+        label: 'Move to...',
+        icon: 'fas fa-file-import',
+        action: () => {
+          alert('Not yet implemented action: "Move to..."');
+        }
+      },
+      { label: 'Delete',
+        icon: 'fas fa-trash',
+        action: () => {
+          alert('Not yet implemented action: "Delete"');
+        }
+      }
+    ]);
+  }
+
   //// AFTER PAGE LOADED
   $(document).ready(function() {
     let paginationComponent;
@@ -207,7 +279,9 @@ import SearchBarComponent from '/pages/SearchBarComponent.js';
             renderPreviewContent: renderVideoPreview, // Pass the preview function
             renderCustomData: renderCustomData, // No custom data rendering for now
             handleFileClick: handleFileClickAction,
-            minTileWidth: '22rem' // Minimum width for each tile
+            minTileWidth: '22rem', // Minimum width for each tile
+            onContextMenu: createContextMenuForFile,
+            onMetaOpen: openMetaEditorForFile,
         });
 
         // Update or Initialize Pagination Component

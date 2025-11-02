@@ -2,16 +2,22 @@ from flask_socketio import SocketIO
 from flask import request
 import threading, time 
 
+# Global shared state across all CommonSocketEvents instances
+_GLOBAL_LOCK = threading.Lock()
+_GLOBAL_PER_SID = {}  # sid -> {'last': float, 'timer': threading.Timer|None, 'pending': str|None}
+
 class CommonSocketEvents:
     def __init__(self, socketio: SocketIO):
         self.socketio = socketio
 
-        # per-sid emit state
-        self._lock = threading.Lock()
-        self._per_sid = {}  # sid -> {'last': float, 'timer': threading.Timer|None, 'pending': str|None}
+        # All instances share state to avoid cross-instance races
+        self._lock = _GLOBAL_LOCK
+        self._per_sid = _GLOBAL_PER_SID
         self._interval = 0.25  # seconds
 
     def _fire(self, sid=None):
+        if sid is None:
+            return
         with self._lock:
             st2 = self._per_sid.get(sid)
             if not st2:
@@ -23,9 +29,10 @@ class CommonSocketEvents:
         if msg is not None:
             self.socketio.emit('emit_show_search_status', msg, room=sid)
 
-    def show_search_status(self, status: str):
+    def show_search_status(self, status: str, sid: str | None = None):
         sid = request.sid
         now = time.time()
+        can_emit_now = False
         with self._lock:
             st = self._per_sid.setdefault(sid, {'last': 0.0, 'timer': None, 'pending': None})
             can_emit_now = (now - st['last']) >= self._interval and st['timer'] is None
@@ -41,3 +48,14 @@ class CommonSocketEvents:
 
         if can_emit_now:
             self.socketio.emit('emit_show_search_status', status, room=sid)
+
+    @staticmethod
+    def cleanup_sid(sid: str):
+        # Cancel any pending timer and forget state
+        with _GLOBAL_LOCK:
+            st = _GLOBAL_PER_SID.pop(sid, None)
+            if st and st.get('timer'):
+                try:
+                    st['timer'].cancel()
+                except Exception:
+                    pass

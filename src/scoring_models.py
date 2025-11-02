@@ -17,11 +17,12 @@ from src.model_manager import ModelManager
 
 # Create scoring model class
 class Evaluator():
-  def __init__(self, embedding_dim=128, rate_classes=11):
+  def __init__(self, embedding_dim=128, rate_classes=11, name="Evaluator"):
     self.embedding_dim = embedding_dim
     self.rate_classes = rate_classes
     self.hash = None
     self.mape_bias = 2
+    self.name = name
 
     # Set the device
     self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -41,9 +42,21 @@ class Evaluator():
         x = self.fc3(x)
         return x
 
-    self.model = ModelManager(Net(), device=self.device)
+    self._model = Net().cpu()  # Initialize on CPU
+    # Tag the module instance; used by logs and repr
+    setattr(self._model, "_name", self.name)
+
+    self.model = ModelManager(self._model, device=self.device)
     self.criterion = nn.CrossEntropyLoss()
     self.optimizer = torch.optim.Adam(self.model.parameters())
+
+    # Force unload after wrapping as this usually cause the model to be loaded to GPU
+    self.model.unload_model()
+
+  # Optional helper to rename after creation
+  def set_name(self, name: str):
+    self.name = name
+    setattr(self._model, "_name", name)
 
   # Not used in current implementation
   def calculate_metric(self, loader):

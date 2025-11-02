@@ -68,8 +68,9 @@ class MetadataSearch:
         #meta_text = f"{file_name}\n{relative_path}"
         meta_text = f"File Name: {file_name}\nFile Path: {relative_path}\n"
         
+        # Include file's special {file_name}.meta file content if it exists
         if os.path.exists(file_path + '.meta'):
-            meta_text += "Metadata from respective .meta file:\n"
+            meta_text += f"\nFile-level Metadata from {file_name}.meta file:\n"
             meta_content, truncated = self._read_meta_snippet(file_path + '.meta')
             meta_text += meta_content
             if truncated:

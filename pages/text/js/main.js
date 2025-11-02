@@ -176,7 +176,7 @@ $(document).ready(function() {
     // Instantiate SearchBarComponent
     const searchBar = new SearchBarComponent({
         container: '#search_bar_container',
-        enableModes: ['file-name', 'semantic-content', 'semantic-metadata'], // disable here as needed
+        enableModes: ['file-name', 'semantic-content'], // disable here as needed
         showOrder: true,
         showTemperature: true,
         temperatures: [0, 0.2, 1, 2],

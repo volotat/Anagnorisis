@@ -82,7 +82,7 @@ def init_socket_events(socketio, cfg=None, app=None, data_folder='./project_data
         TRAINING_ACTIVE = True
         socketio.emit("emit_train_page_status", {"active": True})
         try:
-            pages.music.train.train_music_evaluator(cfg, callback)
+            pages.music.train.train_music_evaluator(cfg, callback, socketio)
         finally:
             TRAINING_ACTIVE = False
             socketio.emit("emit_train_page_status", {"active": False})

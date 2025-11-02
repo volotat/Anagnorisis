@@ -65,6 +65,18 @@ class ModelManager:
             ModelManager._models[self._model_id] = self
             self._ensure_cleanup_thread()
 
+        # Methods that should not trigger loading
+        self._no_load_calls = {
+            'state_dict',
+            'load_state_dict',
+            'parameters',
+            'named_parameters',
+            'buffers',
+            'named_buffers',
+            'eval',
+            'train',
+        }
+
     def __call__(self, *args, **kwargs):
         """
         Handle direct calls to the model (e.g., forward). Load lazily here.
@@ -95,8 +107,20 @@ class ModelManager:
                 attr = getattr(self._model, name)
             else:
                 raise AttributeError(f"'{self._model.__class__.__name__}' object has no attribute '{name}'")
-
+            
             if callable(attr) and not name.startswith('__'):
+                # Pass-through for CPU-safe methods that shouldn't trigger GPU load
+                if name in self._no_load_calls:
+                    def passthrough(*args, **kwargs):
+                        with self._busy_lock:
+                            self._busy = True
+                        try:
+                            return getattr(self._model, name)(*args, **kwargs)
+                        finally:
+                            with self._busy_lock:
+                                self._busy = False
+                    return passthrough
+
                 def wrapped_method(*args, **kwargs):
                     with ModelManager._lock:
                         self._last_used = time.time()
@@ -129,7 +153,8 @@ class ModelManager:
         """Load the model back to the desired device (lazy)."""
         if not self._loaded:
             try:
-                print(f"Loading model {self._model.__class__.__name__} to {self._device}...")
+                name = getattr(self._model, "_name", self._model.__class__.__name__)
+                print(f"Loading model {name} to {self._device}...")
                 self._model = self._model.to(self._device)
                 self._loaded = True
             except Exception as e:
@@ -140,7 +165,8 @@ class ModelManager:
         """Unload the model from GPU memory"""
         if self._loaded:
             try:
-                print(f"Unloading model {self._model.__class__.__name__} from GPU (idle for {time.time() - self._last_used:.1f}s)...")
+                name = getattr(self._model, "_name", self._model.__class__.__name__)
+                print(f"Unloading model {name} from {self._device} (idle for {time.time() - self._last_used:.1f}s)...")
                 self._cache_attributes()
                 self._model = self._model.cpu()
                 if torch.cuda.is_available():
@@ -148,6 +174,12 @@ class ModelManager:
                 self._loaded = False
             except Exception as e:
                 print(f"Error unloading model: {e}")
+    
+    def unload_model(self):
+        """Public API to unload the wrapped model from GPU."""
+        with ModelManager._lock:
+            self._unload_model()
+        return self
     
     def _cache_attributes(self):
         """Cache important non-method attributes of the model"""
@@ -158,13 +190,13 @@ class ModelManager:
                 except:
                     pass  # Skip attributes that can't be accessed
     
-    def state_dict(self):
-        """Return the model's state dictionary"""
-        with ModelManager._lock:
-            self._last_used = time.time()
-            if not self._loaded:
-                self._load_model()
-            return self._model.state_dict()
+    # def state_dict(self):
+    #     """Return the model's state dictionary"""
+    #     with ModelManager._lock:
+    #         self._last_used = time.time()
+    #         if not self._loaded:
+    #             self._load_model()
+    #         return self._model.state_dict()
 
     def to(self, device):
         """

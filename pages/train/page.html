@@ -219,6 +219,10 @@
       socket.on('emit_train_page_display_train_data', function(data){
         update_chart(data)
       });
+
+      socket.on('emit_show_search_status', (status) => {
+        console.log("Status:", status);
+      });
       
       $('#startMusic').on('click', function(){
         socket.emit("emit_train_page_start_music_evaluator_training")

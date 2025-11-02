@@ -143,6 +143,10 @@ class DiskCache:
 
         self.stat_time = time.time()
 
+        # Track last printed snapshot to avoid noisy logs
+        self._last_stats_snapshot = {"reads": 0, "writes": 0, "bytes_read": 0, "bytes_written": 0}
+        self._last_pending_snapshot = 0
+
     @staticmethod
     def _shard_for_key(key: str) -> int:
         b = key.encode('utf-8', 'surrogatepass')
@@ -226,13 +230,39 @@ class DiskCache:
         if self._write_back:
             with self._pending_lock:
                 pending = sum(len(p) for p in self._pending.values())
+
+        # Print only if something changed since the last attempt
+        last = getattr(self, "_last_stats_snapshot", None) or {}
+        last_pending = getattr(self, "_last_pending_snapshot", 0)
+        changed = (
+            snap.get("reads") != last.get("reads") or
+            snap.get("writes") != last.get("writes") or
+            snap.get("bytes_read") != last.get("bytes_read") or
+            snap.get("bytes_written") != last.get("bytes_written") or
+            pending != last_pending
+        )
+        if not changed:
+            return
+
         pid = os.getpid()
+        now = time.time()
+        elapsed = now - self.stat_time
         print(
             f"[DiskCache pid={pid} name={self.name}] reads="
             f"{snap['reads']} ({snap['bytes_read']/1e6:.1f}MB), "
             f"writes={snap['writes']} ({snap['bytes_written']/1e6:.1f}MB), "
-            f"pending={pending} after {time.time() - self.stat_time:.1f}s"
+            f"pending={pending} after {elapsed:.1f}s"
         )
+
+        # Update snapshots and reset elapsed window
+        self._last_stats_snapshot = {
+            "reads": snap["reads"],
+            "writes": snap["writes"],
+            "bytes_read": snap["bytes_read"],
+            "bytes_written": snap["bytes_written"],
+        }
+        self._last_pending_snapshot = pending
+        self.stat_time = now
 
     def stats(self, reset: bool = False) -> Dict[str, int]:
         with self._stats_lock:

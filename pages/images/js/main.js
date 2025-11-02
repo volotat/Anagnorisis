@@ -3,12 +3,14 @@ import StarRatingComponent from '/pages/StarRating.js';
 import PaginationComponent from '/pages/PaginationComponent.js';
 import FileGridComponent from '/pages/FileGridComponent.js';
 import SearchBarComponent from '/pages/SearchBarComponent.js';
+import ContextMenuComponent from '/pages/ContextMenuComponent.js';
+import MetaEditor from '/pages/MetaEditor.js';
 
 
 // Create a closed scope to avoid any variable collisions  
 (function() {
   //// CONSTANTS AND VARIABLES
-  let num_files_on_page = 60;
+  let num_files_on_page = 24;
   let num_files_in_row = 6; // TODO: calculate from the screen size
   let selected_files = [];
   let currentImageMetadataFilePath = null; // To store currently opened image file path for metadata
@@ -119,6 +121,7 @@ import SearchBarComponent from '/pages/SearchBarComponent.js';
     if (fileData.search_score !== null && fileData.search_score !== undefined) {
         const searchScoresElement = document.createElement('p');
         searchScoresElement.className = 'file-info file-search-scores';
+        console.log('fileData.search_score', fileData.search_score);
         searchScoresElement.innerHTML = `<b>Search Score:</b>&nbsp;${(fileData.search_score || 0).toFixed(3)}`;
         dataContainer.appendChild(searchScoresElement);
     }
@@ -406,6 +409,90 @@ import SearchBarComponent from '/pages/SearchBarComponent.js';
     return folderRepresentation;
   }
 
+  // Create generic .meta editor wired to Images socket events
+  const metaEditor = new MetaEditor({
+    api: {
+      // Load .meta (Images backend expects the file_path string, returns {content, file_path})
+      load: (filePath, onLoaded) => {
+        socket.emit('emit_images_page_get_external_metadata_file_content', filePath, (response)=>{
+          onLoaded(response.content || '');
+        });
+      },
+      // Save .meta
+      save: async (filePath, content) => {
+        socket.emit('emit_images_page_save_external_metadata_file_content', {
+          file_path: filePath,
+          metadata_content: content
+        });
+      }
+    }
+  });  
+  function openMetaEditorForFile(fileData) {
+    metaEditor.open({
+      filePath: fileData.file_path,           // relative path inside media dir
+      displayName: fileData.base_name || ''   // optional nice title
+    });
+  }
+
+  // Create context menu for file items
+  const ctxMenu = new ContextMenuComponent();
+  function createContextMenuForFile(fileData, event) {
+    ctxMenu.show(event.pageX, event.pageY, [
+      {
+        label: 'Open in new tab',
+        action: () => {
+          window.open('image_files/'+fileData.file_path, '_blank');
+        }
+      },
+      {
+        label: 'Find similar images',
+        action: () => {
+          let url = new URL(window.location.href);
+          let params = new URLSearchParams(url.search);
+          params.set('text_query', fileData.full_path);
+          params.set('page', 1);
+          params.set('mode', 'semantic-content');
+          url.search = params.toString();
+          window.location.href = url.toString();
+        }
+      },
+      {
+        label: 'Edit internal metadata',
+        action: () => {
+          alert('Not yet implemented action: "Edit internal metadata"');
+        }
+      },
+      {
+        label: 'Edit .meta file',
+        icon: 'fas fa-file-pen',
+        action: () => { openMetaEditorForFile(fileData); }
+      },
+      { type: 'divider'},
+      {
+        label: 'Rename',
+        icon: 'fas fa-edit',
+        action: () => {
+          alert('Not yet implemented action: "Rename"');
+        }
+      },
+      {
+        label: 'Move to...',
+        icon: 'fas fa-file-import',
+        action: () => {
+          alert('Not yet implemented action: "Move to..."');
+        }
+      },
+      { label: 'Delete',
+        icon: 'fas fa-trash',
+        action: () => {
+          alert('Not yet implemented action: "Delete"');
+        }
+      }
+    ]);
+  }
+
+  
+
   //// AFTER PAGE LOADED
   $(document).ready(function() {
     let paginationComponent;
@@ -460,11 +547,11 @@ import SearchBarComponent from '/pages/SearchBarComponent.js';
           renderPreviewContent: renderImagePreview, // Pass the text preview function
           renderCustomData: renderCustomData, // Pass the custom data rendering function
           renderActions: renderActions, // Pass the actions rendering function
-          handleFileClick: (fileData) => {
-            // ?
-          },
+          handleFileClick: (fileData) => {},
           numColumns: num_files_in_row, 
           minTileWidth: "18rem",
+          onContextMenu: createContextMenuForFile,
+          onMetaOpen: openMetaEditorForFile,
       });
 
       // Update or Initialize Pagination Component

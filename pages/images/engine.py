@@ -102,7 +102,7 @@ class ImageSearch(BaseSearchEngine):
                 # Calling model_instance.get_image_features() will trigger ModelManager to load to GPU
                 model_instance = self.model 
                 
-                inputs_images = self.processor(images=[image], padding="max_length", return_tensors="pt").to(model_instance._device) # Use managed device
+                inputs_images = self.processor(images=[image], padding="max_length", return_tensors="pt").to(self.device) # Use managed device
                 
                 with torch.no_grad():
                     outputs = model_instance.get_image_features(**inputs_images)
@@ -160,8 +160,8 @@ class ImageSearch(BaseSearchEngine):
             self.is_embedder_busy = True
             try:
                 model_instance = self.model # Triggers loading to GPU if needed
-                
-                inputs_text = self.processor(text=text, padding="max_length", return_tensors="pt").to(model_instance._device)
+
+                inputs_text = self.processor(text=text, padding="max_length", return_tensors="pt").to(self.device)
 
                 with torch.no_grad():
                     outputs = model_instance.get_text_features(**inputs_text)
@@ -184,7 +184,7 @@ class ImageEvaluator(src.scoring_models.Evaluator):
 
     def __init__(self, embedding_dim=768, rate_classes=11):
         if not hasattr(self, '_initialized'):
-            super(ImageEvaluator, self).__init__(embedding_dim, rate_classes)
+            super(ImageEvaluator, self).__init__(embedding_dim, rate_classes, name="ImageEvaluator")
             self._initialized = True
 
 

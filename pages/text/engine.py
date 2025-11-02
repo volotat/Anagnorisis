@@ -233,7 +233,7 @@ class TextEvaluator(src.scoring_models.Evaluator):
 
     def __init__(self, embedding_dim=1024, rate_classes=11):
         if not hasattr(self, '_initialized'):
-            super(TextEvaluator, self).__init__(embedding_dim, rate_classes)
+            super(TextEvaluator, self).__init__(embedding_dim, rate_classes, name="TextEvaluator")
             self._initialized = True
 
 

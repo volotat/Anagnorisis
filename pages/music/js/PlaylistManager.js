@@ -85,6 +85,9 @@ class PlaylistManager {
         this.songControlPanel.updateSongInfo(currentSong);
         this.updatePlaylistPanel();
 
+        // Notify grid to highlight the currently playing song
+        $(document).trigger('music:playing', [currentSong.file_path]);
+
         // Save current song hash and play time to localStorage
         localStorage.setItem("music_page_current_song_index", this.currentSongIndex);
     }

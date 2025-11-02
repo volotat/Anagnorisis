@@ -250,7 +250,7 @@ class TextEmbedder:
                 task="retrieval.passage",
                 truncate_dim=self.cfg.text.embedding_dimension,
                 convert_to_tensor=False,
-                device=self.model._device
+                device=self.device
             )
 
             return embeddings
@@ -273,7 +273,7 @@ class TextEmbedder:
                 task="retrieval.query",
                 truncate_dim=self.cfg.text.embedding_dimension,
                 convert_to_tensor=False,
-                device=self.model._device
+                device=self.device
             )
             return embedding
         except Exception as e:

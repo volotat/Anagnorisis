@@ -5,12 +5,14 @@ import SongControlPanel from '/pages/music/js/SongControlPanel.js';
 import PaginationComponent from '/pages/PaginationComponent.js';
 import FileGridComponent from '/pages/FileGridComponent.js';
 import SearchBarComponent from '/pages/SearchBarComponent.js';
+import ContextMenuComponent from '/pages/ContextMenuComponent.js';
+import MetaEditor from '/pages/MetaEditor.js';
 
 //// BEFORE PAGE LOADED
 
 function renderImagePreview(fileData) { // Function for Images module preview
     const imageDataDiv = document.createElement('div');
-    imageDataDiv.className = 'cell has-background-light p-1 is-flex is-flex-direction-column is-justify-content-space-between';
+    imageDataDiv.className = 'cell p-1 is-flex is-flex-direction-column is-justify-content-space-between';
 
     const imageContainer = document.createElement('div');
     imageContainer.classList.add('pswp-gallery__item', 'is-flex-direction-column');
@@ -102,7 +104,7 @@ function renderCustomData(fileData) { // Function for custom data rendering
 // Create a closed scope to avoid any variable collisions  
 (function() {
   //// CONSTANTS AND VARIABLES
-  let num_files_on_page = 30;
+  let num_files_on_page = 24;
   let num_files_in_row = 6; // TODO: calculate from the screen size
   let selected_files = [];
   let all_files_paths = [];
@@ -120,7 +122,88 @@ function renderCustomData(fileData) { // Function for custom data rendering
   path = decodeURIComponent(path);
   console.log('path', path);
 
+  // Create generic .meta editor wired to Images socket events
+  const metaEditor = new MetaEditor({
+    api: {
+      // Load .meta (Images backend expects the file_path string, returns {content, file_path})
+      load: (filePath, onLoaded) => {
+        socket.emit('emit_music_page_get_external_metadata_file_content', filePath, (response)=>{
+          onLoaded(response.content || '');
+        });
+      },
+      // Save .meta
+      save: async (filePath, content) => {
+        socket.emit('emit_music_page_save_external_metadata_file_content', {
+          file_path: filePath,
+          metadata_content: content
+        });
+      }
+    }
+  });  
+  function openMetaEditorForFile(fileData) {
+    metaEditor.open({
+      filePath: fileData.file_path,           // relative path inside media dir
+      displayName: fileData.base_name || ''   // optional nice title
+    });
+  }
 
+  // Create context menu for file items
+  const ctxMenu = new ContextMenuComponent();
+  function createContextMenuForFile(fileData, event) {
+    ctxMenu.show(event.pageX, event.pageY, [
+      {
+        label: 'Open in new tab',
+        action: () => {
+          window.open('music_files/'+fileData.file_path, '_blank');
+        }
+      },
+      {
+        label: 'Find similar music',
+        action: () => {
+          let url = new URL(window.location.href);
+          let params = new URLSearchParams(url.search);
+          params.set('text_query', fileData.full_path);
+          params.set('page', 1);
+          params.set('mode', 'semantic-content');
+          url.search = params.toString();
+          window.location.href = url.toString();
+        }
+      },
+      {
+        label: 'Edit internal metadata',
+        action: () => {
+          alert('Not yet implemented action: "Edit internal metadata"');
+        }
+      },
+      {
+        label: 'Edit .meta file',
+        icon: 'fas fa-file-pen',
+        action: () => { openMetaEditorForFile(fileData); }
+      },
+      { type: 'divider'},
+      {
+        label: 'Rename',
+        icon: 'fas fa-edit',
+        action: () => {
+          alert('Not yet implemented action: "Rename"');
+        }
+      },
+      {
+        label: 'Move to...',
+        icon: 'fas fa-file-import',
+        action: () => {
+          alert('Not yet implemented action: "Move to..."');
+        }
+      },
+      { label: 'Delete',
+        icon: 'fas fa-trash',
+        action: () => {
+          alert('Not yet implemented action: "Delete"');
+        }
+      }
+    ]);
+  }
+  
   //// AFTER PAGE LOADED
   $(document).ready(function() {
     // Set up audio elements
@@ -226,11 +309,16 @@ function renderCustomData(fileData) { // Function for custom data rendering
           renderPreviewContent: renderImagePreview, // Pass the text preview function
           renderCustomData: renderCustomData, // Pass the custom data rendering function
           // renderActions: renderActions, // Pass the actions rendering function
-          handleFileClick: (fileData) => {
-            // ?
-          },
+          handleFileClick: (fileData) => {},
           numColumns: num_files_in_row, 
+          onContextMenu: createContextMenuForFile,
+          onMetaOpen: openMetaEditorForFile,
       });
+      // Highlight playing song if any
+      if (playlistManager.playlist.length > 0) {
+        const currentSong = playlistManager.playlist[playlistManager.currentSongIndex];
+        $(document).trigger('music:playing', [currentSong.file_path]);
+      }
 
       // Update or Initialize Pagination Component
       const paginationContainer = $('.pagination.is-rounded.level-left.mb-0 .pagination-list'); // Select pagination container
@@ -291,6 +379,33 @@ function renderCustomData(fileData) { // Function for custom data rendering
       $("input[type='checkbox']").prop('checked', false);
       $('#files_actions').hide();
       selected_files = [];
+    });
+
+    // Slightly highlight the currently playing song in the grid
+    let lastHighlightedTile = null;
+    $(document).on('music:playing', (_e, filePath) => {
+      console.log('Highlighting playing song tile:', filePath);
+
+      const container = document.querySelector('#music_grid_container');
+      if (!container) return;
+
+      // Remove highlight from the previously active tile
+      if (lastHighlightedTile) {
+        lastHighlightedTile.classList.remove('has-background-info-light', 'is-current-playing');
+        lastHighlightedTile.classList.add('has-background-light');
+        lastHighlightedTile = null;
+      }
+
+      // Find the tile by dataset (safe for special chars like [ ])
+      const tiles = container.querySelectorAll('[data-file-path]');
+      for (const tile of tiles) {
+        if (tile.dataset.filePath === filePath) {
+          tile.classList.remove('has-background-light');
+          tile.classList.add('has-background-info-light', 'is-current-playing');
+          lastHighlightedTile = tile;
+          break;
+        }
+      }
     });
   })
 

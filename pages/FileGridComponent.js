@@ -1,5 +1,5 @@
 class FileGridComponent {
-  constructor({ containerId, filesData, renderPreviewContent, renderCustomData, renderActions, handleFileClick, numColumns = 5, minTileWidth = '20rem'}) {
+  constructor({ containerId, filesData, renderPreviewContent, renderCustomData, renderActions, handleFileClick, numColumns = 5, minTileWidth = '20rem', onContextMenu = null, onMetaOpen = null}) {
     this.containerId = containerId; // ID of the HTML container to render the grid in
     this.filesData = filesData;     // Array of file data objects
     this.renderPreviewContent = renderPreviewContent; // Function to render preview content (customizable)
@@ -8,6 +8,8 @@ class FileGridComponent {
     this.handleFileClick = handleFileClick;     // Function to handle file click events (customizable)
     this.numColumns = numColumns;             // Number of columns in the grid
     this.minTileWidth = minTileWidth;         // Minimum width of each tile
+    this.onContextMenu = onContextMenu;       // Optional right-click handler (fileData, event, element)
+    this.onMetaOpen = onMetaOpen;             // Optional meta open handler (fileData)
     this.render(); // Initial rendering
   }
 
@@ -47,6 +49,14 @@ class FileGridComponent {
       }
     });
 
+    // Right-click context menu
+    fileDiv.addEventListener('contextmenu', (e) => {
+      if (typeof this.onContextMenu === 'function') {
+        e.preventDefault();
+        this.onContextMenu(fileData, e, fileDiv);
+      }
+    });
+
 
     const previewContainer = document.createElement('div');
     previewContainer.className = 'file-preview-container'; // Add class for styling
@@ -55,12 +65,41 @@ class FileGridComponent {
     previewContainer.style.justifyContent = 'center';
     previewContainer.style.alignItems = 'center';
     //previewContainer.style.maxWidth = '300px';
+    // Enable absolute-position overlays inside preview
+    previewContainer.style.position = 'relative';
     fileDiv.appendChild(previewContainer);
 
     // Render Preview Content (using customizable function)
     if (this.renderPreviewContent) {
       const previewContent = this.renderPreviewContent(fileData);
       previewContainer.appendChild(previewContent);
+    }
+
+    const externalMetaIsAvailable = !!(fileData && fileData.has_meta);
+    console.log(`File: ${fileData.file_path}, has_meta: ${externalMetaIsAvailable}`);
+
+    // Meta overlay button (bottom-left), shown only when metaOptions.isAvailable === true
+    if (this.onMetaOpen && typeof this.onMetaOpen === 'function' && externalMetaIsAvailable) {
+      const overlay = document.createElement('div');
+      overlay.className = 'buttons is-flex is-align-items-center';
+      overlay.style.position = 'absolute';
+      overlay.style.left = '.35rem';
+      overlay.style.bottom = '.35rem';
+      overlay.style.zIndex = '2';
+      overlay.style.display = 'none'; // hidden until availability confirmed
+
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'button is-small is-light is-rounded';
+      btn.title = 'Edit .meta';
+      btn.innerHTML = `<span class="icon"><i class="fas fa-file-pen"></i></span>`;
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.onMetaOpen(fileData);
+      });
+
+      overlay.appendChild(btn);
+      previewContainer.appendChild(overlay);
     }
 
     // Custom Data Display Container

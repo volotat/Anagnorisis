@@ -136,6 +136,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
             else:
                 file_data = {
                         "hash": hash,
+                        "hash_algorithm": text_search_engine.get_hash_algorithm(),
                         "file_path": os.path.relpath(full_path, media_directory),
                         "model_rating": model_rating,
                         "model_hash": text_evaluator.hash

@@ -45,13 +45,36 @@ When gathering hashes of files make the cache saving once in a while, as this pr
 All active filters should be automatically gathered from the backend and displayed in the UI, instead of being hardcoded in the frontend.
 In the recommendation engine replace `full_play_count` and `skip_count` with `play_time` that dynamically calculate how much time user spent listening or watching the file. This should better reflect user preferences and be consistent across different types of data (at least music and videos).
 
-Remove all embeddings from the database and store them in cache using new advances cache system with fast lookup.
+Replace all the hash gathering occurrences with a single function that handles it in a unified way and notify the UI about the progress.
+Try to build a safe fail when the hashing algorithm is changes so we don't lose data in the DB that is hash related.
 
 ### Ideas
 Add new downloadable module for 'Deep Research'-like functionality that uses user-trained text evaluating model to search for relative information adjusted to user preferences.
 
-
 ## Versions History
+
+### Version 0.2.13 (03.11.2025)
+*   **UI & Components:**
+    *   Added a reusable context menu component (`pages/ContextMenuComponent.js`) to simplify building right‑click menus throughout the UI.
+    *   Added a reusable `MetaEditor` (`pages/MetaEditor.js`) for viewing/editing `.meta` files associated with media files.
+    *   File tiles now show a bottom‑left “.meta” icon when a corresponding `{file}.meta` exists; clicking it opens the Meta Editor. Implemented in `Images`, `Music`, and `Videos` modules.
+*   **Search & Actions:**
+    *   Added `Find similar images` and `Find similar music` actions to the respective module context menus to start similarity searches from a selected file.
+    *   Fixed a sorting issue where similarity results were reversed (closest items appearing last); order is now correct.
+*   **Hashing & Database:**
+    *   Hash algorithm type and version are now stored in the database alongside file hashes for traceability and future migrations. Note: a fail‑safe mechanism for hash algorithm changes is not implemented yet and is planned for later work.
+*   **Socket Messaging & Concurrency:**
+    *   Fixed a threading lock/race condition in `CommonSocketEvents` that could drop some of the last messages; messaging is now reliable.
+*   **Music Module:**
+    *   Internal metadata gathering now downsizes artwork images automatically to reduce cache storage footprint.
+    *   Improved embeddings gathering flow for better speed and reliability.
+*   **Status & Logging:**
+    *   Added more granular status messages during hash and embedding gathering to better reflect ongoing work in the UI.
+    *   Cache logging now appears only when new information is available (reduced noise).
+*   **GPU/Model Management:**
+    *   Gradual improvements to GPU/CPU memory handling in `src/model_manager.py` and related code. Models are no longer kept on GPU by default after startup; they load/unload dynamically as needed.
+*   **Documentation:**
+    *   README updates and small cleanup.
 
 ### Version 0.2.12 (27.10.2025)
 *   **Database & Path Sync:**

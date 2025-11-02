@@ -85,10 +85,17 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
   #   socketio.emit('emit_music_page_show_search_status', status)
 
   def update_model_ratings(files_list):
-    print('update_model_ratings')
+    # print('update_model_ratings')
 
     # filter out files that already have a rating in the DB
-    files_list_hash_map = {file_path: music_search_engine.get_file_hash(file_path) for file_path in files_list}
+    # files_list_hash_map = {file_path: music_search_engine.get_file_hash(file_path) for file_path in files_list}
+
+    files_list_hash_map = {}
+    for ind, file_path in enumerate(files_list):
+        common_socket_events.show_search_status(f"Filtering by recommendation: computing files hashes {ind+1}/{len(files_list)}")
+        file_hash = music_search_engine.get_file_hash(file_path)
+        files_list_hash_map[file_path] = file_hash
+
     hash_list = list(files_list_hash_map.values())
 
     # Fetch rated files from the database in a single query
@@ -107,6 +114,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
     
 
     # Rate all files in case they are not rated or model was updated
+    common_socket_events.show_search_status(f"Computing embeddings for {len(filtered_files_list)} files...")
     embeddings = music_search_engine.process_audio(filtered_files_list, callback=embedding_gathering_callback, media_folder=media_directory) #.cpu().detach().numpy() 
     model_ratings = music_evaluator.predict(embeddings)
 
@@ -128,6 +136,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
       else:
         file_data = {
             "hash": hash,
+            "hash_algorithm": music_search_engine.get_hash_algorithm(),
             "file_path": os.path.relpath(full_path, media_directory),
             "model_rating": model_rating,
             "model_hash": music_evaluator.hash
@@ -178,7 +187,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
     def filter_by_length(all_files, text_query):
       common_socket_events.show_search_status(f"Gathering resolutions for sorting...") # Initial status message
 
-      all_hashes = [music_search_engine.get_file_hash(file_path) for file_path in all_files]
+      # all_hashes = [music_search_engine.get_file_hash(file_path) for file_path in all_files]
 
       durations = {}
       progress_callback = SortingProgressCallback(common_socket_events.show_search_status, operation_name="Gathering music duration ") # Create callback
@@ -367,3 +376,45 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
   @socketio.on('emit_music_page_open_file_in_folder')
   def open_file_in_folder(file_path):
     file_manager.open_file_in_folder(file_path)
+
+  @socketio.on('emit_music_page_get_external_metadata_file_content')
+  def get_external_metadata_file_content(file_path):
+      """
+      Reads the content of the external .meta file associated with a file.
+      If the file does not exist, returns an empty string.
+      """
+      nonlocal media_directory
+      full_path = os.path.join(media_directory, file_path)
+      metadata_file_path = full_path + ".meta"
+
+      content = ""
+      try:
+          if os.path.exists(metadata_file_path):
+              with open(metadata_file_path, 'r', encoding='utf-8') as f:
+                  content = f.read()
+          print(f"Read external metadata for {file_path}")
+      except Exception as e:
+          print(f"Error reading external metadata for {file_path}: {e}")
+
+      return {"content": content, "file_path": file_path}
+
+  @socketio.on('emit_music_page_save_external_metadata_file_content')
+  def save_external_metadata_file_content(data):
+      """
+      Saves the provided content to the .meta file associated with a file.
+      """
+      nonlocal media_directory
+      file_path = data['file_path']
+      metadata_content = data['metadata_content']
+      
+      full_path = os.path.join(media_directory, file_path)
+      metadata_file_path = full_path + ".meta"
+
+      try:
+          # Ensure the directory exists before writing the file
+          os.makedirs(os.path.dirname(metadata_file_path), exist_ok=True)
+          with open(metadata_file_path, 'w', encoding='utf-8') as f:
+              f.write(metadata_content)
+          print(f"Saved metadata for {file_path}")
+      except Exception as e:
+          print(f"Error saving metadata for {file_path}: {e}")
