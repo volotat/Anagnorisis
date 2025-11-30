@@ -1,20 +1,24 @@
 import datetime
 import numpy as np
 from pages.utils import weighted_shuffle
+from typing import List
 
 def sigmoid(x):
     return 1 / (1 + np.exp(-x))
 
-def sort_files_by_recommendation(files_list, files_data, temperature=1.0):
+def sort_files_by_recommendation(files_list:List[str], files_data:List[dict]) -> List[float]:
     """
     Expects each files dict to have:
+      - hash (str)
       - user_rating (may be None)
       - model_rating (may be None)
       - full_play_count (int)
       - skip_count (int)
       - last_played (datetime or None)
-    The 'temperature' parameter controls the randomness of the sort.
+
     Returns the files list and corresponding scores in the chosen order.
+
+    Important! The files_data must correspond to files_list in order.
     """
     # Fallback: when no user rating is provided use median/mean from those available.
     not_none_ratings = np.array([m['user_rating'] for m in files_data if m['user_rating'] is not None])
@@ -34,6 +38,7 @@ def sort_files_by_recommendation(files_list, files_data, temperature=1.0):
             base_scores.append(m['model_rating'])
         else:
             base_scores.append(mean_value)
+
     base_scores = np.array(base_scores)
     base_scores = np.maximum(0.1, base_scores)  # ensure a minimum value
     base_scores = (base_scores / 10) ** 2       # enhance differences
@@ -62,6 +67,7 @@ def sort_files_by_recommendation(files_list, files_data, temperature=1.0):
 
     # sorted_files = [files_list[i] for i in order]
     # sorted_scores = final_scores[order]
+
     return final_scores
 
 # ------------------- TESTS -------------------

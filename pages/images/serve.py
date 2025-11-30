@@ -8,6 +8,7 @@ import hashlib
 import numpy as np
 from io import BytesIO
 
+
 from pages.images.engine import ImageSearch, ImageEvaluator
 import math
 from scipy.spatial import distance
@@ -28,6 +29,8 @@ import pages.file_manager as file_manager
 from pages.common_filters import CommonFilters
 
 from pages.utils import convert_size, convert_length, time_difference
+
+from src.metadata_search import MetadataSearch
 
 # EVENTS:
 # Incoming (handled with @socketio.on):
@@ -103,7 +106,9 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
         socketio=socketio,
         db_schema=db_models.ImagesLibrary,
     )
-    
+
+    # Create metadata search engine
+    metadata_search_engine = MetadataSearch(engine=images_search_engine)
 
     def update_model_ratings(files_list):
         print(files_list)
@@ -166,6 +171,17 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
         # Commit the transaction
         db_models.db.session.commit()
 
+    # Create common filters instance
+    common_filters = CommonFilters(
+        engine=images_search_engine,
+        metadata_engine=metadata_search_engine,
+        common_socket_events=common_socket_events,
+        media_directory=media_directory,
+        db_schema=db_models.ImagesLibrary,
+        update_model_ratings_func=update_model_ratings
+    )
+    
+
     # necessary to allow web application access to image files
     @app.route('/image_files/<path:filename>')
     def serve_image_files(filename):
@@ -195,22 +211,6 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
             #all_files_sorted = sorted(all_files, key=lambda x: resolutions[x][0] / resolutions[x][1])
             scores = [resolutions[x][0] / resolutions[x][1] for x in all_files]
             return scores
-
-        # Create common filters instance
-        common_filters = CommonFilters(
-                engine=images_search_engine,
-                common_socket_events=common_socket_events,
-                media_directory=media_directory,
-                db_schema=db_models.ImagesLibrary,
-                update_model_ratings_func=update_model_ratings
-        )
-
-        # Get parameters
-        # path = input_data.get('path', '')
-        # pagination = input_data.get('pagination', 0)
-        # limit = input_data.get('limit', 100)
-        # text_query = input_data.get('text_query', None)
-        # seed = input_data.get('seed', None)
 
         # Define available filters
         filters = {

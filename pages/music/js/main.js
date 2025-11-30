@@ -123,7 +123,7 @@ function renderCustomData(fileData) { // Function for custom data rendering
   console.log('path', path);
 
   // Create generic .meta editor wired to Images socket events
-  const metaEditor = new MetaEditor({
+  const externalMetaEditor = new MetaEditor({
     api: {
       // Load .meta (Images backend expects the file_path string, returns {content, file_path})
       load: (filePath, onLoaded) => {
@@ -140,10 +140,35 @@ function renderCustomData(fileData) { // Function for custom data rendering
       }
     }
   });  
-  function openMetaEditorForFile(fileData) {
-    metaEditor.open({
-      filePath: fileData.file_path,           // relative path inside media dir
-      displayName: fileData.base_name || ''   // optional nice title
+  function openExternalMetaEditorForFile(fileData, readOnly=false) {
+    externalMetaEditor.open({
+      filePath: fileData.file_path,                        // relative path inside media dir
+      displayName: (fileData.base_name + '.meta') || '',   // optional nice title
+    });
+  }
+
+
+  const fullDescriptionMetaEditor = new MetaEditor({
+    api: {
+      // Load full description (Music backend expects the file_path string, returns {content, file_path})
+      load: (filePath, onLoaded) => {
+        socket.emit('emit_music_page_get_full_metadata_description', filePath, (response)=>{
+          onLoaded(response.content || '');
+        });
+      },
+      // Save full description (not implemented)
+      save: (filePath, content) => {
+        // No saving for full description
+        return Promise.resolve();
+      }
+    },
+    readOnly: true, // Always read-only
+  });
+  
+  function openFullDescriptionForFile(fileData) {
+    fullDescriptionMetaEditor.open({
+      filePath: fileData.file_path,                                     // relative path inside media dir
+      displayName: (fileData.base_name + ' full search description') || '',   // optional nice title
     });
   }
 
@@ -178,7 +203,16 @@ function renderCustomData(fileData) { // Function for custom data rendering
       {
         label: 'Edit .meta file',
         icon: 'fas fa-file-pen',
-        action: () => { openMetaEditorForFile(fileData); }
+        action: () => { 
+          openExternalMetaEditorForFile(fileData); 
+        }
+      },
+      {
+        label: 'Show full search description',
+        icon: 'fas fa-info-circle',
+        action: () => { 
+          openFullDescriptionForFile(fileData);
+        }
       },
       { type: 'divider'},
       {
@@ -312,7 +346,7 @@ function renderCustomData(fileData) { // Function for custom data rendering
           handleFileClick: (fileData) => {},
           numColumns: num_files_in_row, 
           onContextMenu: createContextMenuForFile,
-          onMetaOpen: openMetaEditorForFile,
+          onMetaOpen: openExternalMetaEditorForFile,
       });
       // Highlight playing song if any
       if (playlistManager.playlist.length > 0) {

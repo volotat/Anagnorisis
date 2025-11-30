@@ -32,6 +32,8 @@ from pages.common_filters import CommonFilters
 
 from pages.utils import convert_size, convert_length, time_difference
 
+from src.metadata_search import MetadataSearch
+
 # EVENTS:
 
 # Incoming (handled with @socketio.on):
@@ -106,6 +108,9 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
             socketio=socketio,
             db_schema=db_models.VideosLibrary,
         )
+    
+    # Create metadata search engine
+    metadata_search_engine = MetadataSearch(engine=videos_search_engine)
   
     def update_model_ratings(files_list):
         print('update_model_ratings')
@@ -119,9 +124,10 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
         #     if db_item is None or db_item.file_path is None:
         #         file_data = {
         #             "hash": file_hash,
+        #             "hash_algorithm": videos_search_engine.get_hash_algorithm(),
         #             "file_path": os.path.relpath(file_path, media_directory),
         #             "model_rating": None,
-        #             "model_hash": None
+        #             "model_hash": None,
         #         }
         #         new_item = db_models.VideosLibrary(**file_data)
         #         db_models.db.session.add(new_item)
@@ -174,6 +180,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
         #     else:
         #         file_data = {
         #                 "hash": hash,
+        #                 "hash_algorithm": videos_search_engine.get_hash_algorithm(),
         #                 "file_path": os.path.relpath(full_path, media_directory),
         #                 "model_rating": model_rating,
         #                 "model_hash": videos_evaluator.hash
@@ -194,6 +201,16 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
         # # Commit the transaction
         # db_models.db.session.commit()
 
+    # Create common filters instance
+    common_filters = CommonFilters(
+        engine=videos_search_engine,
+        metadata_engine=metadata_search_engine,
+        common_socket_events=common_socket_events,
+        media_directory=media_directory,
+        db_schema=db_models.VideosLibrary,
+        update_model_ratings_func=update_model_ratings
+    )
+
     @socketio.on('emit_videos_page_get_folders')  
     def get_folders(data):
         path = data.get('path', '')
@@ -201,15 +218,6 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
 
     @socketio.on('emit_videos_page_get_files')
     def get_files(input_data):
-        # Create common filters instance
-        common_filters = CommonFilters(
-            engine=videos_search_engine,
-            common_socket_events=common_socket_events,
-            media_directory=media_directory,
-            db_schema=db_models.VideosLibrary,
-            update_model_ratings_func=update_model_ratings
-        )
-
         def filter_by_recommendation(all_files, text_query):
             # For now, we only need basic info from DB for sorting.
             
@@ -364,11 +372,19 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
             print("Error: File does not exist.")    
 
     @socketio.on('emit_videos_page_video_start_playing')
-    def video_start_playing(video_hash):
+    def video_start_playing(file_path):
         """
         Updates the last_played timestamp for a video in the database.
         """
-        print(f"Updating last_played for video: {video_hash}")
+        print(f"Updating last_played for video: {file_path}")
+        nonlocal media_directory
+        print(f"Video started playing: {file_path}")
+
+        full_path = os.path.join(media_directory, file_path)
+        video_hash = videos_search_engine.get_file_hash(full_path)
+        if video_hash is None:
+            raise Exception(f"Could not compute hash for file: {full_path}")
+
         video = db_models.VideosLibrary.query.filter_by(hash=video_hash).first()
         if video:
             video.last_played = datetime.datetime.now()
@@ -380,6 +396,8 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
             print(f"Video with hash {video_hash} not found in DB, creating minimal record.")
             new_video = db_models.VideosLibrary(
                 hash=video_hash,
+                hash_algorithm=videos_search_engine.get_hash_algorithm(),
+                file_path=os.path.relpath(full_path, media_directory),
                 last_played=datetime.datetime.now()
             )
             db_models.db.session.add(new_video)

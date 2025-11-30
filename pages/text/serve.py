@@ -17,6 +17,8 @@ from pages.common_filters import CommonFilters
 
 from omegaconf import OmegaConf
 
+from src.metadata_search import MetadataSearch
+
 # EVENTS:
 
 # Incoming (handled with @socketio.on):
@@ -89,6 +91,9 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
         db_schema=db_models.TextLibrary,
     )
 
+    # Create metadata search engine
+    metadata_search_engine = MetadataSearch(engine=text_search_engine)
+
     def update_model_ratings(files_list):
         print('update_model_ratings')
 
@@ -154,6 +159,16 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
         # Commit the transaction
         db_models.db.session.commit()
 
+    # Create common filters instance
+    common_filters = CommonFilters(
+        engine=text_search_engine,
+        metadata_engine=metadata_search_engine,
+        common_socket_events=common_socket_events,
+        media_directory=media_directory,
+        db_schema=db_models.TextLibrary,
+        update_model_ratings_func=update_model_ratings
+    )
+
     @socketio.on('emit_text_page_get_folders')  
     def get_folders(data):
         path = data.get('path', '')
@@ -161,22 +176,6 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
 
     @socketio.on('emit_text_page_get_files')
     def get_files(input_data):
-        # Create common filters instance
-        common_filters = CommonFilters(
-            engine=text_search_engine,
-            common_socket_events=common_socket_events,
-            media_directory=media_directory,
-            db_schema=db_models.TextLibrary,
-            update_model_ratings_func=update_model_ratings
-        )
-
-        # Get parameters
-        # path = data.get('path', '')
-        # pagination = data.get('pagination', 0)
-        # limit = data.get('limit', 100)
-        # text_query = data.get('text_query', None)
-        # seed = data.get('seed', None)
-
         # Define available filters
         filters = {
             # "by_file": filter_by_file, # special sorting case when file path used as query

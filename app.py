@@ -42,6 +42,11 @@ import time
 script_folder = os.path.dirname(os.path.abspath(__file__))
 print(f"Script folder: {script_folder}")
 
+# Create logs directory if it doesn't exist
+logs_folder = os.path.join(script_folder, 'logs')
+if not os.path.exists(logs_folder):
+    os.makedirs(logs_folder, exist_ok=True)
+
 # Check if running in a Docker container
 # if os.environ.get('RUNNING_IN_DOCKER') == 'true':
 #     print("Running in Docker container")
@@ -70,6 +75,18 @@ migrations_path = os.path.join(project_config_folder_path, 'database', 'migratio
 embedding_models_path = os.path.join(script_folder, 'models')
 personal_models_path = os.path.join(project_config_folder_path, 'models')
 cache_path = os.path.join(project_config_folder_path, 'cache')
+
+if not os.path.exists(project_config_folder_path):
+    os.makedirs(project_config_folder_path, exist_ok=True)
+
+if not os.path.exists(os.path.join(project_config_folder_path, 'database')):
+    os.makedirs(os.path.join(project_config_folder_path, 'database'), exist_ok=True)
+
+if not os.path.exists(os.path.join(project_config_folder_path, 'models')):
+    os.makedirs(os.path.join(project_config_folder_path, 'models'), exist_ok=True)
+
+if not os.path.exists(os.path.join(project_config_folder_path, 'cache')):
+    os.makedirs(os.path.join(project_config_folder_path, 'cache'), exist_ok=True)
 
 cfg.main.database_path = database_path
 cfg.main.migrations_path = migrations_path
@@ -143,6 +160,7 @@ def before_request_auth():
 # Set the socketio parameters
 socketio = SocketIO(app, cors_allowed_origins="*", path="/socket.io")
 
+
 # List all folders in the extensions directory
 extension_names = [entry.name for entry in os.scandir('pages') if entry.is_dir()]
 extension_names = [entry for entry in extension_names if not entry.startswith('_')]
@@ -166,7 +184,7 @@ for extension_name in extension_names:
 
 # Initialize Flask-Migrate
 db.init_app(app)
-migrate = Migrate(app, db)
+migrate = Migrate(app, db, directory=migrations_path)
 
 markdown_extensions = [
     'tables',
@@ -329,20 +347,30 @@ def migrate_database():
         print("Database migration completed successfully.")  
 
 from flask import request, abort
+from urllib.parse import unquote
 
 #### PREVENT PATH TRAVERSAL
+def _looks_like_path(s: str) -> bool:
+    return ('/' in s) or ('\\' in s)
+
+def _has_parent_segment(value: str) -> bool:
+    # Decode once or twice to defeat %2e%2e / double-encoding tricks
+    v = unquote(unquote(value))
+    v = v.replace('\\', '/')
+    parts = [p for p in v.split('/') if p]  # drop empty parts
+    # Only block when a segment is exactly '..'
+    return any(p == '..' for p in parts)
+
 @app.before_request 
 def block_path_traversal():
-    dangerous = ['..', '%2e%2e', '%252e%252e', '..%2f', '..%5c', '~/', '/etc/', '/proc/']
-    
-    # Collect all values to check
+    # Keep absolute sensitive paths
+    dangerous_substrings = ['/etc/', '/proc/']
+
+    # Collect values to check
     check_values = [request.path]
-    
-    # Add URL parameters and form data
     check_values.extend(request.args.values())
     check_values.extend(request.form.values())
-    
-    # Add JSON data if present
+
     if request.is_json and request.json:
         def extract_strings(obj):
             if isinstance(obj, dict):
@@ -353,13 +381,19 @@ def block_path_traversal():
                     yield from extract_strings(item)
             elif isinstance(obj, str):
                 yield obj
-        
         check_values.extend(extract_strings(request.json))
-    
-    # Check for dangerous patterns
+
     for value in check_values:
-        if isinstance(value, str) and any(pattern in value.lower() for pattern in dangerous):
+        if not isinstance(value, str):
+            continue
+        # Fast reject for truly dangerous absolute paths
+        v_dec = unquote(unquote(value)).lower()
+        if any(s in v_dec for s in dangerous_substrings):
             print(f"Path traversal attempt blocked: {value}")
+            abort(403)
+        # Only apply '..' check to path-like strings; allow filenames like '....flac'
+        if _looks_like_path(value) and _has_parent_segment(value):
+            print(f"Parent directory traversal blocked: {value}")
             abort(403)
 
 # --- Real-time Log Streaming Setup ---

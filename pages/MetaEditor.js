@@ -2,11 +2,12 @@
 // Requires an API with load(filePath, onLoaded) and save(filePath, content) functions.
 
 export default class MetaEditor {
-  constructor({ api }) {
+  constructor({ api, readOnly = false }) {
     if (!api || typeof api.load !== 'function' || typeof api.save !== 'function') {
       throw new Error('MetaEditor requires { api: { load(filePath, cb), save(filePath, content) } }');
     }
     this.api = api;
+    this.readOnly = !!readOnly;
     this.currentFilePath = null;
     this._listenerCleanup = null;
 
@@ -42,16 +43,20 @@ export default class MetaEditor {
     `;
     document.body.appendChild(this.modal);
 
+    // Cache elements
+    this.$title = this.modal.querySelector('#meta_editor_title');
+    this.$textarea = this.modal.querySelector('#meta_editor_textarea');
+    this.$saveBtn = this.modal.querySelector('.modal-save-action');
+
     // Close actions
     this.modal.querySelectorAll('.modal-close-action').forEach(el => {
       el.addEventListener('click', () => this.close());
     });
 
     // Save
-    const textarea = this.modal.querySelector('#meta_editor_textarea');
-    this.modal.querySelector('.modal-save-action').addEventListener('click', async () => {
-      if (!this.currentFilePath) return;
-      const text = textarea.value ?? '';
+    this.$saveBtn.addEventListener('click', async () => {
+      if (!this.currentFilePath || this.readOnly) return;
+      const text = this.$textarea.value ?? '';
       try {
         await this.api.save(this.currentFilePath, text);
       } catch (e) {
@@ -59,22 +64,44 @@ export default class MetaEditor {
       }
       this.close();
     });
+
+    // Apply initial mode
+    this._applyReadOnly(this.readOnly);
   }
 
-  async open({ filePath, displayName }) {
+  _applyReadOnly(flag) {
+    this.readOnly = !!flag;
+    this.$textarea.readOnly = this.readOnly;
+    this.$textarea.classList.toggle('is-static', this.readOnly);
+    this.$textarea.classList.toggle('has-text-grey', this.readOnly);
+    // Optional subtle style for read-only
+    if (this.readOnly) {
+      this.$textarea.style.backgroundColor = 'var(--bulma-scheme-main-bis, #f5f5f5)';
+    } else {
+      this.$textarea.style.backgroundColor = '';
+    }
+    if (this.$saveBtn) {
+      this.$saveBtn.style.display = this.readOnly ? 'none' : '';
+      this.$saveBtn.disabled = this.readOnly;
+    }
+    this.$title.textContent = this.readOnly ? 'View metadata' : 'Edit metadata';
+  }
+
+  async open({ filePath, displayName, readOnly } = {}) {
     this.currentFilePath = filePath;
-    this.modal.querySelector('#meta_editor_title').textContent = `${displayName || filePath}.meta`;
+    // Allow per-open override; fallback to constructor flag
+    if (typeof readOnly === 'boolean') this._applyReadOnly(readOnly);
+    this.$title.textContent = `${displayName || filePath}${this.readOnly ? ' (read-only)' : ''}`;
 
     // Reset UI
-    const textarea = this.modal.querySelector('#meta_editor_textarea');
-    textarea.value = 'Loading...';
+    this.$textarea.value = 'Loading...';
 
     // Load content
     let cancelListener = null;
     const onLoaded = (content) => {
-        console.log('MetaEditor loaded content for', filePath);
-        textarea.value = content || '';
-        textarea.placeholder = 'No .meta content for this file available yet. You can create it by adding content here and saving.';
+      console.log('MetaEditor loaded content for', filePath);
+      this.$textarea.value = content || '';
+      this.$textarea.placeholder = 'No .meta content for this file available yet.';
     };
     try {
       cancelListener = this.api.load(this.currentFilePath, onLoaded);

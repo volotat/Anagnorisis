@@ -62,6 +62,11 @@ class ImageSearch(BaseSearchEngine):
     
     def _get_model_hash_postfix(self):
         return "_v1.0.1"
+    
+    def _get_media_folder(self) -> str:
+        if self.cfg is None or not hasattr(self.cfg, 'images') or not hasattr(self.cfg.images, 'media_directory'):
+            raise ValueError("Media folder not specified in config.")
+        return self.cfg.images.media_directory
 
     def _load_model_and_processor(self, local_model_path: str):
         """
@@ -81,6 +86,8 @@ class ImageSearch(BaseSearchEngine):
             print(f"ERROR: Failed to load SigLIP model from '{local_model_path}'. The download might be incomplete or corrupted.")
             print(f"Error details: {e}")
             raise RuntimeError(f"Failed to load required model: {self.model_name}") from e
+
+            
 
     def _process_single_file(self, file_path: str, **kwargs) -> torch.Tensor:
         """

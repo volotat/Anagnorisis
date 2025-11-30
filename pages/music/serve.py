@@ -24,6 +24,8 @@ from pages.utils import SortingProgressCallback, EmbeddingGatheringCallback
 from pages.socket_events import CommonSocketEvents
 from pages.common_filters import CommonFilters
 
+from src.metadata_search import MetadataSearch
+
 # EVENTS:
 # Incoming (handled with @socketio.on):
 
@@ -80,6 +82,9 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
     socketio=socketio,
     db_schema=db_models.MusicLibrary,
   )
+
+  # Create metadata search engine
+  metadata_search_engine = MetadataSearch(engine=music_search_engine)
 
   # def show_search_status(status):
   #   socketio.emit('emit_music_page_show_search_status', status)
@@ -153,6 +158,16 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
 
     # Commit the transaction
     db_models.db.session.commit()
+
+  # Create common filters instance
+  common_filters = CommonFilters(
+      engine=music_search_engine,
+      metadata_engine=metadata_search_engine,
+      common_socket_events=common_socket_events,
+      media_directory=media_directory,
+      db_schema=db_models.MusicLibrary,
+      update_model_ratings_func=update_model_ratings
+  )
 
   # necessary to allow web application access to music files
   @app.route('/music_files/<path:filename>')
@@ -230,26 +245,23 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
 
       keys = ['hash', 'user_rating', 'model_rating', 'full_play_count', 'skip_count', 'last_played']
       music_data_dict = [dict(zip(keys, row)) for row in music_data]
-      scores = sort_files_by_recommendation(all_files, music_data_dict)
+      
+      # Create a map from hash to db_data for quick lookup
+      hash_to_db_data = {item['hash']: item for item in music_data_dict}
+      
+      # Create a list of dictionaries with all necessary fields for sort_files_by_recommendation
+      common_socket_events.show_search_status("Filtering by recommendation: preparing data for sorting")
+      full_music_data_for_sorting = []
+      for file_path, file_hash in zip(all_files, all_hashes):
+          full_music_data_for_sorting.append(hash_to_db_data.get(file_hash, {
+              'hash': file_hash, 'user_rating': None, 'model_rating': None, 'full_play_count': 0, 'skip_count': 0, 'last_played': None
+          }))
+
+      common_socket_events.show_search_status("Filtering by recommendation: sorting files")
+      scores = sort_files_by_recommendation(all_files, full_music_data_for_sorting)
+
 
       return scores
-    
-    # Create common filters instance
-    common_filters = CommonFilters(
-        engine=music_search_engine,
-        common_socket_events=common_socket_events,
-        media_directory=media_directory,
-        db_schema=db_models.MusicLibrary,
-        update_model_ratings_func=update_model_ratings
-    )
-
-    # Get parameters
-    # path = input_data.get('path', '')
-    # pagination = input_data.get('pagination', 0)
-    # limit = input_data.get('limit', 100)
-    # text_query = input_data.get('text_query', None)
-    # seed = input_data.get('seed', None)
-    # mode = input_data.get('mode', 'file-name') # can be 'file-name', 'semantic-content', 'semantic-metadata'
     
     # Define available filters
     filters = {
@@ -418,3 +430,13 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
           print(f"Saved metadata for {file_path}")
       except Exception as e:
           print(f"Error saving metadata for {file_path}: {e}")
+
+  @socketio.on('emit_music_page_get_full_metadata_description')
+  def get_full_metadata_description(file_path):
+      """
+      Generates a full metadata description for a single file.
+      """
+      nonlocal media_directory
+      full_path = os.path.join(media_directory, file_path)
+      content = metadata_search_engine.generate_full_description(full_path, media_directory)
+      return {"content": content, "file_path": file_path}

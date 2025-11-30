@@ -8,6 +8,7 @@ import io
 import traceback
 from abc import ABC, abstractmethod
 from huggingface_hub import snapshot_download
+from transformers import AutoConfig
 from tqdm import tqdm
 import pages.images.db_models as db_models
 import pages.file_manager as file_manager
@@ -105,6 +106,13 @@ class BaseSearchEngine(ABC):
         Used for versioning embeddings.
         """
         return ""
+    
+    def _get_media_folder(self) -> str:
+        """
+        Returns the media folder path associated with this search engine.
+        Used for file path validations and relative path calculations.
+        """
+        return ""
 
     def initiate(self, models_folder: str, cache_folder: str, **kwargs):
         """
@@ -137,37 +145,100 @@ class BaseSearchEngine(ABC):
         self._model_manager = ModelManager(self.model, device=self.device)
         self.model = self._model_manager # Override self.model with the manager instance
         self.model_hash = self._get_model_hash_from_instance() # Get hash from the *actual* loaded model
+
+        try:
+            self.model.eval()
+        except Exception:
+            pass
+        # if torch.cuda.is_available():
+        #     torch.backends.cudnn.benchmark = True
+        #     torch.backends.cuda.matmul.allow_tf32 = True
+        #     torch.backends.cudnn.allow_tf32 = True
         
         print(f"{self.__class__.__name__} initiated successfully.")
 
         # Force unload after wrapping as this usually cause the model to be loaded to GPU
         self._model_manager.unload_model()
     
+    # def _ensure_model_downloaded(self, local_model_path: str):
+    #     """
+    #     Checks if the model exists locally; if not, downloads it from Hugging Face.
+    #     """
+    #     # Check for a common file like 'config.json' to indicate a potentially complete download
+    #     # Different models might have different definitive files. 'config.json' is a good general one.
+    #     config_file_path = os.path.join(local_model_path, 'config.json') 
+    #     if not os.path.exists(config_file_path):
+    #         print(f"Model '{self.model_name}' not found locally or incomplete at '{local_model_path}'. Downloading...")
+    #         if self.model_name is None:
+    #             print("ERROR: Model name is not set. Cannot download model.")
+    #         else:    
+    #             try:
+    #                 snapshot_download(
+    #                     repo_id=self.model_name,
+    #                     local_dir=local_model_path,
+    #                     local_dir_use_symlinks=False # Download actual files
+    #                 )
+    #                 print(f"Model '{self.model_name}' downloaded successfully.")
+    #             except Exception as e:
+    #                 print(f"ERROR: Failed to download model '{self.model_name}'. Please check your internet connection and permissions.")
+    #                 print(f"Error details: {e}")
+    #                 #raise RuntimeError(f"Failed to download required model: {self.model_name}") from e
+    #     else:
+    #         print(f"Found existing model '{self.model_name}' at '{local_model_path}'.")
+
     def _ensure_model_downloaded(self, local_model_path: str):
         """
         Checks if the model exists locally; if not, downloads it from Hugging Face.
+        Retries with force_download=True if the local model is corrupted.
         """
-        # Check for a common file like 'config.json' to indicate a potentially complete download
-        # Different models might have different definitive files. 'config.json' is a good general one.
-        config_file_path = os.path.join(local_model_path, 'config.json') 
+        if self.model_name is None:
+            print("ERROR: Model name is not set. Cannot download model.")
+            return
+
+        # 1. Check for basic existence (e.g., config.json)
+        config_file_path = os.path.join(local_model_path, 'config.json')
+        
+        # Helper to perform the download
+        def download(force=False):
+            print(f"{'Re-downloading' if force else 'Downloading'} model '{self.model_name}' to '{local_model_path}'...")
+            snapshot_download(
+                repo_id=self.model_name,
+                local_dir=local_model_path,
+                local_dir_use_symlinks=False, # Download actual files
+                force_download=force,         # Force re-download if requested
+                resume_download=True          # Resume if possible (unless forced)
+            )
+            print(f"Model '{self.model_name}' downloaded successfully.")
+
         if not os.path.exists(config_file_path):
-            print(f"Model '{self.model_name}' not found locally or incomplete at '{local_model_path}'. Downloading...")
-            if self.model_name is None:
-                print("ERROR: Model name is not set. Cannot download model.")
-            else:    
-                try:
-                    snapshot_download(
-                        repo_id=self.model_name,
-                        local_dir=local_model_path,
-                        local_dir_use_symlinks=False # Download actual files
-                    )
-                    print(f"Model '{self.model_name}' downloaded successfully.")
-                except Exception as e:
-                    print(f"ERROR: Failed to download model '{self.model_name}'. Please check your internet connection and permissions.")
-                    print(f"Error details: {e}")
-                    #raise RuntimeError(f"Failed to download required model: {self.model_name}") from e
+            try:
+                download(force=False)
+            except Exception as e:
+                print(f"ERROR: Failed to download model '{self.model_name}'.")
+                print(f"Error details: {e}")
+                # raise RuntimeError(...) # Optional: re-raise if critical
         else:
-            print(f"Found existing model '{self.model_name}' at '{local_model_path}'.")
+            print(f"Found existing model '{self.model_name}' at '{local_model_path}'. Verifying integrity...")
+            # 2. Verify integrity by attempting a dry-run load (or just trust it until it fails)
+            # Since we can't easily "dry-run" without loading the whole model, we rely on the
+            # calling code (initiate) to catch loading errors.
+            # BUT, we can check if the folder is empty or missing key files.
+            
+            # If you want to be very safe, you can try to load the config here:
+            try:
+                model = AutoConfig.from_pretrained(local_model_path, trust_remote_code=True)
+                # Unload immediately
+                del model
+                print(f"Model '{self.model_name}' integrity check passed.")
+            except Exception as e:
+                print(f"WARNING: Local model at '{local_model_path}' seems corrupted. Re-downloading...")
+                print(f"Integrity check error: {e}")
+                try:
+                    download(force=True)
+                except Exception as download_e:
+                    print(f"ERROR: Failed to re-download model '{self.model_name}'.")
+                    print(f"Error details: {download_e}")
+# ...existing code...
     
     def _get_model_hash_from_instance(self) -> str:
         """
@@ -196,6 +267,12 @@ class BaseSearchEngine(ABC):
         """Returns the cached hash for a given file."""
         if not os.path.exists(file_path):
             raise FileNotFoundError(f"File not found: {file_path}")
+
+        # We expect file_path to be absolute not a relative one to preserve consistency across different callers
+        # Check if file_path is not started from the media_folder path and log a warning in this case
+        if not os.path.abspath(file_path).startswith(os.path.abspath(self._get_media_folder())):
+            traceback.print_stack()
+            print(f"WARNING: File '{file_path}' is not located within the media folder or not an absolute path.")
 
         # Get the last modified time of the file
         st = os.stat(file_path, follow_symlinks=False)

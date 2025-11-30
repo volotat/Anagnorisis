@@ -125,6 +125,11 @@ class VideoSearch(BaseSearchEngine):
     
     def _get_model_hash_postfix(self):
         return ""
+    
+    def _get_media_folder(self) -> str:
+        if self.cfg is None or not hasattr(self.cfg, 'videos') or not hasattr(self.cfg.videos, 'media_directory'):
+            raise ValueError("Media folder not specified in config.")
+        return self.cfg.videos.media_directory
 
     def _load_model_and_processor(self, local_model_path: str):
         """

@@ -7,7 +7,7 @@ from sqlalchemy.types import DateTime # Import DateTime type explicitly
 class TextLibrary(db.Model):
     id = db.Column(db.Integer, unique=True, primary_key=True)
     hash = db.Column(db.String, nullable=True, unique=True)
-    hash_algorithm = db.Column(db.String, nullable=True, default='')
+    hash_algorithm = db.Column(db.String, nullable=True, default=None)
     file_path = db.Column(db.String, nullable=True) # Relative path within media directory
     user_rating = db.Column(db.Float, nullable=True) # For future rating feature
     user_rating_date = db.Column(db.DateTime, nullable=True)

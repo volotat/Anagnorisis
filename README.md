@@ -61,12 +61,22 @@ The preferred way to run the project is from Docker. This should be much more st
     Note: if you are using Docker Desktop you have to explicitly provide access to `/path/to/your/data` folders in the Docker settings. Otherwise, you will not be able to access it from the container. To do so, go to Docker Desktop settings, then to Resources -> File Sharing and add the path to your data folder.
 4. Access the application at http://localhost:5001 (or whichever port you configured) in your web browser.
 
+## Troubleshooting
+
+In case you encounter and error like this:
+```
+ERROR: for {your application container name} Cannot start service anagnorisis: error while creating mount source path '{PROJECT_CONFIG_FOLDER_PATH}': chown {PROJECT_CONFIG_FOLDER_PATH}: operation not permitted
+```
+
+You have to create the folder specified in `PROJECT_CONFIG_FOLDER_PATH` environment variable manually on your host machine. Docker sometimes cannot create such folders by itself due to permission issues.
+
+
 ## Additional notes for installation
 The Docker container includes Ubuntu 22.04, CUDA drives and several large machine learning models and dependencies, which results in a significant storage footprint. After the container is built it will take about 45GB of storage on your disk. 
 
 For best user experience I would recommend running the project with relatively modern Nvidia GPU with at least 8Gb of VRAM and 32Gb of RAM . At least this is the configuration I am using myself. However, the project should be able to run on lower configurations, but performance might be poor especially without CUDA-friendly GPU. It is usually take less then 4GB of VRAM to run the project, however when training recommendation models it usually spikes up to 5-7Gb of VRAM usage.
 
-After initializing the project, you will find new `Anagnorisis-app` folder inside of `PROJECT_CONFIG_FOLDER_PATH` folder. In this folder project's database, migrations, models and configuration file will be stored. After running the project for the first time, `{PROJECT_CONFIG_FOLDER_PATH}/Anagnorisis-app/database/project.db` file will be crated. That DB will store your preferences, that will be used later to fine-tune evaluation models. Try to make backups of this file from time to time, as it contains all of your preferences, and some additional data, such as playback history.
+After initializing the project, you will find new `database` folder inside of `PROJECT_CONFIG_FOLDER_PATH` folder. In this folder project's database, migrations, models and configuration file will be stored. After running the project for the first time, `{PROJECT_CONFIG_FOLDER_PATH}/database/project.db` file will be crated. That DB will store your preferences, that will be used later to fine-tune evaluation models. Try to make backups of this file from time to time, as it contains all of your preferences, and some additional data, such as playback history.
 
 If you have a lot of data in your data folder, for the first time hash cache and embedding cache will be gathered. Please be patient, as it may take a while. The percentage of the progress will be shown in the status bar.
 

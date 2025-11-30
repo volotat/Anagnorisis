@@ -411,9 +411,9 @@ class FileManager:
         if type(scores) is np.ndarray:
             scores = scores.tolist()
 
-        print(f"Scores calculated for {len(scores)} files.")
+        # print(f"Scores calculated for {len(scores)} files.")
 
-        print(f"Sorting {len(all_files)} files with temperature={temperature}, order={order}...")
+        # print(f"Sorting {len(all_files)} files with temperature={temperature}, order={order}...")
         indices = weighted_shuffle(scores, temperature=temperature) 
 
         if order == 'most-relevant':
@@ -430,7 +430,7 @@ class FileManager:
         page_files = sorted_files[pagination:pagination+limit]
         page_files_scores = sorted_scores[pagination:pagination+limit]
         
-        print(f'page_files {pagination}:{limit}', page_files)
+        # print(f'page_files {pagination}:{limit}', page_files)
 
         self.show_status(f"Gathering hashes for {len(page_files)} files.")
         page_hashes = self._get_hashes_with_progress(page_files) #[self.engine.get_file_hash(file_path) for file_path in page_files]
@@ -457,7 +457,7 @@ class FileManager:
 
         # Check if there files without model rating
         no_model_rating_files = [os.path.join(self.media_directory, item.file_path) for item in db_items if item.model_rating is None and item.file_path is not None]
-        print('no_model_rating_files size', len(no_model_rating_files))
+        # print('no_model_rating_files size', len(no_model_rating_files))
 
         # Add files that are not in the database yet
         new_files_list = [file_path for file_path in page_files if self.engine.get_file_hash(file_path) not in db_items_map]

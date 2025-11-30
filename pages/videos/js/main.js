@@ -240,7 +240,7 @@ import MetaEditor from '/pages/MetaEditor.js';
           } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
             video.src = response.stream_url;
           }
-          socket.emit('emit_videos_page_video_start_playing', next.hash);
+          socket.emit('emit_videos_page_video_start_playing', next.file_path);
           video.play().catch(()=>{});
         }
       });
@@ -349,7 +349,7 @@ import MetaEditor from '/pages/MetaEditor.js';
                 // Store the stream ID for cleanup later
                 window.currentStreamId = response.stream_id;
                 // Emit event to update last_played timestamp for the video
-                socket.emit('emit_videos_page_video_start_playing', fileData.hash); 
+                socket.emit('emit_videos_page_video_start_playing', fileData.file_path); 
 
                 // Use an HLS.js player
                 if (Hls.isSupported()) {

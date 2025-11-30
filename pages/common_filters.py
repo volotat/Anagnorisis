@@ -5,8 +5,6 @@ import gc
 
 from pages.utils import SortingProgressCallback, EmbeddingGatheringCallback
 
-from src.metadata_search import MetadataSearch
-
 import rapidfuzz 
 import unicodedata
 import re
@@ -53,17 +51,16 @@ def _normalize_text(s: str) -> str:
     return s
 
 class CommonFilters:
-    def __init__(self, engine, common_socket_events, media_directory, db_schema, update_model_ratings_func):
+    def __init__(self, engine, metadata_engine, common_socket_events, media_directory, db_schema, update_model_ratings_func):
         self.engine = engine
+        self.metadata_engine = metadata_engine
         self.common_socket_events = common_socket_events
         self.media_directory = media_directory
         self.db_schema = db_schema
         self.update_model_ratings_func = update_model_ratings_func
 
         self.embedding_gathering_callback = EmbeddingGatheringCallback(self.common_socket_events.show_search_status, name="")
-        self.meta_embedding_gathering_callback = EmbeddingGatheringCallback(self.common_socket_events.show_search_status, name="metadata")
-
-        self.metadata_engine = MetadataSearch(self.engine.cfg)    
+        self.meta_embedding_gathering_callback = EmbeddingGatheringCallback(self.common_socket_events.show_search_status, name="metadata")   
 
     def filter_by_file(self, all_files, text_query):
         target_path = text_query
@@ -84,6 +81,12 @@ class CommonFilters:
 
         if mode == 'file-name':
             q = _normalize_text(text_query)
+            raw_q_lower = text_query.strip().lower()
+
+            # Raw, case-insensitive literal variants for strong priority boosts
+            q_raw = (text_query or '').strip().strip('"').lower()
+            q_raw = q_raw.replace('\\', '/')
+            q_comp = q_raw.strip('/')
 
             # Prefer tokenized scorer when query has multiple words (order-insensitive)
             scorer = rapidfuzz.fuzz.token_set_ratio if ' ' in q else rapidfuzz.fuzz.WRatio
@@ -94,8 +97,42 @@ class CommonFilters:
                 base = os.path.basename(p)
                 s_full = scorer(q, _normalize_text(p))
                 s_base = scorer(q, _normalize_text(base))
-                combined = max(1.2 * s_base, s_full)  # extra weight to basename
-                ranked.append((combined, p, s_base, s_full))
+                combined = max(1.3 * s_base, s_full)  # extra weight to basename
+
+                # give extra points by the length of the perfectly matching characters in p
+                # matches = rapidfuzz.process.extract(text_query.lower(), [p.lower()], scorer=rapidfuzz.fuzz.partial_ratio, score_cutoff=80)
+                # points = 0
+                # for match in matches:
+                #     match_str, match_score, _ = match
+                #     points += len(match_str)
+
+                # # normalize points by the length of the query
+                # normed_points = points / len(q) if len(q) > 0 else 0
+
+                # combined += normed_points * 20  # weight for matching characters
+
+                # ranked.append((combined, p, s_base, s_full))
+
+                # TODO: Rethink the boosting strategy to avoid depending on exact matches as small mistakes should be tolerated.
+                # Strong priority boosts for literal matches (case-insensitive)
+                path_norm = p.replace('\\', '/').lower()
+                base_norm = base.lower()
+                parts_norm = [part for part in path_norm.split('/') if part]
+
+                priority = 0
+                if q_raw and path_norm == q_raw:
+                    priority = 4  # perfect full-path equality
+                elif q_comp and q_comp in parts_norm:
+                    priority = 3  # exact directory/file component match
+                elif q_raw and q_raw and (q_raw in path_norm):
+                    priority = 2  # exact substring anywhere
+                elif q_raw and (path_norm.startswith(q_raw) or path_norm.endswith(q_raw)):
+                    priority = 1  # anchored substring
+
+                # Encode priority as a large offset so they always sort first
+                boosted = priority * 10.0 + combined
+
+                ranked.append((boosted, p, s_base, s_full))
 
             # Keep scores in original order (aligned with all_files)
             scores = np.array([r[0] for r in ranked], dtype=np.float32) / 100.0

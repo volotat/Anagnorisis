@@ -114,6 +114,11 @@ class MusicSearch(BaseSearchEngine):
     
     def _get_model_hash_postfix(self):
         return ""
+    
+    def _get_media_folder(self) -> str:
+        if self.cfg is None or not hasattr(self.cfg, 'music') or not hasattr(self.cfg.music, 'media_directory'):
+            raise ValueError("Media folder not specified in config.")
+        return self.cfg.music.media_directory
 
     def _load_model_and_processor(self, local_model_path: str):
         """
@@ -135,7 +140,7 @@ class MusicSearch(BaseSearchEngine):
             self.text_embedder.initiate(models_folder=models_folder)
 
         except Exception as e:
-            print(f"ERROR: Failed to load CLAP model from '{local_model_path}'. The download might be incomplete or corrupted.")
+            print(f"ERROR: Failed to load SigLIP model from '{local_model_path}'. The download might be incomplete or corrupted.")
             print(f"Error details: {e}")
             raise RuntimeError(f"Failed to load required model: {self.model_name}") from e
 
@@ -169,7 +174,11 @@ class MusicSearch(BaseSearchEngine):
         )
 
         # Move to device and sanitize any bad values
-        inputs_audio = {k: v.to(self.device) for k, v in proc.items()}
+        # inputs_audio = {k: v.to(self.device) for k, v in proc.items()}
+        inputs_audio = {
+            k: (v.pin_memory().to(self.device, non_blocking=True) if isinstance(v, torch.Tensor) else v)
+            for k, v in proc.items()
+        }
         if "input_features" in inputs_audio:
             inputs_audio["input_features"] = torch.nan_to_num(
                 inputs_audio["input_features"], nan=0.0, posinf=0.0, neginf=0.0
@@ -185,7 +194,8 @@ class MusicSearch(BaseSearchEngine):
         out = torch.nan_to_num(out, nan=0.0, posinf=0.0, neginf=0.0)
         
         return out
-    
+
+    # Extremely CPU bounded because of audio file reading and preprocessing, making batch processing meaningless.
     # def _process_batch_files(self, file_paths: List[str], **kwargs) -> List[torch.Tensor | None]:
     #     """
     #     Batched audio processing. Returns list[Tensor | None] aligned with file_paths.
@@ -208,7 +218,9 @@ class MusicSearch(BaseSearchEngine):
     #             if waveform.dim() > 1:
     #                 waveform = waveform.squeeze()
     #             wf = waveform.to(torch.float32).contiguous().cpu().numpy() #.to(self.device) 
-    #             if wf.numel() == 0 or not torch.isfinite(wf).all():
+    #             #if wf.numel() == 0 or not torch.isfinite(wf).all():
+    #             #    continue
+    #             if wf.size == 0 or not np.isfinite(wf).all():
     #                 continue
     #             valid_indices.append(i)
     #             audio_list.append(wf)
@@ -222,6 +234,7 @@ class MusicSearch(BaseSearchEngine):
     #     # 3) Feature extraction + model forward in batch
     #     model_instance = self.model
     #     try:
+    #         proc_start_time = time.time()
     #         # Use CLAP processor for batch; pad to longest
     #         proc = self.processor(
     #             audio=audio_list,
@@ -229,17 +242,31 @@ class MusicSearch(BaseSearchEngine):
     #             return_tensors="pt",
     #             padding="longest",
     #         )
-    #         inputs_audio = {k: v.to(self.device) for k, v in proc.items()}
+    #         proc_end_time = time.time()
+    #         print(f"CLAP processor time for batch of {len(audio_list)}: {proc_end_time - proc_start_time:.4f} seconds")
+
+    #         proc_to_device_start = time.time()
+    #         # inputs_audio = {k: v.to(self.device) for k, v in proc.items()}
+    #         inputs_audio = {
+    #             k: (v.pin_memory().to(self.device, non_blocking=True) if isinstance(v, torch.Tensor) else v)
+    #             for k, v in proc.items()
+    #         }
 
     #         # Defensive: sanitize precomputed features (avoid -inf/NaN)
     #         if "input_features" in inputs_audio:
     #             inputs_audio["input_features"] = torch.nan_to_num(
     #                 inputs_audio["input_features"], nan=0.0, posinf=0.0, neginf=0.0
     #             )
+    #         proc_to_device_end = time.time()
+    #         print(f"Data transfer to device time for batch of {len(audio_list)}: {proc_to_device_end - proc_to_device_start:.4f} seconds")
 
+    #         proc_forward_start = time.time()
     #         with torch.no_grad():
     #             batch_out = model_instance.get_audio_features(**inputs_audio)  # [B, D] 
+    #         proc_forward_end = time.time()
+    #         print(f"Model forward time for batch of {len(audio_list)}: {proc_forward_end - proc_forward_start:.4f} seconds")
 
+    #         proc_final_sanitize_start = time.time()
     #         if batch_out.dim() == 1:
     #             batch_out = batch_out.unsqueeze(0)
     #         batch_out = torch.nan_to_num(batch_out, nan=0.0, posinf=0.0, neginf=0.0)
@@ -248,6 +275,9 @@ class MusicSearch(BaseSearchEngine):
     #         results: List[torch.Tensor | None] = [None] * len(file_paths)
     #         for k, idx in enumerate(valid_indices):
     #             results[idx] = batch_out[k].unsqueeze(0)  # [1, D]
+
+    #         proc_final_sanitize_end = time.time()
+    #         print(f"Final sanitization and scattering time for batch of {len(audio_list)}: {proc_final_sanitize_end - proc_final_sanitize_start:.4f} seconds")
     #         return results
     #     except Exception:
     #         return [None] * len(file_paths)

@@ -53,6 +53,25 @@ Add new downloadable module for 'Deep Research'-like functionality that uses use
 
 ## Versions History
 
+### Version 0.2.14 (30.11.2025)
+*   **Search & Metadata:**
+    *   Implemented a smooth maximum formula for `TextSearch` similarity calculations. This prioritizes files with multiple relevant chunks over those with a single high-scoring chunk, improving search relevance.
+    *   Expanded metadata-based search to include internal file metadata (e.g., band name, release year for `Music`) as well as `.meta` files information, providing richer context beyond just file names.
+    *   Refined `filter_by_text` in `CommonFilters` to prioritize exact matches during fuzzy matching, resulting in more accurate file name searches.
+*   **Music Module:**
+    *   Fixed a critical sorting issue where `files_list` and `files_data` misalignment caused inconsistent recommendation scores. File order is now guaranteed, ensuring recommendations work as expected.
+    *   Added a `Show full search description` option to the context menu. This opens a `MetaEditor` modal showing the full text payload used for generating search embeddings.
+*   **System & Architecture:**
+    *   Enhanced `base_search_engine.py` with robust model loading logic. It now detects corruption during model downloads and automatically triggers a re-download if necessary.
+    *   Critical directories (`logs`, `database`, `models`, `cache`) are now automatically created within `{PROJECT_CONFIG_FOLDER_PATH}` on startup, preventing crash loops on fresh installs.
+    *   Improved path traversal prevention to correctly handle and display valid filenames containing `..` (e.g., `Song..mp3`) while still blocking malicious paths.
+*   **UI & Components:**
+    *   Updated `MetaEditor.js` to support a read-only mode, allowing it to be used for viewing informational text (like search descriptions) without editing capabilities.
+*   **Documentation:**
+    *   Updated `README.md` with a troubleshooting section addressing common Docker mount permission issues.
+*   **Maintenance:**
+    *   Minor code refactoring and cleanup.
+
 ### Version 0.2.13 (03.11.2025)
 *   **UI & Components:**
     *   Added a reusable context menu component (`pages/ContextMenuComponent.js`) to simplify building right‑click menus throughout the UI.

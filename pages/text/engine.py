@@ -57,6 +57,15 @@ class TextSearch(BaseSearchEngine):
         self._embedder_lock = threading.Lock()
         self.is_embedder_busy = False
 
+    def load_text_model(models_folder, cfg):
+        # Re-import inside function for the subprocess
+        from src.text_embedder import TextEmbedder
+        embedder = TextEmbedder(cfg)
+        embedder.initiate(models_folder=models_folder)
+        # Return the actual model object (e.g. SentenceTransformer)
+        # or the embedder itself if you want to proxy calls to embedder methods
+        return embedder.model._model # Unwrap the old ModelManager if it exists, or just return raw model
+
     @property
     def model_name(self) -> str:
         # Use cfg.text.embedding_model for dynamic model selection
@@ -79,6 +88,11 @@ class TextSearch(BaseSearchEngine):
     
     def _get_model_hash_postfix(self):
         return "_v1.0.4"
+    
+    def _get_media_folder(self) -> str:
+        if self.cfg is None or not hasattr(self.cfg, 'text') or not hasattr(self.cfg.text, 'media_directory'):
+            raise ValueError("Media folder not specified in config.")
+        return self.cfg.text.media_directory
 
     def _load_model_and_processor(self, local_model_path: str):
         """
@@ -100,7 +114,7 @@ class TextSearch(BaseSearchEngine):
             print(f"TextSearch: TextEmbedder initiated. Embedding dim: {self.embedding_dim}")
 
         except Exception as e:
-            print(f"ERROR: Failed to load text embedding model from '{local_model_path}'. The download might be incomplete or corrupted.")
+            print(f"ERROR: Failed to load SigLIP model from '{local_model_path}'. The download might be incomplete or corrupted.")
             print(f"Error details: {e}")
             raise RuntimeError(f"Failed to load required model: {self.model_name}") from e
 
@@ -206,6 +220,8 @@ class TextSearch(BaseSearchEngine):
         else:
             query_embedding_np = query_embedding
         
+        beta = 16.0  # tune (4..20). Higher -> closer to max.
+        
         scores = []
         for file_chunks in file_embeddings:
             if not file_chunks:
@@ -217,8 +233,26 @@ class TextSearch(BaseSearchEngine):
             
             # Use TextEmbedder's compare logic
             chunk_scores = self.embedder.compare(chunk_embeddings_np, query_embedding_np)
-                
-            scores.append(max(chunk_scores) if chunk_scores else 0.0)
+            # scores.append(max(chunk_scores) if chunk_scores else 0.0)
+
+            # Calculate smooth-max-based score for better differentiation (f(a,b) = ln(e^a + e^b) with normalization to avoid large values for files with many chunks)
+            # exp_scores = np.exp(np.array(chunk_scores))
+            # smooth_max_score = np.log(np.sum(exp_scores)  / len(exp_scores))if len(exp_scores) > 0 else 0.0
+
+            # scores.append(smooth_max_score) 
+            chunk_scores = np.array(chunk_scores)
+
+            m = float(chunk_scores.max())
+            x = beta * (chunk_scores - m)
+            x = np.clip(x, -50.0, None)  # prevent underflow
+            lse_centered = np.log(np.exp(x).sum())
+            # Length‑invariant smooth max
+            smooth = m + (lse_centered - np.log(len(chunk_scores))) / beta
+            # scores.append(float(np.clip(smooth, -1.0, 1.0)))
+            scores.append(float(smooth))
+
+
+
             
         return np.array(scores)
     
