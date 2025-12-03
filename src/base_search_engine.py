@@ -238,7 +238,6 @@ class BaseSearchEngine(ABC):
                 except Exception as download_e:
                     print(f"ERROR: Failed to re-download model '{self.model_name}'.")
                     print(f"Error details: {download_e}")
-# ...existing code...
     
     def _get_model_hash_from_instance(self) -> str:
         """

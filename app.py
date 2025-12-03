@@ -240,27 +240,54 @@ def create_route(ext_name):
     return render_template_string(page_template, cfg=cfg, pages=extension_names, current_page=ext_name)
   return extension_route
 
-# Initialize the socket events for each extension
-for extension_name in extension_names:
-    if not os.path.exists(f'pages/{extension_name}/serve.py'):
-        continue
+# # Initialize the socket events for each extension
+# for extension_name in extension_names:
+#     if not os.path.exists(f'pages/{extension_name}/serve.py'):
+#         continue
 
-    serve_module_path = f'pages.{extension_name}.serve'
-    try:
-        module = import_module(serve_module_path)
-        if hasattr(module, 'init_socket_events') and callable(module.init_socket_events):
-            module.init_socket_events(socketio, app=app, cfg=cfg, data_folder=data_folder)
+#     serve_module_path = f'pages.{extension_name}.serve'
+#     try:
+#         module = import_module(serve_module_path)
+#         if hasattr(module, 'init_socket_events') and callable(module.init_socket_events):
+#             module.init_socket_events(socketio, app=app, cfg=cfg, data_folder=data_folder)
 
-            # Create a route for the extension
-            app.add_url_rule(f'/{extension_name}', f'{extension_name}_route', create_route(extension_name))
-        else:
-            print(f"Warning: Module {serve_module_path} does not have a callable init_socket_events function.")
-    except ImportError as e:
-        print(f"Warning: Could not import module {serve_module_path}: {e}")
-        print(traceback.format_exc())
-    except Exception as e:
-        print(f"Error initializing extension {extension_name}: {e}")
-        print(traceback.format_exc())
+#             # Create a route for the extension
+#             app.add_url_rule(f'/{extension_name}', f'{extension_name}_route', create_route(extension_name))
+#         else:
+#             print(f"Warning: Module {serve_module_path} does not have a callable init_socket_events function.")
+#     except ImportError as e:
+#         print(f"Warning: Could not import module {serve_module_path}: {e}")
+#         print(traceback.format_exc())
+#     except Exception as e:
+#         print(f"Error initializing extension {extension_name}: {e}")
+#         print(traceback.format_exc())
+
+def register_extensions(app, socketio, cfg, data_folder):
+    """
+    Registers extensions, routes, and socket events.
+    Must be called inside if __name__ == '__main__' to avoid multiprocessing recursion.
+    """
+    # Initialize the socket events for each extension
+    for extension_name in extension_names:
+        if not os.path.exists(f'pages/{extension_name}/serve.py'):
+            continue
+
+        serve_module_path = f'pages.{extension_name}.serve'
+        try:
+            module = import_module(serve_module_path)
+            if hasattr(module, 'init_socket_events') and callable(module.init_socket_events):
+                module.init_socket_events(socketio, app=app, cfg=cfg, data_folder=data_folder)
+
+                # Create a route for the extension
+                app.add_url_rule(f'/{extension_name}', f'{extension_name}_route', create_route(extension_name))
+            else:
+                print(f"Warning: Module {serve_module_path} does not have a callable init_socket_events function.")
+        except ImportError as e:
+            print(f"Warning: Could not import module {serve_module_path}: {e}")
+            print(traceback.format_exc())
+        except Exception as e:
+            print(f"Error initializing extension {extension_name}: {e}")
+            print(traceback.format_exc())
 
 #### EXPORT DATABASE TO CSV FUNCTIONALITY
 import src.db_models
@@ -412,6 +439,9 @@ def handle_connect():
 #### RUNNING THE APPLICATION
 if __name__ == '__main__':
     print("Starting the application...")
+
+    # Initialize extensions here to prevent recursion in subprocesses
+    register_extensions(app, socketio, cfg, data_folder)
 
     # Initialize the database
     create_db_if_not_exists()

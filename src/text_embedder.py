@@ -1,18 +1,351 @@
 import os
-import torch
-import numpy as np
+import time
 import traceback
-from sentence_transformers import SentenceTransformer
-from huggingface_hub import snapshot_download
-from scipy.spatial.distance import cosine
+import threading
+import multiprocessing
+import queue
+import hashlib
+from typing import Optional, List, Dict, Any
 
-from src.model_manager import ModelManager
+import torch
+
+import numpy as np
+
+# --- The Worker Implementation (Runs in separate process) ---
+
+class _TextEmbedderImpl:
+    """
+    The actual implementation that runs inside the subprocess.
+    It holds the heavy model and CUDA context.
+    """
+    def __init__(self, cfg):
+        # Imports are done here to ensure they happen in the subprocess
+        
+        from sentence_transformers import SentenceTransformer
+        # from src.model_manager import ModelManager
+        
+        self.cfg = cfg
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.model = None
+        self.tokenizer = None
+        self.embedding_dim = None
+        
+        # We don't use ModelManager's idle timeout here because the whole process 
+        # will be killed by the parent when idle.
+        # self._model_manager_cls = ModelManager 
+        self._sentence_transformer_cls = SentenceTransformer
+
+    def initiate(self, models_folder: str):
+        if self.model is not None:
+            return
+
+        model_name = self.cfg.text.embedding_model
+        if not model_name:
+            raise ValueError("cfg.text.embedding_model is not specified.")
+
+        model_folder_name = model_name.replace('/', '__')
+        local_model_path = os.path.join(models_folder, model_folder_name)
+
+        self._ensure_model_downloaded(models_folder, model_name)
+        self._load_model_and_tokenizer(local_model_path)
+        self.model_hash = self._calculate_model_hash()
+
+    def _calculate_model_hash(self) -> str:
+        """
+        Calculates a hash of the model weights to ensure cache validity.
+        """
+        print("TextEmbedder (Worker): Calculating model hash...")
+        try:
+            md5 = hashlib.md5()
+            # Iterate over state_dict to calculate hash based on weights
+            # We sort keys to ensure consistent order
+            for k, v in sorted(self.model.state_dict().items()):
+                md5.update(k.encode('utf-8'))
+                # We hash the shape and a small sample of the tensor to be fast but reasonably safe
+                # Hashing the entire tensor for large LLMs is too slow at startup
+                md5.update(str(v.shape).encode('utf-8'))
+                # Take a slice of the tensor (first 100 elements) for content hashing
+                flat_v = v.view(-1)
+                sample = flat_v[:100].tolist()
+                md5.update(str(sample).encode('utf-8'))
+            
+            return md5.hexdigest()
+        except Exception as e:
+            print(f"Error calculating model hash: {e}")
+            return "unknown_hash"
+
+    def _ensure_model_downloaded(self, models_folder: str, model_name: str):
+        """
+        Ensure the HF model is present locally. If missing, download it.
+        If present but integrity check fails, retry with force_download=True.
+        """
+        from huggingface_hub import snapshot_download
+        from transformers import AutoConfig
+
+        # store model name for other methods (used elsewhere in the worker)
+        self.model_name = model_name
+
+        local_model_path = os.path.join(models_folder, model_name.replace('/', '__'))
+        config_file_path = os.path.join(local_model_path, 'config.json')
+
+        def download(force=False):
+            print(f"{'Re-downloading' if force else 'Downloading'} model '{self.model_name}' to '{local_model_path}'...")
+            snapshot_download(
+                repo_id=self.model_name,
+                local_dir=local_model_path,
+                local_dir_use_symlinks=False,
+                force_download=force,
+                resume_download=True
+            )
+            print(f"Model '{self.model_name}' downloaded successfully.")
+
+        if not os.path.exists(config_file_path):
+            try:
+                download(force=False)
+            except Exception as e:
+                print(f"ERROR: Failed to download model '{self.model_name}'.")
+                print(f"Error details: {e}")
+                raise RuntimeError(f"Failed to download model '{self.model_name}': {e}") from e
+        else:
+            print(f"Found existing model '{self.model_name}' at '{local_model_path}'. Verifying integrity...")
+            try:
+                # Try loading the config as a lightweight integrity check
+                cfg = AutoConfig.from_pretrained(local_model_path, trust_remote_code=True)
+                del cfg
+                print(f"Model '{self.model_name}' integrity check passed.")
+            except Exception as e:
+                print(f"WARNING: Local model at '{local_model_path}' seems corrupted. Re-downloading...")
+                print(f"Integrity check error: {e}")
+                try:
+                    download(force=True)
+                except Exception as download_e:
+                    print(f"ERROR: Failed to re-download model '{self.model_name}'.")
+                    print(f"Error details: {download_e}")
+                    raise RuntimeError(f"Failed to re-download model '{self.model_name}': {download_e}") from download_e
+
+    def _load_model_and_tokenizer(self, local_path: str):
+        try:
+            print("TextEmbedder (Worker): Loading model...")
+            # Load model
+            raw_model = self._sentence_transformer_cls(
+                local_path, 
+                device='cpu', 
+                trust_remote_code=True,
+                tokenizer_kwargs={"fix_mistral_regex": True}
+            )
+            self.tokenizer = raw_model.tokenizer
+            self.embedding_dim = self.cfg.text.embedding_dimension or raw_model.get_sentence_embedding_dimension()
+            
+            # Move to device immediately
+            self.model = raw_model.to(self.device)
+            print(f"TextEmbedder (Worker): Initiated. Embedding dim: {self.embedding_dim} on {self.device}")
+        except Exception as e:
+            raise RuntimeError(f"Failed to load text embedding model from '{local_path}': {e}") from e
+
+    def embed_query(self, query_text: str) -> np.ndarray:
+        if not self.model:
+            raise RuntimeError("TextEmbedder not initiated.")
+        try:
+            embedding = self.model.encode(
+                query_text,
+                task="retrieval.query",
+                truncate_dim=self.cfg.text.embedding_dimension,
+                convert_to_tensor=False,
+                device=self.device
+            )
+            return embedding
+        except Exception as e:
+            print(f"Error embedding query: {e}")
+            traceback.print_exc()
+            return np.array([], dtype=np.float32)
+
+    def embed_text(self, long_text: str) -> np.ndarray:
+        if not self.model or not self.tokenizer:
+            raise RuntimeError("TextEmbedder not initiated.")
+
+        try:
+            # Chunking logic
+            encoding = self.tokenizer(
+                long_text, add_special_tokens=False, truncation=False, return_offsets_mapping=True
+            )
+            tokens = encoding["input_ids"]
+            offsets = encoding["offset_mapping"]
+            
+            chunk_size = self.cfg.text.chunk_size
+            chunk_overlap = self.cfg.text.chunk_overlap
+            
+            chunk_texts = []
+            start_token_idx = 0
+            
+            while start_token_idx < len(tokens):
+                end_token_idx = min(start_token_idx + chunk_size, len(tokens))
+                char_start = offsets[start_token_idx][0]
+                char_end = offsets[end_token_idx - 1][1]
+                chunk_text = long_text[char_start:char_end]
+                chunk_texts.append(chunk_text)
+                
+                next_start_token_idx = start_token_idx + chunk_size - chunk_overlap
+                if next_start_token_idx <= start_token_idx:
+                    next_start_token_idx = start_token_idx + chunk_size
+                if end_token_idx == len(tokens):
+                    break
+                start_token_idx = next_start_token_idx
+
+            if not chunk_texts:
+                return []
+
+            embeddings = self.model.encode(
+                chunk_texts,
+                task="retrieval.passage",
+                truncate_dim=self.cfg.text.embedding_dimension,
+                convert_to_tensor=False,
+                device=self.device
+            )
+            return embeddings
+        except Exception as e:
+            print(f"Error embedding long text: {e}")
+            traceback.print_exc()
+            return []
+
+    def compare(self, text_embeddings: np.ndarray, query_embedding: np.ndarray) -> List[float]:
+        if text_embeddings is None or query_embedding is None or text_embeddings.size == 0 or query_embedding.size == 0:
+            return [0.0]
+        
+        norm_query = query_embedding  / np.linalg.norm(query_embedding, axis=-1, keepdims=True)
+        norm_chunks = text_embeddings  / np.linalg.norm(text_embeddings, axis=-1, keepdims=True)
+        scores = np.dot(norm_chunks, norm_query.T).flatten()
+        return scores.tolist()
+
+    def get_chunk_scores(self, long_text: str, query_text: str) -> Dict[str, float]:
+        # This method requires logic that combines embedding and tokenization.
+        # To keep the worker simple, we can reuse the internal methods.
+        # However, since get_chunk_scores in the original code does complex logic 
+        # with token offsets, we should run that logic here in the worker 
+        # where the tokenizer exists.
+        
+        if not self.model or not self.tokenizer:
+            raise RuntimeError("TextEmbedder not initiated.")
+
+        query_embedding = self.embed_query(query_text)
+        all_chunk_embeddings = self.embed_text(long_text)
+
+        if all_chunk_embeddings is None or len(all_chunk_embeddings) == 0:
+            return {}
+        if query_embedding is None or len(query_embedding) == 0:
+            return {}
+
+        # Re-create offsets (same logic as original)
+        encoding = self.tokenizer(
+            long_text, add_special_tokens=False, truncation=False, return_offsets_mapping=True
+        )
+        tokens = encoding["input_ids"]
+        offsets = encoding["offset_mapping"]
+        
+        chunk_size = self.cfg.text.chunk_size
+        chunk_overlap = self.cfg.text.chunk_overlap
+        
+        chunks_info = []
+        start_token_idx = 0
+        
+        while start_token_idx < len(tokens):
+            end_token_idx = min(start_token_idx + chunk_size, len(tokens))
+            char_start = offsets[start_token_idx][0]
+            char_end = offsets[end_token_idx - 1][1]
+            chunks_info.append({'start_char': char_start, 'end_char': char_end})
+            
+            next_start_token_idx = start_token_idx + chunk_size - chunk_overlap
+            if next_start_token_idx <= start_token_idx:
+                next_start_token_idx = start_token_idx + chunk_size
+            if end_token_idx == len(tokens):
+                break
+            start_token_idx = next_start_token_idx
+
+        all_chunk_scores = self.compare(all_chunk_embeddings, query_embedding)
+        for i, score in enumerate(all_chunk_scores):
+            chunks_info[i]['score'] = score
+
+        segments = {}
+        last_processed_char_index = 0
+
+        for i in range(len(chunks_info)):
+            current_chunk = chunks_info[i]
+            if i + 1 < len(chunks_info):
+                next_chunk = chunks_info[i+1]
+                unique_part_end_char = next_chunk['start_char']
+                if last_processed_char_index < unique_part_end_char:
+                    unique_text = long_text[last_processed_char_index:unique_part_end_char]
+                    if unique_text: segments[unique_text] = current_chunk['score']
+                    last_processed_char_index = unique_part_end_char
+
+                overlap_start_char = next_chunk['start_char']
+                overlap_end_char = current_chunk['end_char']
+                if overlap_start_char < overlap_end_char:
+                    overlap_text = long_text[overlap_start_char:overlap_end_char]
+                    if overlap_text:
+                        averaged_score = (current_chunk['score'] + next_chunk['score']) / 2.0
+                        segments[overlap_text] = averaged_score
+                    last_processed_char_index = overlap_end_char
+            else:
+                final_segment_start_char = last_processed_char_index
+                final_segment_end_char = current_chunk['end_char']
+                if final_segment_start_char < final_segment_end_char:
+                    final_text = long_text[final_segment_start_char:final_segment_end_char]
+                    if final_text: segments[final_text] = current_chunk['score']
+        
+        return segments
+
+
+def _worker_loop(input_queue, output_queue, cfg):
+    """
+    The loop running in the separate process.
+    """
+    # Set the process name for system tools (nvidia-smi, top, ps)
+    import setproctitle
+    setproctitle.setproctitle("Anagnorisis-TextEmbedder")
+
+    try:
+        embedder = _TextEmbedderImpl(cfg)
+        
+        while True:
+            try:
+                # Wait for a command
+                task = input_queue.get()
+                if task is None: # Sentinel to stop
+                    break
+                
+                command, args, kwargs = task
+                
+                if command == 'initiate':
+                    embedder.initiate(*args, **kwargs)
+                    # Return attributes needed by the proxy
+                    result = {
+                        'embedding_dim': embedder.embedding_dim,
+                        'device_type': embedder.device.type,
+                        'model_hash': embedder.model_hash
+                    }
+                    output_queue.put(('success', result))
+                
+                elif hasattr(embedder, command):
+                    method = getattr(embedder, command)
+                    result = method(*args, **kwargs)
+                    output_queue.put(('success', result))
+                else:
+                    output_queue.put(('error', ValueError(f"Unknown command: {command}")))
+                    
+            except Exception as e:
+                traceback.print_exc()
+                output_queue.put(('error', e))
+                
+    except Exception as e:
+        print(f"Critical error in TextEmbedder worker process: {e}")
+        traceback.print_exc()
+
+# --- The Proxy Class (Runs in main process) ---
 
 class TextEmbedder:
     """
-    A singleton class to handle text chunking, embedding, and comparison.
-    It manages a single sentence-transformer model instance using ModelManager
-    for efficient GPU memory usage.
+    A singleton proxy class that manages a subprocess for text embedding.
+    It ensures the subprocess is terminated after a period of inactivity.
     """
     _instance = None
 
@@ -30,275 +363,136 @@ class TextEmbedder:
             raise ValueError("TextEmbedder requires a configuration object (cfg) on first initialization.")
             
         self.cfg = cfg
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        self.model = None
-        self.tokenizer = None
+        self._process = None
+        self._input_queue = None
+        self._output_queue = None
+        self._lock = threading.Lock() # Ensures thread safety for the queue
+        
+        # State mirroring
         self.embedding_dim = None
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu') # Assumption until loaded
+        self.model = "ProxyModel" # Dummy to satisfy checks
+        self.tokenizer = "ProxyTokenizer" # Dummy
+        self._models_folder = None # Stored for re-initiation
+        self.model_hash = None # Mirror hash
+        
+        # Idle management
+        self._last_used_time = 0
+        self._idle_timeout = 120 # seconds
+        self._shutdown_event = threading.Event()
+        self._monitor_thread = threading.Thread(target=self._monitor_idle, daemon=True)
+        self._monitor_thread.start()
+        
         self._initialized = True
 
-    def initiate(self, models_folder: str):
-        """
-        Initializes the embedder by downloading and loading the model.
-        This method is safe to call multiple times.
-        """
-        if self.model is not None:
-            return # Already initiated
+    def _monitor_idle(self):
+        """Background thread to kill the process when idle."""
+        while not self._shutdown_event.is_set():
+            time.sleep(5)
+            with self._lock:
+                if self._process is not None and self._process.is_alive():
+                    if time.time() - self._last_used_time > self._idle_timeout:
+                        print(f"TextEmbedder: Idle for {self._idle_timeout}s. Terminating subprocess to free GPU.")
+                        self._terminate_process()
 
-        model_name = self.cfg.text.embedding_model
-        if not model_name:
-            raise ValueError("cfg.text.embedding_model is not specified.")
-
-        model_folder_name = model_name.replace('/', '__')
-        local_model_path = os.path.join(models_folder, model_folder_name)
-
-        self._ensure_model_downloaded(models_folder, model_name)
-        self._load_model_and_tokenizer(local_model_path)
-
-    def _ensure_model_downloaded(self, models_folder: str, model_name: str):
-        # Define paths for both the main model and its dependency
-        main_model_path = os.path.join(models_folder, model_name.replace('/', '__'))
-        # dependency_repo_id = "jinaai/xlm-roberta-flash-implementation"
-        # dependency_model_path = os.path.join(models_folder, dependency_repo_id.replace('/', '__'))
-
-        # 1. Check and download the main model
-        if not os.path.exists(os.path.join(main_model_path, 'config.json')):
-            print(f"TextEmbedder: Main model '{model_name}' not found locally. Downloading...")
+    def _terminate_process(self):
+        """Terminates the worker process immediately."""
+        if self._process:
+            # Try graceful shutdown first
             try:
-                snapshot_download(
-                    repo_id=model_name,
-                    local_dir=main_model_path,
-                    local_dir_use_symlinks=False,
-                    # revision="f1944de8402dcd5f2b03f822a4bc22a7f2de2eb9"  # Specific commit for consistency
-                )
-                print(f"TextEmbedder: Main model downloaded successfully.")
-            except Exception as e:
-                raise RuntimeError(f"Failed to download main model '{model_name}': {e}") from e
-        else:
-            print(f"TextEmbedder: Found existing main model '{model_name}'.")
+                self._input_queue.put(None)
+                self._process.join(timeout=1)
+            except:
+                pass
+            
+            if self._process.is_alive():
+                print("TextEmbedder: Force killing subprocess...")
+                self._process.terminate()
+                self._process.join()
+            
+            self._process = None
+            self._input_queue = None
+            self._output_queue = None
+            
+            # Force garbage collection in main process just in case
+            import gc
+            gc.collect()
 
-        # # 2. Check and download the dependency model
-        # if not os.path.exists(os.path.join(dependency_model_path, 'config.json')):
-        #     print(f"TextEmbedder: Dependency '{dependency_repo_id}' not found locally. Downloading...")
-        #     try:
-        #         snapshot_download(
-        #             repo_id=dependency_repo_id,
-        #             #local_dir=dependency_model_path,
-        #             local_dir_use_symlinks=False,
-        #             revision="9dc60336f6b2df56c4f094dd287ca49fb7b93342"
-        #         )
-        #         print(f"TextEmbedder: Dependency downloaded successfully.")
-        #     except Exception as e:
-        #         raise RuntimeError(f"Failed to download dependency '{dependency_repo_id}': {e}") from e
-        # else:
-        #     print(f"TextEmbedder: Found existing dependency '{dependency_repo_id}'.")
+    def _ensure_process_running(self):
+        """Starts the process if it's not running."""
+        # Must be called within self._lock
+        self._last_used_time = time.time()
+        
+        if self._process is None or not self._process.is_alive():
+            print("TextEmbedder: Starting worker subprocess...")
+            # Use 'spawn' to avoid CUDA context issues if main process has touched CUDA
+            ctx = multiprocessing.get_context('spawn')
+            self._input_queue = ctx.Queue()
+            self._output_queue = ctx.Queue()
+            
+            self._process = ctx.Process(
+                target=_worker_loop, 
+                args=(self._input_queue, self._output_queue, self.cfg),
+                name="Anagnorisis-TextEmbedder"  # Sets internal Python name
+            )
+            self._process.start()
+            
+            # If we were previously initiated, re-initiate the new process
+            if self._models_folder:
+                print("TextEmbedder: Re-initiating model in new subprocess...")
+                self._send_command_internal('initiate', (self._models_folder,), {})
 
-    def _load_model_and_tokenizer(self, local_path: str):
+    def _send_command_internal(self, command, args, kwargs):
+        """Helper to send command and wait for result. Assumes lock is held."""
+        self._input_queue.put((command, args, kwargs))
+        
         try:
-            print("TextEmbedder: Loading model to CPU before wrapping with ModelManager...")
-            # Load model to CPU first
-            raw_model = SentenceTransformer(
-                local_path, 
-                device='cpu', 
-                trust_remote_code=True,
-                # local_files_only=True,
-                # revision="f1944de8402dcd5f2b03f822a4bc22a7f2de2eb9", 
-            )
-            self.tokenizer = raw_model.tokenizer
-            self.embedding_dim = self.cfg.text.embedding_dimension or raw_model.get_sentence_embedding_dimension()
+            status, result = self._output_queue.get(timeout=300) # 5 min timeout for heavy loads
+        except queue.Empty:
+            self._terminate_process()
+            raise RuntimeError("TextEmbedder subprocess timed out.")
             
-            # Wrap the raw model with ModelManager
-            self.model = ModelManager(raw_model, device=self.device)
-            print(f"TextEmbedder initiated. Embedding dim: {self.embedding_dim}")
-        except Exception as e:
-            raise RuntimeError(f"Failed to load text embedding model from '{local_path}': {e}") from e
+        if status == 'error':
+            raise result
+        return result
 
-    def get_chunk_scores(self, long_text: str, query_text: str) -> dict[str, float]:
-        """
-        Takes a long text and a query, breaks the text into segments (handling overlaps),
-        and returns a dictionary mapping each text segment to its relevance score.
-        Overlapping segments have their scores averaged from the parent chunks.
-        """
-        if not self.model or not self.tokenizer:
-            raise RuntimeError("TextEmbedder not initiated. Call initiate() first.")
+    def _execute(self, command, *args, **kwargs):
+        """Public wrapper to execute commands safely."""
+        with self._lock:
+            self._ensure_process_running()
+            result = self._send_command_internal(command, args, kwargs)
+            self._last_used_time = time.time()
+            return result
 
-        # 1. Embed the query and the text chunks
-        query_embedding = self.embed_query(query_text)
-        all_chunk_embeddings = self.embed_text(long_text)
+    # --- Public Interface matching original TextEmbedder ---
 
-        if all_chunk_embeddings is None or len(all_chunk_embeddings) == 0:
-            return {}
-        
-        if query_embedding is None or len(query_embedding) == 0:
-            return {}
-
-        # 2. Re-create chunk character offsets for segmentation logic.
-        # This is necessary because embed_text only returns embeddings.
-        encoding = self.tokenizer(
-            long_text, add_special_tokens=False, truncation=False, return_offsets_mapping=True
-        )
-        tokens = encoding["input_ids"]
-        offsets = encoding["offset_mapping"]
-        
-        chunk_size = self.cfg.text.chunk_size
-        chunk_overlap = self.cfg.text.chunk_overlap
-        
-        chunks_info = []
-        start_token_idx = 0
-        
-        while start_token_idx < len(tokens):
-            end_token_idx = min(start_token_idx + chunk_size, len(tokens))
-            char_start = offsets[start_token_idx][0]
-            char_end = offsets[end_token_idx - 1][1]
-            
-            chunks_info.append({'start_char': char_start, 'end_char': char_end})
-            
-            next_start_token_idx = start_token_idx + chunk_size - chunk_overlap
-            if next_start_token_idx <= start_token_idx:
-                next_start_token_idx = start_token_idx + chunk_size
-            if end_token_idx == len(tokens):
-                break
-            start_token_idx = next_start_token_idx
-
-        # 3. Calculate scores for each chunk using the compare method
-        all_chunk_scores = self.compare(all_chunk_embeddings, query_embedding)
-        for i, score in enumerate(all_chunk_scores):
-            chunks_info[i]['score'] = score
-
-        # 4. Process segments and calculate final scores using character indices
-        segments = {}
-        last_processed_char_index = 0
-
-        for i in range(len(chunks_info)):
-            current_chunk = chunks_info[i]
-            
-            if i + 1 < len(chunks_info):
-                next_chunk = chunks_info[i+1]
-                unique_part_end_char = next_chunk['start_char']
-                
-                if last_processed_char_index < unique_part_end_char:
-                    unique_text = long_text[last_processed_char_index:unique_part_end_char]
-                    if unique_text:
-                        segments[unique_text] = current_chunk['score']
-                    last_processed_char_index = unique_part_end_char
-
-                overlap_start_char = next_chunk['start_char']
-                overlap_end_char = current_chunk['end_char']
-
-                if overlap_start_char < overlap_end_char:
-                    overlap_text = long_text[overlap_start_char:overlap_end_char]
-                    if overlap_text:
-                        averaged_score = (current_chunk['score'] + next_chunk['score']) / 2.0
-                        segments[overlap_text] = averaged_score
-                    last_processed_char_index = overlap_end_char
-            else:
-                final_segment_start_char = last_processed_char_index
-                final_segment_end_char = current_chunk['end_char']
-                if final_segment_start_char < final_segment_end_char:
-                    final_text = long_text[final_segment_start_char:final_segment_end_char]
-                    if final_text:
-                        segments[final_text] = current_chunk['score']
-        
-        return segments
-
-    def embed_text(self, long_text: str) -> np.ndarray:
-        """
-        Takes a long string of text, splits it into chunks using precise token offsets,
-        and returns a list of embeddings for these chunks.
-        """
-        if not self.model or not self.tokenizer:
-            raise RuntimeError("TextEmbedder not initiated. Call initiate() first.")
-
-        try:
-            # Chunk the long text using offset mapping for perfect reconstruction
-            encoding = self.tokenizer(
-                long_text, 
-                add_special_tokens=False, 
-                truncation=False, 
-                return_offsets_mapping=True
-            )
-            tokens = encoding["input_ids"]
-            offsets = encoding["offset_mapping"]
-            
-            chunk_size = self.cfg.text.chunk_size
-            chunk_overlap = self.cfg.text.chunk_overlap
-            
-            chunk_texts = []
-            start_token_idx = 0
-            
-            while start_token_idx < len(tokens):
-                end_token_idx = min(start_token_idx + chunk_size, len(tokens))
-                
-                char_start = offsets[start_token_idx][0]
-                char_end = offsets[end_token_idx - 1][1]
-                
-                chunk_text = long_text[char_start:char_end]
-                chunk_texts.append(chunk_text)
-                
-                next_start_token_idx = start_token_idx + chunk_size - chunk_overlap
-                if next_start_token_idx <= start_token_idx:
-                    next_start_token_idx = start_token_idx + chunk_size
-                if end_token_idx == len(tokens):
-                    break
-                start_token_idx = next_start_token_idx
-
-            if not chunk_texts:
-                return []
-
-            # Use the managed model instance to get embeddings
-            embeddings = self.model.encode(
-                chunk_texts,
-                task="retrieval.passage",
-                truncate_dim=self.cfg.text.embedding_dimension,
-                convert_to_tensor=False,
-                device=self.device
-            )
-
-            return embeddings
-
-        except Exception as e:
-            print(f"Error embedding long text: {e}")
-            traceback.print_exc()
-            return []
+    def initiate(self, models_folder: str):
+        self._models_folder = models_folder
+        # We execute this to ensure the process starts and loads the model
+        res = self._execute('initiate', models_folder)
+        self.embedding_dim = res['embedding_dim']
+        self.model_hash = res.get('model_hash', 'unknown_hash')
+        # Update device type if needed, though main process usually stays on CPU for this proxy
+        # self.device = torch.device(res['device_type']) 
 
     def embed_query(self, query_text: str) -> np.ndarray:
-        """
-        Takes a short query string and returns a single embedding as a numpy array.
-        """
-        if not self.model:
-            raise RuntimeError("TextEmbedder not initiated. Call initiate() first.")
-        
-        try:
-            embedding = self.model.encode(
-                query_text,
-                task="retrieval.query",
-                truncate_dim=self.cfg.text.embedding_dimension,
-                convert_to_tensor=False,
-                device=self.device
-            )
-            return embedding
-        except Exception as e:
-            print(f"Error embedding query '{query_text}': {e}")
-            traceback.print_exc()
-            dim = self.cfg.text.embedding_dimension or self.embedding_dim
-            return np.zeros((dim,), dtype=np.float32) if dim else np.array([])
+        return self._execute('embed_query', query_text)
 
-    def compare(self, text_embeddings: np.ndarray, query_embedding: np.ndarray) -> list[float]:
-        """
-        Compares a query embedding against an array of text chunk embeddings using
-        a vectorized dot product for fast and faithful similarity calculation.
-        """
-        if text_embeddings is None or query_embedding is None or text_embeddings.size == 0 or query_embedding.size == 0:
-            return [0.0]
+    def embed_text(self, long_text: str) -> np.ndarray:
+        return self._execute('embed_text', long_text)
 
-        # Ensure embeddings are normalized (good practice, though often pre-normalized)
-        # Jina embeddings are already normalized, so this is a safeguard.
-        norm_query = query_embedding  / np.linalg.norm(query_embedding, axis=-1, keepdims=True)
-        norm_chunks = text_embeddings  / np.linalg.norm(text_embeddings, axis=-1, keepdims=True)
+    def compare(self, text_embeddings: np.ndarray, query_embedding: np.ndarray) -> List[float]:
+        # Optimization: If data is small, we could do this in main process, 
+        # but to keep logic consistent and imports clean, we send it to worker.
+        return self._execute('compare', text_embeddings, query_embedding)
 
-        # Perform vectorized dot product
-        # (num_chunks, dim) @ (dim, 1) -> (num_chunks,)
-        scores = np.dot(norm_chunks, norm_query.T).flatten()
-        return scores.tolist()
+    def get_chunk_scores(self, long_text: str, query_text: str) -> Dict[str, float]:
+        return self._execute('get_chunk_scores', long_text, query_text)
+
+    # --- Cleanup ---
+    def __del__(self):
+        self._shutdown_event.set()
+        self._terminate_process()
     
 if __name__ == '__main__':
     from omegaconf import OmegaConf
@@ -345,6 +539,7 @@ if __name__ == '__main__':
     models_path = os.path.abspath(os.path.join(script_dir, '..', 'models'))
     os.makedirs(models_path, exist_ok=True)
     
+    print("Initializing Proxy...")
     embedder = TextEmbedder(cfg=mock_cfg)
     embedder.initiate(models_folder=models_path)
 
@@ -413,3 +608,72 @@ if __name__ == '__main__':
             tofile='reconstructed_text',
         )
         print("Differences found:\n" + ''.join(diff))
+
+    # --- Test Process Lifecycle ---
+    print("\n" + "="*50)
+    print("Testing Process Lifecycle (Idle Timeout & Restart)...")
+    
+    # 1. Get current process info
+    if embedder._process is None:
+        print("❌ Error: Process is None before lifecycle test starts.")
+    else:
+        initial_pid = embedder._process.pid
+        print(f"Current worker PID: {initial_pid}")
+        
+        # 2. Reduce timeout for testing
+        print("Reducing idle timeout to 2 seconds...")
+        embedder._idle_timeout = 2
+        
+        # 3. Wait for timeout
+        # The monitor thread sleeps for 5s, so we need to wait at least that long + buffer
+        print("Waiting for idle timeout (approx 6s)...")
+        time.sleep(6) 
+        
+        # 4. Verify termination
+        if embedder._process is None:
+            print("✅ Worker process reference cleared in proxy.")
+        else:
+            print(f"❌ Worker process reference still exists: {embedder._process}")
+        
+        # Check active children
+        active_children = multiprocessing.active_children()
+        active_pids = [p.pid for p in active_children]
+        
+        if initial_pid not in active_pids:
+            print(f"✅ Old worker process {initial_pid} is no longer active.")
+        else:
+            print(f"❌ Old worker process {initial_pid} is still active (Zombie)!")
+
+        # 5. Trigger restart
+        print("Triggering restart via new query...")
+        embedder.embed_query("Wake up!")
+        
+        if embedder._process is None:
+             print("❌ Failed to restart process.")
+        else:
+            new_pid = embedder._process.pid
+            print(f"New worker PID: {new_pid}")
+            
+            if new_pid != initial_pid:
+                print("✅ New worker process started (PID changed).")
+            else:
+                print("❌ PID did not change (Process might not have restarted).")
+            
+            # 6. Check for duplicates
+            active_children_after = multiprocessing.active_children()
+            print(f"Active child processes: {[p.pid for p in active_children_after]}")
+            
+            # We expect the new_pid to be there
+            if new_pid in [p.pid for p in active_children_after]:
+                print("✅ New worker is in active children.")
+            
+            # Check if we have exactly 1 child (assuming no other multiprocessing usage in this script)
+            if len(active_children_after) == 1:
+                print("✅ Exactly one active child process detected.")
+            elif len(active_children_after) > 1:
+                print(f"⚠️  Warning: {len(active_children_after)} active child processes detected. Potential leak?")
+            else:
+                print("❌ No active children found (unexpected if we just started one).")
+
+    print("Process Lifecycle tests passed.")
+    print("="*50 + "\n")

@@ -53,6 +53,9 @@ Add new downloadable module for 'Deep Research'-like functionality that uses use
 
 ## Versions History
 
+### Version 0.2.15 (?)
+* `TextEmbedder` is now spawned in a separate process to avoid any issue with GPU memory at cleanup time. This simplifies the code, as we no longer need to use `ModelManager` for keeping track of models loaded in CPU/GPU memory. After the idle timeout the whole process is simply terminated, freeing all resources.
+
 ### Version 0.2.14 (30.11.2025)
 *   **Search & Metadata:**
     *   Implemented a smooth maximum formula for `TextSearch` similarity calculations. This prioritizes files with multiple relevant chunks over those with a single high-scoring chunk, improving search relevance.
