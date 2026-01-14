@@ -8,9 +8,9 @@ The project uses [Flask](https://flask.palletsprojects.com/) libraries for backe
 
 
 To read more about the ideas behind the project you can read these articles:  
-[Anagnorisis. Part 1: A Vision for Better Information Management.](https://medium.com/@AlexeyBorsky/anagnorisis-part-1-a-vision-for-better-information-management-5658b6aaffa0)  
-[Anagnorisis. Part 2: The Music Recommendation Algorithm.](https://medium.com/@AlexeyBorsky/anagnorisis-part-2-the-music-recommendation-algorithm-ba5ce7a0fa30)  
-[Anagnorisis. Part 3: Why Should You Go Local?](https://medium.com/@AlexeyBorsky/anagnorisis-part-3-why-should-you-go-local-b68e2b99ff53)  
+[Anagnorisis. Part 1: A Vision for Better Information Management.](https://volotat.github.io/p/anagnorisis-part-1-a-vision-for-better-information-management/)  
+[Anagnorisis. Part 2: The Music Recommendation Algorithm.](https://volotat.github.io/p/anagnorisis-part-2-the-music-recommendation-algorithm/)  
+[Anagnorisis. Part 3: Why Should You Go Local?](https://volotat.github.io/p/anagnorisis-part-3-why-should-you-go-local/)  
 
 ## General
 Here is the main pipeline of working with the project:  
