@@ -53,8 +53,16 @@ Add new downloadable module for 'Deep Research'-like functionality that uses use
 
 ## Versions History
 
-### Version 0.2.15 (?)
-* `TextEmbedder` is now spawned in a separate process to avoid any issue with GPU memory at cleanup time. This simplifies the code, as we no longer need to use `ModelManager` for keeping track of models loaded in CPU/GPU memory. After the idle timeout the whole process is simply terminated, freeing all resources.
+### Version 0.2.15 (15.01.2026)
+*   **Architecture & Process Management:**
+    *   `TextEmbedder` is now spawned in a separate process to avoid GPU memory cleanup issues. This simplifies the codebase by eliminating the need for `ModelManager` to track models loaded in CPU/GPU memory. After the idle timeout expires, the entire process is terminated, freeing all resources automatically.
+*   **Module Initialization & Loading:**
+    *   Module initialization now provides loading status feedback to the UI. A special loading page is displayed while the initialization process is running, showing appropriate status messages until the module is fully ready.
+*   **Music Module:**
+    *   Fixed an issue where errors during song details fetching would clear the entire playlist and reload the page. Songs with errors are now skipped without penalizing their recommendation score, preventing the playlist from being blocked by a single problematic file.
+*   **Images Module:**
+    *   Fixed an issue where search status messages were not being displayed in the UI.
+    *   Fixed a `UNIQUE constraint` error that could occur when updating model ratings if duplicate files were present in the media folder. Duplicates are now properly handled during the rating update process.
 
 ### Version 0.2.14 (30.11.2025)
 *   **Search & Metadata:**

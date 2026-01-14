@@ -57,6 +57,10 @@ from src.metadata_search import MetadataSearch
 # emit_images_page_show_image_metadata_content
 
 def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data'):
+    common_socket_events = CommonSocketEvents(socketio, module_name="images")
+
+    common_socket_events.show_loading_status('Checking media directory configuration...')
+
     if cfg.images.media_directory is None:
         print("Images media folder is not set.")
         media_directory = None
@@ -64,21 +68,26 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
         # media_directory = os.path.join(data_folder, cfg.images.media_directory)
         media_directory = cfg.images.media_directory
     
+    common_socket_events.show_loading_status('Initializing image search engine...')
     images_search_engine = ImageSearch(cfg=cfg)
     images_search_engine.initiate(models_folder=cfg.main.embedding_models_path, cache_folder=cfg.main.cache_path)
 
     # cached_file_hash = images_search_engine.cached_file_hash
     # cached_metadata = images_search_engine.cached_metadata
 
+    common_socket_events.show_loading_status('Initializing image evaluator...')
     image_evaluator = ImageEvaluator() #src.scoring_models.Evaluator(embedding_dim=768)
+
+    common_socket_events.show_loading_status('Loading image evaluator model...')
     image_evaluator.load(os.path.join(cfg.main.personal_models_path, 'image_evaluator.pt'))
 
-    def show_search_status(status):
-        socketio.emit('emit_images_page_show_search_status', status)
+    # def show_search_status(status):
+    #     common_socket_events.show_search_status(status)
+    #     # socketio.emit('emit_images_page_show_search_status', status)
 
     def gather_resolutions(all_files, all_hashes, media_directory):
         resolutions = {}
-        progress_callback = SortingProgressCallback(show_search_status, operation_name="Gathering images resolution") # Create callback
+        progress_callback = SortingProgressCallback(common_socket_events.show_search_status, operation_name="Gathering images resolution") # Create callback
 
         for ind, full_path in enumerate(all_files):
             file_path = os.path.relpath(full_path, media_directory)
@@ -92,11 +101,10 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
             progress_callback(ind + 1, len(all_files)) # Update progress
 
         return resolutions
-    
-    common_socket_events = CommonSocketEvents(socketio)
 
-    embedding_gathering_callback = EmbeddingGatheringCallback(show_search_status)
+    embedding_gathering_callback = EmbeddingGatheringCallback(common_socket_events.show_search_status)
 
+    common_socket_events.show_loading_status('Setting up file manager...')
     images_file_manager = file_manager.FileManager(
         cfg=cfg,
         media_directory=media_directory,
@@ -108,48 +116,78 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
     )
 
     # Create metadata search engine
+    common_socket_events.show_loading_status('Initializing metadata search...')
     metadata_search_engine = MetadataSearch(engine=images_search_engine)
 
     def update_model_ratings(files_list):
-        print(files_list)
+        print(f"Updating model ratings for {len(files_list)} images...")
+
         # filter out files that already have a rating in the DB
-        files_list_hash_map = {file_path: images_search_engine.get_file_hash(file_path) for file_path in files_list}
+        #files_list_hash_map = {file_path: images_search_engine.get_file_hash(file_path) for file_path in files_list}
+
+        files_list_hash_map = {}
+        for ind, file_path in enumerate(files_list):
+            common_socket_events.show_search_status(f"Computing files hashes {ind+1}/{len(files_list)}")
+            file_hash = images_search_engine.get_file_hash(file_path)
+            files_list_hash_map[file_path] = file_hash
+
         hash_list = list(files_list_hash_map.values())
 
-        # Fetch rated images from the database in a single query
-        rated_images_db_items = db_models.ImagesLibrary.query.filter(
-            db_models.ImagesLibrary.hash.in_(hash_list),
-            db_models.ImagesLibrary.model_rating.isnot(None),
-            db_models.ImagesLibrary.model_hash.is_(image_evaluator.hash)
+        # # Fetch rated images from the database in a single query
+        # rated_images_db_items = db_models.ImagesLibrary.query.filter(
+        #     db_models.ImagesLibrary.hash.in_(hash_list),
+        #     db_models.ImagesLibrary.model_rating.isnot(None),
+        #     db_models.ImagesLibrary.model_hash.is_(image_evaluator.hash)
+        # ).all()
+
+        # # Create a list of hashes for rated images
+        # rated_images_hashes = {item.hash for item in rated_images_db_items}
+
+        # Fetch ALL images from the database in a single query (not just rated ones)
+        all_existing_db_items = db_models.ImagesLibrary.query.filter(
+            db_models.ImagesLibrary.hash.in_(hash_list)
         ).all()
 
-        # Create a list of hashes for rated images
-        rated_images_hashes = {item.hash for item in rated_images_db_items}
+        # Create separate sets for existing hashes and those with current model ratings
+        existing_hashes = {item.hash for item in all_existing_db_items}
+        rated_images_hashes = {item.hash for item in all_existing_db_items 
+                            if item.model_rating is not None and item.model_hash == image_evaluator.hash}
 
         # Filter out files that already have a rating in the database
         filtered_files_list = [file_path for file_path, file_hash in files_list_hash_map.items() if file_hash not in rated_images_hashes]
         if not filtered_files_list: return
         
-
         # Rate all images in case they are not rated or model was updated
+        common_socket_events.show_search_status(f"Computing embeddings for {len(filtered_files_list)} files...")
         embeddings = images_search_engine.process_images(filtered_files_list, callback=embedding_gathering_callback, media_folder=media_directory) #.cpu().detach().numpy() 
         model_ratings = image_evaluator.predict(embeddings)
 
         # Update the model ratings in the database
-        show_search_status(f"Updating model ratings of images...") 
+        common_socket_events.show_search_status(f"Updating model ratings of images...") 
         new_items = []
         update_items = []
+        processed_hashes = set()  # Track hashes we've already processed in this batch
+
         for ind, full_path in enumerate(filtered_files_list):
             # print(f"Updating model ratings for {ind+1}/{len(filtered_files_list)} images.")
 
             hash = files_list_hash_map[full_path]
+
+            # Skip if we've already processed this hash in this batch
+            if hash in processed_hashes:
+                continue
+            processed_hashes.add(hash)
+
             model_rating = model_ratings[ind].item()
 
-            image_db_item = db_models.ImagesLibrary.query.filter_by(hash=hash).first()
-            if image_db_item:
-                image_db_item.model_rating = model_rating
-                image_db_item.model_hash = image_evaluator.hash
-                update_items.append(image_db_item)
+            # Check if this hash already exists in DB (avoid UNIQUE constraint error)
+            if hash in existing_hashes:
+                # Update existing record
+                image_db_item = db_models.ImagesLibrary.query.filter_by(hash=hash).first()
+                if image_db_item:
+                    image_db_item.model_rating = model_rating
+                    image_db_item.model_hash = image_evaluator.hash
+                    update_items.append(image_db_item)
             else:
                 image_data = {
                     "hash": hash,
@@ -159,8 +197,10 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
                     "model_hash": image_evaluator.hash
                 }
                 new_items.append(db_models.ImagesLibrary(**image_data))
+                # Add to existing_hashes so subsequent duplicates in this batch are caught
+                existing_hashes.add(hash)
 
-            show_search_status(f"Updated model ratings for {ind+1}/{len(filtered_files_list)} images.")    
+            common_socket_events.show_search_status(f"Updated model ratings for {ind+1}/{len(filtered_files_list)} images.")    
 
         # Bulk update and insert
         if update_items:
@@ -171,6 +211,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
         # Commit the transaction
         db_models.db.session.commit()
 
+    common_socket_events.show_loading_status('Setting up filters and routes...')
     # Create common filters instance
     common_filters = CommonFilters(
         engine=images_search_engine,
@@ -197,7 +238,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
     def get_files(input_data):
         # Define domain specific filters 
         def filter_by_resolution(all_files, text_query):
-            show_search_status(f"Gathering resolutions for sorting...") # Initial status message
+            common_socket_events.show_search_status(f"Gathering resolutions for sorting...") # Initial status message
             all_hashes = [images_search_engine.get_file_hash(file_path) for file_path in all_files]
             resolutions = gather_resolutions(all_files, all_hashes, media_directory)
             # all_files_sorted = sorted(all_files, key=lambda x: resolutions[x][0] * resolutions[x][1])
@@ -205,7 +246,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
             return scores
 
         def filter_by_proportion(all_files, text_query):
-            show_search_status(f"Gathering resolutions for sorting...") # Initial status message
+            common_socket_events.show_search_status(f"Gathering resolutions for sorting...") # Initial status message
             all_hashes = [images_search_engine.get_file_hash(file_path) for file_path in all_files]
             resolutions = gather_resolutions(all_files, all_hashes, media_directory)
             #all_files_sorted = sorted(all_files, key=lambda x: resolutions[x][0] / resolutions[x][1])
@@ -387,8 +428,6 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
             print(f"Read metadata for {file_path}")
         except Exception as e:
             print(f"Error reading metadata for {file_path}: {e}")
-            # Optionally, emit an error status to the frontend
-            socketio.emit('emit_images_page_show_search_status', f"Error reading metadata: {e}")
         
         socketio.emit('emit_images_page_show_image_metadata_content', {"content": content, "file_path": file_path})
 
@@ -433,5 +472,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
             print(f"Saved metadata for {file_path}")
         except Exception as e:
             print(f"Error saving metadata for {file_path}: {e}")
+
+    common_socket_events.show_loading_status('Images module ready!')
 
     

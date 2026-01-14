@@ -62,6 +62,11 @@ def resolve_media_path(media_directory, path):
     return os.path.abspath(os.path.join(media_directory, '..', path))
 
 def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data'):
+    # Create CommonSocketEvents first for status reporting
+    common_socket_events = CommonSocketEvents(socketio, module_name="text")
+    
+    common_socket_events.show_loading_status('Checking media directory configuration...')
+
     if cfg.text.media_directory is None:
         print("Text media folder is not set.")
         media_directory = None
@@ -69,18 +74,21 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
         # media_directory = os.path.join(data_folder, cfg.text.media_directory)
         media_directory = cfg.text.media_directory
 
+    common_socket_events.show_loading_status('Initializing text search engine...')
     text_search_engine = TextSearch(cfg=cfg)
+
+    common_socket_events.show_loading_status('Loading embedding models...')
     text_search_engine.initiate(models_folder=cfg.main.embedding_models_path, cache_folder=cfg.main.cache_path)
 
     # cached_file_hash = text_search_engine.cached_file_hash
     # cached_metadata = text_search_engine.cached_metadata
 
+    common_socket_events.show_loading_status('Initializing text evaluator...')
     text_evaluator = TextEvaluator(embedding_dim=text_search_engine.embedding_dim)
-
-    common_socket_events = CommonSocketEvents(socketio)
 
     embedding_gathering_callback = EmbeddingGatheringCallback(common_socket_events.show_search_status)
 
+    common_socket_events.show_loading_status('Setting up file manager...')
     text_file_manager = file_manager.FileManager(
         cfg=cfg,
         media_directory=media_directory,
@@ -92,6 +100,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
     )
 
     # Create metadata search engine
+    common_socket_events.show_loading_status('Initializing metadata search...')
     metadata_search_engine = MetadataSearch(engine=text_search_engine)
 
     def update_model_ratings(files_list):
@@ -159,6 +168,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
         # Commit the transaction
         db_models.db.session.commit()
 
+    common_socket_events.show_loading_status('Setting up filters and routes...')
     # Create common filters instance
     common_filters = CommonFilters(
         engine=text_search_engine,
@@ -256,3 +266,6 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
 
         media_directory = os.path.join(data_folder, cfg.text.media_directory)
         socketio.emit('emit_text_page_show_path_to_media_folder', cfg.text.media_directory)
+
+
+    common_socket_events.show_loading_status('Text module ready!')

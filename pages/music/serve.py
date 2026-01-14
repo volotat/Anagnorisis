@@ -47,6 +47,10 @@ from src.metadata_search import MetadataSearch
 # emit_music_page_show_path_to_media_folder
 
 def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data'):
+  common_socket_events = CommonSocketEvents(socketio, module_name="music")
+
+  common_socket_events.show_loading_status('Checking media directory configuration...')
+
   if cfg.music.media_directory is None:
     print("Music media folder is not set.")
     media_directory = None
@@ -56,23 +60,29 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
 
   print('Music media_directory:', media_directory)
 
+  common_socket_events.show_loading_status('Initializing music search engine...')
   music_search_engine = MusicSearch(cfg=cfg) 
+
+  common_socket_events.show_loading_status('Loading audio embedding models...')
   music_search_engine.initiate(models_folder=cfg.main.embedding_models_path, cache_folder=cfg.main.cache_path)
 
   # cached_file_hash = music_search_engine.cached_file_hash
   # cached_metadata = music_search_engine.cached_metadata
 
+  common_socket_events.show_loading_status('Initializing music evaluator...')
   music_evaluator = MusicEvaluator(embedding_dim=music_search_engine.embedding_dim) #src.scoring_models.Evaluator(embedding_dim=768)
 
+  common_socket_events.show_loading_status('Loading music evaluator model...')
   print('Loading music evaluator model from', os.path.join(cfg.main.personal_models_path, 'music_evaluator.pt'))
   music_evaluator.load(os.path.join(cfg.main.personal_models_path, 'music_evaluator.pt'))
 
-  common_socket_events = CommonSocketEvents(socketio)
+  
   # def show_search_status(status):
   #   socketio.emit('emit_music_page_show_search_status', status)
 
   embedding_gathering_callback = EmbeddingGatheringCallback(common_socket_events.show_search_status)
 
+  common_socket_events.show_loading_status('Setting up file manager...')
   music_file_manager = file_manager.FileManager(
     cfg=cfg,
     media_directory=media_directory,
@@ -84,6 +94,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
   )
 
   # Create metadata search engine
+  common_socket_events.show_loading_status('Initializing metadata search...')
   metadata_search_engine = MetadataSearch(engine=music_search_engine)
 
   # def show_search_status(status):
@@ -97,7 +108,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
 
     files_list_hash_map = {}
     for ind, file_path in enumerate(files_list):
-        common_socket_events.show_search_status(f"Filtering by recommendation: computing files hashes {ind+1}/{len(files_list)}")
+        common_socket_events.show_search_status(f"Computing files hashes {ind+1}/{len(files_list)}")
         file_hash = music_search_engine.get_file_hash(file_path)
         files_list_hash_map[file_path] = file_hash
 
@@ -168,6 +179,8 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
       db_schema=db_models.MusicLibrary,
       update_model_ratings_func=update_model_ratings
   )
+
+  common_socket_events.show_loading_status('Setting up filters and routes...')
 
   # necessary to allow web application access to music files
   @app.route('/music_files/<path:filename>')
@@ -440,3 +453,5 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
       full_path = os.path.join(media_directory, file_path)
       content = metadata_search_engine.generate_full_description(full_path, media_directory)
       return {"content": content, "file_path": file_path}
+
+  common_socket_events.show_loading_status('Music module ready!')

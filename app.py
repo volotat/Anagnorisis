@@ -18,6 +18,7 @@ import os
 
 from flask_sqlalchemy import SQLAlchemy
 from importlib import import_module
+from contextlib import contextmanager
 
 from src.db_models import db
 from src.config_loader import load_config
@@ -30,6 +31,8 @@ import shutil
 
 import traceback
 import time
+
+import threading
 
 # def parse_arguments():
 #     parser = argparse.ArgumentParser(description='Anagnorisis Application')
@@ -262,32 +265,147 @@ def create_route(ext_name):
 #         print(f"Error initializing extension {extension_name}: {e}")
 #         print(traceback.format_exc())
 
-def register_extensions(app, socketio, cfg, data_folder):
-    """
-    Registers extensions, routes, and socket events.
-    Must be called inside if __name__ == '__main__' to avoid multiprocessing recursion.
-    """
-    # Initialize the socket events for each extension
-    for extension_name in extension_names:
-        if not os.path.exists(f'pages/{extension_name}/serve.py'):
-            continue
+# def register_extensions(app, socketio, cfg, data_folder):
+#     """
+#     Registers extensions, routes, and socket events.
+#     Must be called inside if __name__ == '__main__' to avoid multiprocessing recursion.
+#     """
+#     # Initialize the socket events for each extension
+#     for extension_name in extension_names:
+#         if not os.path.exists(f'pages/{extension_name}/serve.py'):
+#             continue
 
-        serve_module_path = f'pages.{extension_name}.serve'
+#         serve_module_path = f'pages.{extension_name}.serve'
+#         try:
+#             module = import_module(serve_module_path)
+#             if hasattr(module, 'init_socket_events') and callable(module.init_socket_events):
+#                 module.init_socket_events(socketio, app=app, cfg=cfg, data_folder=data_folder)
+
+#                 # Create a route for the extension
+#                 app.add_url_rule(f'/{extension_name}', f'{extension_name}_route', create_route(extension_name))
+#             else:
+#                 print(f"Warning: Module {serve_module_path} does not have a callable init_socket_events function.")
+#         except ImportError as e:
+#             print(f"Warning: Could not import module {serve_module_path}: {e}")
+#             print(traceback.format_exc())
+#         except Exception as e:
+#             print(f"Error initializing extension {extension_name}: {e}")
+#             print(traceback.format_exc())
+
+
+# Global state to track module readiness
+MODULE_STATUS = {name: False for name in extension_names}
+
+@contextmanager
+def allow_route_modifications(app):
+    """
+    Context manager to temporarily allow route registration after the app has started.
+    This bypasses Flask's safety check to allow background initialization of modules
+    that contain @app.route decorators.
+    """
+    # We monkey-patch the internal check method to do nothing temporarily
+    if hasattr(app, '_check_setup_finished'):
+        original_check = app._check_setup_finished
+        # Replace with a no-op lambda
+        app._check_setup_finished = lambda *args, **kwargs: None
         try:
+            yield
+        finally:
+            # Restore the original check
+            app._check_setup_finished = original_check
+    else:
+        # Fallback for older Flask versions or if internal API changes
+        yield
+
+def create_real_route(ext_name):
+    """Returns the actual extension route function."""
+    def extension_route():
+        with open(f'pages/{ext_name}/page.html', 'r') as f:
+            page_content = f.read()
+        page_template = """
+        {% extends "base.html"%}
+        {% block content %}
+        """ + page_content + """
+        {% endblock %}
+        """
+        return render_template_string(page_template, cfg=cfg, pages=extension_names, current_page=ext_name)
+    return extension_route
+
+def background_init_extension(app, socketio, cfg, data_folder, ext_name):
+    """Initializes a single extension in the background."""
+    print(f"[{ext_name}] Starting background initialization...")
+
+    # Emit initial status
+    socketio.emit('emit_loading_status', {
+        'module': ext_name,
+        'status': 'Starting initialization...'
+    })
+    
+    serve_module_path = f'pages.{ext_name}.serve'
+    try:
+        # Use app_context for the import as well
+        with app.app_context():
+            socketio.emit('emit_loading_status', {
+                'module': ext_name,
+                'status': 'Loading module...'
+            })
+            
             module = import_module(serve_module_path)
             if hasattr(module, 'init_socket_events') and callable(module.init_socket_events):
-                module.init_socket_events(socketio, app=app, cfg=cfg, data_folder=data_folder)
-
-                # Create a route for the extension
-                app.add_url_rule(f'/{extension_name}', f'{extension_name}_route', create_route(extension_name))
+                # This is the heavy blocking call.
+                # We wrap it to allow it to register routes even though the app is running.
+                with allow_route_modifications(app):
+                    module.init_socket_events(socketio, app=app, cfg=cfg, data_folder=data_folder)
             else:
-                print(f"Warning: Module {serve_module_path} does not have a callable init_socket_events function.")
-        except ImportError as e:
-            print(f"Warning: Could not import module {serve_module_path}: {e}")
-            print(traceback.format_exc())
-        except Exception as e:
-            print(f"Error initializing extension {extension_name}: {e}")
-            print(traceback.format_exc())
+                print(f"[{ext_name}] Warning: No init_socket_events found.")
+            
+        print(f"[{ext_name}] Initialization complete.")
+        MODULE_STATUS[ext_name] = True
+        
+        # Notify any clients waiting on the loading screen
+        socketio.emit(f'module_ready_{ext_name}', {'status': 'ready'})
+        
+    except Exception as e:
+        print(f"[{ext_name}] Error initializing: {e}")
+        traceback.print_exc()
+        # Emit error to the loading screen so the user sees it
+        socketio.emit('emit_show_search_status', f"Error initializing {ext_name}: {str(e)}")
+
+def register_extensions_async(app, socketio, cfg, data_folder):
+    """
+    Registers routes immediately with a wrapper.
+    Starts initialization in a SINGLE background thread to avoid import race conditions.
+    """
+    # Filter valid extensions first
+    valid_extensions = []
+    for extension_name in extension_names:
+        if os.path.exists(f'pages/{extension_name}/serve.py'):
+            valid_extensions.append(extension_name)
+
+    # 1. Register wrappers for all valid extensions
+    for extension_name in valid_extensions:
+        # We bind extension_name as a default arg to capture it in the closure
+        def view_wrapper(name=extension_name):
+            if not MODULE_STATUS.get(name, False):
+                return render_template('loading.html', module_name=name)
+            else:
+                # Render the actual page content
+                return create_real_route(name)()
+
+        # Register the URL rule immediately
+        app.add_url_rule(f'/{extension_name}', f'{extension_name}_route', view_wrapper)
+
+    # 2. Define a sequential initialization function
+    def sequential_initializer():
+        print("Starting sequential initialization of extensions...")
+        # Give the server a moment to fully start up
+        time.sleep(1)
+        for extension_name in valid_extensions:
+            background_init_extension(app, socketio, cfg, data_folder, extension_name)
+        print("All extensions initialized.")
+
+    # 3. Start the SINGLE background task
+    socketio.start_background_task(sequential_initializer)   
 
 #### EXPORT DATABASE TO CSV FUNCTIONALITY
 import src.db_models
@@ -441,13 +559,16 @@ if __name__ == '__main__':
     print("Starting the application...")
 
     # Initialize extensions here to prevent recursion in subprocesses
-    register_extensions(app, socketio, cfg, data_folder)
+    # register_extensions(app, socketio, cfg, data_folder)
 
     # Initialize the database
     create_db_if_not_exists()
 
     # Migrate the database if necessary
     migrate_database()
+
+    # Register extensions asynchronously
+    register_extensions_async(app, socketio, cfg, data_folder)
 
     # Start the log watcher in a background thread
     socketio.start_background_task(log_streamer.watch)

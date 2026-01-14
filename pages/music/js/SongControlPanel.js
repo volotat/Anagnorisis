@@ -155,13 +155,12 @@ class SongControlPanel {
           })
           .catch((error) => {
             console.error("Failed to fetch song details:", error);
-            this.songLabelElement.text("Error loading song details. Clearing playlist...");
+            this.songLabelElement.text("Error loading song details. Skipping to next song...");
 
-            // Clean playlist and refresh the page.
+            // Skip to the next song without penalizing the score
             setTimeout(() => {
-                this.playlistManager.clearPlaylist();
-                location.reload();
-            }, 3000);
+                this.nextSong(false, false);
+            }, 1000);
           });
     }
 
@@ -211,9 +210,9 @@ class SongControlPanel {
         }
     }
 
-    nextSong(has_ended = false) {
+    nextSong(has_ended = false, update_score = true) {
         const songControlPanel = this;
-        if (this.currentSongHash != null) {
+        if (this.currentSongHash != null && update_score) {
             if (has_ended)
                 this.socket.emit('emit_music_page_set_song_play_rate', {
                     "hash": songControlPanel.currentSongHash, 

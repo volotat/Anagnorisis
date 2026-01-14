@@ -76,6 +76,10 @@ def generate_preview(video_path, preview_path):
 
 
 def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data'):
+    common_socket_events = CommonSocketEvents(socketio, module_name="videos")
+
+    common_socket_events.show_loading_status('Checking media directory configuration...')
+
     if cfg.videos.media_directory is None:
         print("Videos media folder is not set.")
         media_directory = None
@@ -88,17 +92,20 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
             print(f"Warning: Videos media directory '{os.path.join(data_folder, cfg.videos.media_directory)}' does not exist. Setting media folder to None.")
             media_directory = None
 
+    common_socket_events.show_loading_status('Setting up video file routes...')
     # necessary to allow web application access to music files
     @app.route('/video_files/<path:filename>')
     def serve_video_files(filename):
         nonlocal media_directory
         return send_from_directory(media_directory, filename)
   
+    common_socket_events.show_loading_status('Initializing video search engine...')
     videos_search_engine = VideoSearch(cfg=cfg)
+
+    common_socket_events.show_loading_status('Loading video embedding models...')
     videos_search_engine.initiate(models_folder=cfg.main.embedding_models_path, cache_folder=cfg.main.cache_path) # Needs actual models path
 
-    common_socket_events = CommonSocketEvents(socketio)
-
+    common_socket_events.show_loading_status('Setting up file manager...')
     videos_file_manager = file_manager.FileManager(
             cfg=cfg,
             media_directory=media_directory,
@@ -110,6 +117,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
         )
     
     # Create metadata search engine
+    common_socket_events.show_loading_status('Initializing metadata search...')
     metadata_search_engine = MetadataSearch(engine=videos_search_engine)
   
     def update_model_ratings(files_list):
@@ -200,6 +208,9 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
 
         # # Commit the transaction
         # db_models.db.session.commit()
+
+
+    common_socket_events.show_loading_status('Setting up filters and routes...')
 
     # Create common filters instance
     common_filters = CommonFilters(
@@ -684,3 +695,5 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
     cleanup_thread = threading.Thread(target=cleanup_old_transcodings)
     cleanup_thread.daemon = True
     cleanup_thread.start()
+
+    common_socket_events.show_loading_status('Videos module ready!')

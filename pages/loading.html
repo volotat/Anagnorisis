@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Initializing {{ module_name }}...</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <style>
+        body { 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            min-height: 100vh; 
+            background-color: #f5f5f5; 
+            padding: 2rem;
+        }
+        .loader-container { 
+            width: 100%; 
+            max-width: 800px; 
+            text-align: center; 
+            padding: 2rem; 
+            background: white; 
+            border-radius: 8px; 
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1); 
+        }
+        .module-status {
+            margin-top: 1.5rem;
+            text-align: left;
+        }
+        .module-item {
+            padding: 0.75rem;
+            margin-bottom: 0.5rem;
+            border-radius: 4px;
+            background: #f5f5f5;
+            transition: background-color 0.3s;
+        }
+        .module-item.active {
+            background: #e3f2fd;
+            border-left: 4px solid #2196F3;
+        }
+        .module-item.complete {
+            background: #e8f5e9;
+            border-left: 4px solid #4CAF50;
+        }
+        .module-item.current {
+            background: #fff3e0;
+            border-left: 4px solid #FF9800;
+        }
+        .module-name {
+            font-weight: bold;
+            text-transform: capitalize;
+            margin-bottom: 0.25rem;
+        }
+        .module-status-text {
+            font-size: 0.875rem;
+            color: #666;
+            font-family: 'Courier New', monospace;
+        }
+        .status-icon {
+            display: inline-block;
+            margin-right: 0.5rem;
+        }
+        .spinner {
+            display: inline-block;
+            width: 1rem;
+            height: 1rem;
+            border: 2px solid #f3f3f3;
+            border-top: 2px solid #3498db;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="loader-container">
+        <h1 class="title is-4">Initializing Application</h1>
+        <p class="subtitle is-6">Loading modules and establishing database connections...</p>
+        
+        <progress class="progress is-info" max="100" id="overall-progress"></progress>
+        
+        <div class="module-status" id="module-status">
+            <!-- Module status items will be added here dynamically -->
+        </div>
+        
+        <div class="box has-background-light" style="margin-top: 1.5rem;">
+            <code id="status-text" class="is-size-7">Waiting for server...</code>
+        </div>
+    </div>
+
+    <script>
+        const socket = io({path: '/socket.io'});
+        const statusText = document.getElementById('status-text');
+        const moduleStatusContainer = document.getElementById('module-status');
+        const overallProgress = document.getElementById('overall-progress');
+        
+        // Track module statuses
+        const moduleStatuses = {};
+        const moduleOrder = ['text', 'music', 'images', 'videos', 'train']; // Expected modules
+        let completedModules = 0;
+
+        socket.on('connect', () => {
+            console.log('Connected to status stream');
+            statusText.innerText = 'Connected to server, waiting for initialization...';
+        });
+
+        // Listen for module-specific loading status
+        socket.on('emit_loading_status', (data) => {
+            const { module, status } = data;
+            
+            // Update status text
+            statusText.innerText = `[${module}] ${status}`;
+            
+            // Update or create module status element
+            if (!moduleStatuses[module]) {
+                moduleStatuses[module] = {
+                    element: createModuleElement(module),
+                    status: 'initializing'
+                };
+                moduleStatusContainer.appendChild(moduleStatuses[module].element);
+            }
+            
+            updateModuleStatus(module, status);
+            updateOverallProgress();
+        });
+
+        // Listen for the general search status (fallback)
+        socket.on('emit_show_search_status', (msg) => {
+            statusText.innerText = msg;
+        });
+
+        // Listen for module ready event
+        socket.on('module_ready_{{ module_name }}', () => {
+            const moduleName = '{{ module_name }}';
+            if (moduleStatuses[moduleName]) {
+                moduleStatuses[moduleName].status = 'complete';
+                moduleStatuses[moduleName].element.classList.remove('active', 'current');
+                moduleStatuses[moduleName].element.classList.add('complete');
+                const statusIcon = moduleStatuses[moduleName].element.querySelector('.status-icon');
+                statusIcon.innerHTML = '✓';
+                const statusTextEl = moduleStatuses[moduleName].element.querySelector('.module-status-text');
+                statusTextEl.innerText = 'Initialization complete';
+            }
+            
+            completedModules++;
+            updateOverallProgress();
+            
+            // If this is the current page's module, reload
+            setTimeout(() => {
+                location.reload();
+            }, 1000);
+        });
+
+        function createModuleElement(moduleName) {
+            const div = document.createElement('div');
+            div.className = 'module-item active';
+            div.innerHTML = `
+                <div class="module-name">
+                    <span class="status-icon"><div class="spinner"></div></span>
+                    ${moduleName}
+                </div>
+                <div class="module-status-text">Initializing...</div>
+            `;
+            return div;
+        }
+
+        function updateModuleStatus(moduleName, status) {
+            if (!moduleStatuses[moduleName]) return;
+            
+            const item = moduleStatuses[moduleName];
+            const statusTextEl = item.element.querySelector('.module-status-text');
+            statusTextEl.innerText = status;
+            
+            // Highlight current module
+            item.element.classList.remove('current');
+            if (moduleName === '{{ module_name }}') {
+                item.element.classList.add('current');
+            }
+        }
+
+        function updateOverallProgress() {
+            // const totalModules = Math.max(Object.keys(moduleStatuses).length, moduleOrder.length);
+            // if (totalModules > 0) {
+            //     const progress = (completedModules / totalModules) * 100;
+            //     overallProgress.value = progress;
+            // }
+        }
+    </script>
+</body>
+</html>
