@@ -5,6 +5,7 @@ import threading, time
 # Global shared state across all CommonSocketEvents instances
 _GLOBAL_LOCK = threading.Lock()
 _GLOBAL_PER_SID = {}  # sid -> {'last': float, 'timer': threading.Timer|None, 'pending': str|None}
+_GLOBAL_MODULE_STATUS = {}  # module_name -> {'status': str, 'timestamp': float}
 
 class CommonSocketEvents:
     def __init__(self, socketio: SocketIO, module_name: str = ""):
@@ -78,10 +79,23 @@ class CommonSocketEvents:
         else:
             _module_name = module_name
 
+        # Store current status for this module
+        with _GLOBAL_LOCK:
+            _GLOBAL_MODULE_STATUS[_module_name] = {
+                'status': status,
+                'timestamp': time.time()
+            }
+
         self.socketio.emit('emit_loading_status', {
             'module': _module_name,
             'status': status
         })
+    
+    @staticmethod
+    def get_all_module_statuses():
+        """Get current status of all modules (for new connections)."""
+        with _GLOBAL_LOCK:
+            return dict(_GLOBAL_MODULE_STATUS)
 
     @staticmethod
     def cleanup_sid(sid: str):

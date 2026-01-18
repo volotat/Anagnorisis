@@ -362,6 +362,12 @@ def background_init_extension(app, socketio, cfg, data_folder, ext_name):
         print(f"[{ext_name}] Initialization complete.")
         MODULE_STATUS[ext_name] = True
         
+        # Emit final status update (this gets stored in _GLOBAL_MODULE_STATUS)
+        socketio.emit('emit_loading_status', {
+            'module': ext_name,
+            'status': 'Initialization complete'
+        })
+        
         # Notify any clients waiting on the loading screen
         socketio.emit(f'module_ready_{ext_name}', {'status': 'ready'})
         
@@ -548,11 +554,25 @@ log_file_name = f"{container_name}_log.txt"
 log_file_path = os.path.join(script_folder, 'logs', log_file_name)
 log_streamer = LogStreamer(socketio, log_file_path)
 
+from pages.socket_events import CommonSocketEvents
+
 @socketio.on('connect')
 def handle_connect():
-    """Send full log history to a client when they connect."""
-    from flask import request
+    """Send full log history and current module loading status to a client when they connect."""
+    
+    # Send log history
     log_streamer.send_history(request.sid)
+    
+    # Send current module loading statuses
+    module_statuses = CommonSocketEvents.get_all_module_statuses()
+    for module_name, status_info in module_statuses.items():
+        socketio.emit('emit_loading_status', {
+            'module': module_name,
+            'status': status_info['status']
+        }, room=request.sid)
+
+        # print(f"Sent loading status for module {module_name} to client {request.sid}")
+        # print(f"Status: {status_info['status']}")
 
 #### RUNNING THE APPLICATION
 if __name__ == '__main__':

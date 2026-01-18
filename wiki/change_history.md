@@ -53,6 +53,17 @@ Add new downloadable module for 'Deep Research'-like functionality that uses use
 
 ## Versions History
 
+### Version 0.3.0 (19.01.2026)
+*   **File Management & Database:**
+    *   Moving files between folders is now fully supported in the `Images` module. When a file is moved, its database entry is updated to reflect the new path, ensuring that all associated metadata and embeddings remain intact. This prevents duplication of entries and maintains data integrity. Both full destination paths on the host system and Docker container paths are correctly handled. External meta files (`{file}.meta`) are also moved accordingly as well.
+    *   Fixed an issue in `FileManager` where old data might be returned when files were moved between folders. The file list is now properly refreshed after such operations to ensure accurate display of current files and folder structure.
+*   **Module Initialization & Loading:**
+    *   Current initialization status of all modules is now sent to the client at each `socketio` connection. This ensures that if the client refreshes the page during initialization, it will still receive accurate status updates.
+*   **System & Architecture:**
+    *   Fixed an issue in `TextEmbedder` where process termination could lead to model downloading process being interrupted, resulting in model corruption. The model downloading process is now properly handled and no process is terminated until crucial operations are completed.
+*   **Testing & Quality Assurance:**
+    *   Thoroughly tested the application from complete fresh install with full initialization and usage of all modules to ensure stability and correctness of the initialization processes.
+
 ### Version 0.2.15 (15.01.2026)
 *   **Architecture & Process Management:**
     *   `TextEmbedder` is now spawned in a separate process to avoid GPU memory cleanup issues. This simplifies the codebase by eliminating the need for `ModelManager` to track models loaded in CPU/GPU memory. After the idle timeout expires, the entire process is terminated, freeing all resources automatically.

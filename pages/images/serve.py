@@ -68,6 +68,59 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
         # media_directory = os.path.join(data_folder, cfg.images.media_directory)
         media_directory = cfg.images.media_directory
     
+    # TODO: Remove this hack from the codebase and create a proper file-manager system
+
+    # Check if running in Docker
+    is_docker = os.environ.get('RUNNING_IN_DOCKER', 'false').lower() == 'true'
+    
+    # Define Docker volume mappings (host -> container)
+    docker_volume_mappings = {
+        '/mnt/media/images': os.environ.get('IMAGES_MODULE_DATA_PATH', './media/Images'),
+        '/mnt/media/music': os.environ.get('MUSIC_MODULE_DATA_PATH', './media/Music'),
+        '/mnt/media/text': os.environ.get('TEXT_MODULE_DATA_PATH', './media/Text'),
+        '/mnt/media/videos': os.environ.get('VIDEOS_MODULE_DATA_PATH', './media/Videos'),
+        '/mnt/project_config': os.environ.get('PROJECT_CONFIG_FOLDER_PATH', './project_config')
+    }
+    
+    def convert_host_path_to_container(host_path):
+        """Convert a host path to its equivalent Docker container path."""
+        if not is_docker:
+            return host_path  # No conversion needed if not in Docker
+        
+        # Normalize the host path
+        host_path = os.path.abspath(host_path)
+        
+        # Check each volume mapping
+        for container_path, host_volume in docker_volume_mappings.items():
+            host_volume = os.path.abspath(host_volume)
+            
+            # Check if the host path is within this volume
+            if host_path.startswith(host_volume + os.sep) or host_path == host_volume:
+                # Convert to container path
+                relative_path = os.path.relpath(host_path, host_volume)
+                if relative_path == '.':
+                    return container_path
+                return os.path.join(container_path, relative_path)
+        
+        # Path is not in any shared volume
+        raise ValueError(f"Path '{host_path}' is not accessible from Docker container. Only paths within shared volumes are allowed.")
+    
+    def convert_container_path_to_host(container_path):
+        """Convert a container path to its equivalent host path (for informational purposes)."""
+        if not is_docker:
+            return container_path
+        
+        container_path = os.path.abspath(container_path)
+        
+        for container_volume, host_path in docker_volume_mappings.items():
+            if container_path.startswith(container_volume + os.sep) or container_path == container_volume:
+                relative_path = os.path.relpath(container_path, container_volume)
+                if relative_path == '.':
+                    return os.path.abspath(host_path)
+                return os.path.join(os.path.abspath(host_path), relative_path)
+        
+        return container_path
+    
     common_socket_events.show_loading_status('Initializing image search engine...')
     images_search_engine = ImageSearch(cfg=cfg)
     images_search_engine.initiate(models_folder=cfg.main.embedding_models_path, cache_folder=cfg.main.cache_path)
@@ -308,53 +361,192 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
 
     @socketio.on('emit_images_page_move_files')
     def move_files(data):
-        files = data['files']
-        target_folder = data['target_folder']
-
-        for file_path in files:
-            target_path = os.path.join(target_folder, os.path.basename(file_path))
-
-            # Check if the target path already exists add a suffix if necessary
-            if os.path.exists(target_path):
-                # If it is the same file, skip
-                if os.path.samefile(file_path, target_path):
-                    continue
-
-                file_name, file_extension = os.path.splitext(target_path)
-                counter = 1
-                new_file_name = f"{file_name}_{counter}{file_extension}"
-                while os.path.exists(new_file_name):
-                    counter += 1
-                    new_file_name = f"{file_name}_{counter}{file_extension}"
-                target_path = new_file_name
-
-            os.rename(file_path, target_path)
+        """
+        Move selected files to a target folder with automatic path conversion.
+        
+        This function handles moving files between folders with the following features:
+        - Automatic conversion from host paths to Docker container paths
+        - Validation that paths are within allowed Docker volumes
+        - Automatic creation of target folder if it doesn't exist
+        - Conflict resolution by adding numeric suffixes to duplicate filenames
+        - Automatic moving of associated .meta files alongside the main files
+        - Database update for moved files
+        - Progress reporting and comprehensive error handling
+        
+        Args:
+            data (dict): Contains 'files' (list of file paths) and 'target_folder' (destination path)
+            
+        Emits:
+            - emit_images_page_show_error: On validation or critical errors
+            - emit_images_page_move_complete: On successful completion with results
+            - emit_show_search_status: Progress updates during move operation
+        """
+        try:
+            files = data['files']
+            target_folder = data['target_folder']
+            
+            if not files:
+                socketio.emit('emit_images_page_show_error', {'message': 'No files selected to move.'})
+                return
+            
+            # Convert host path to container path if needed
+            try:
+                target_folder_container = convert_host_path_to_container(target_folder)
+            except ValueError as e:
+                socketio.emit('emit_images_page_show_error', {'message': str(e)})
+                return
+            
+            # Validate target folder exists
+            if not os.path.exists(target_folder_container):
+                try:
+                    os.makedirs(target_folder_container, exist_ok=True)
+                    print(f"Created target folder: {target_folder_container}")
+                except Exception as e:
+                    socketio.emit('emit_images_page_show_error', {
+                        'message': f"Failed to create target folder: {str(e)}"
+                    })
+                    return
+            
+            if not os.path.isdir(target_folder_container):
+                socketio.emit('emit_images_page_show_error', {
+                    'message': f"Target path '{target_folder}' is not a directory."
+                })
+                return
+            
+            moved_count = 0
+            errors = []
+            
+            for idx, file_path in enumerate(files):
+                try:
+                    # Show progress
+                    common_socket_events.show_search_status(f"Moving file {idx + 1}/{len(files)}: {os.path.basename(file_path)}")
+                    
+                    if not os.path.exists(file_path):
+                        errors.append(f"File not found: {file_path}")
+                        continue
+                    
+                    if not os.path.isfile(file_path):
+                        errors.append(f"Not a file: {file_path}")
+                        continue
+                    
+                    base_name = os.path.basename(file_path)
+                    target_path = os.path.join(target_folder_container, base_name)
+                    
+                    # Check if the target path already exists, add a suffix if necessary
+                    if os.path.exists(target_path):
+                        # If it is the same file, skip
+                        if os.path.samefile(file_path, target_path):
+                            print(f"Skipping {file_path} - already at destination")
+                            continue
+                        
+                        # Generate unique filename
+                        file_name, file_extension = os.path.splitext(base_name)
+                        counter = 1
+                        new_file_name = f"{file_name}_{counter}{file_extension}"
+                        target_path = os.path.join(target_folder_container, new_file_name)
+                        
+                        while os.path.exists(target_path):
+                            counter += 1
+                            new_file_name = f"{file_name}_{counter}{file_extension}"
+                            target_path = os.path.join(target_folder_container, new_file_name)
+                        
+                        print(f"Renamed to avoid conflict: {new_file_name}")
+                    
+                    # Move the file
+                    import shutil
+                    shutil.move(file_path, target_path)
+                    moved_count += 1
+                    print(f"Moved: {file_path} -> {target_path}")
+                    
+                    # Move associated .meta file if it exists
+                    meta_file_path = file_path + ".meta"
+                    if os.path.exists(meta_file_path) and os.path.isfile(meta_file_path):
+                        try:
+                            meta_target_path = target_path + ".meta"
+                            
+                            # Handle conflict for meta file if needed
+                            if os.path.exists(meta_target_path):
+                                # If the target meta file is identical to source, just remove source
+                                if os.path.samefile(meta_file_path, meta_target_path):
+                                    pass  # Already at destination
+                                else:
+                                    # Use same naming scheme as the main file got
+                                    meta_base_name = os.path.basename(target_path) + ".meta"
+                                    meta_target_path = os.path.join(os.path.dirname(target_path), meta_base_name)
+                            
+                            # Move the meta file
+                            if not os.path.samefile(meta_file_path, meta_target_path):
+                                shutil.move(meta_file_path, meta_target_path)
+                                print(f"Moved associated .meta file: {meta_file_path} -> {meta_target_path}")
+                        except Exception as meta_error:
+                            # Don't fail the whole operation if meta file move fails
+                            print(f"Warning: Failed to move .meta file for {file_path}: {meta_error}")
+                    
+                    # Update database entry if exists
+                    file_hash = images_search_engine.get_file_hash(target_path)
+                    db_item = db_models.ImagesLibrary.query.filter_by(hash=file_hash).first()
+                    if db_item:
+                        db_item.file_path = os.path.relpath(target_path, media_directory)
+                        db_models.db.session.commit()
+                    
+                except Exception as e:
+                    errors.append(f"{os.path.basename(file_path)}: {str(e)}")
+                    print(f"Error moving {file_path}: {e}")
+            
+            # Send results back to client
+            result_message = f"Successfully moved {moved_count} file(s)"
+            if errors:
+                result_message += f". {len(errors)} error(s) occurred."
+            
+            socketio.emit('emit_images_page_move_complete', {
+                'success': True,
+                'moved_count': moved_count,
+                'total_count': len(files),
+                'errors': errors,
+                'message': result_message
+            })
+            
+            common_socket_events.show_search_status(result_message)
+            
+        except Exception as e:
+            print(f"Critical error in move_files: {e}")
+            import traceback
+            traceback.print_exc()
+            socketio.emit('emit_images_page_show_error', {
+                'message': f"Critical error while moving files: {str(e)}"
+            })
 
     @socketio.on('emit_images_page_open_file_in_folder')
     def open_file_in_folder(file_path):
         file_manager.open_file_in_folder(file_path)
 
-    @socketio.on('emit_images_page_send_file_to_trash')
-    def send_file_to_trash(file_path):
-        if os.path.isfile(file_path):
-            send2trash.send2trash(file_path)
-            print(f"File '{file_path}' sent to trash.")
-            '''if sys.platform == "win32":    # Windows
-                # Move the file to the recycle bin
-                subprocess.run(["cmd", "/c", "del", "/q", "/f", file_path], check=True)
-            elif sys.platform == "darwin":    # macOS
-                # Move the file to the trash
-                subprocess.run(["trash", file_path], check=True)
-            else:    # Linux and other Unix-like OS
-                # Move the file to the trash
-                subprocess.run(["gio", "trash", file_path], check=True)'''
-        else:
-            print(f"Error: File '{file_path}' does not exist.")    
+    # Only register delete handlers if explicitly allowed
+    allow_file_deletion = os.environ.get('ALLOW_FILE_DELETION', 'false').lower() == 'true'
+    
+    if allow_file_deletion:
+        @socketio.on('emit_images_page_send_file_to_trash')
+        def send_file_to_trash(file_path):
+            if os.path.isfile(file_path):
+                send2trash.send2trash(file_path)
+                print(f"File '{file_path}' sent to trash.")
+                '''if sys.platform == "win32":    # Windows
+                    # Move the file to the recycle bin
+                    subprocess.run(["cmd", "/c", "del", "/q", "/f", file_path], check=True)
+                elif sys.platform == "darwin":    # macOS
+                    # Move the file to the trash
+                    subprocess.run(["trash", file_path], check=True)
+                else:    # Linux and other Unix-like OS
+                    # Move the file to the trash
+                    subprocess.run(["gio", "trash", file_path], check=True)'''
+            else:
+                print(f"Error: File '{file_path}' does not exist.")    
 
-    @socketio.on('emit_images_page_send_files_to_trash')
-    def send_files_to_trash(files):
-        for file_path in files:
-            send_file_to_trash(file_path)
+        @socketio.on('emit_images_page_send_files_to_trash')
+        def send_files_to_trash(files):
+            for file_path in files:
+                send_file_to_trash(file_path)
+    else:
+        print("Images module: File deletion handlers disabled (ALLOW_FILE_DELETION=false)")
 
     @socketio.on('emit_images_page_set_image_rating')
     def set_image_rating(data):

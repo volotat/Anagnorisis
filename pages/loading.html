@@ -103,7 +103,8 @@
 
         socket.on('connect', () => {
             console.log('Connected to status stream');
-            statusText.innerText = 'Connected to server, waiting for initialization...';
+            statusText.innerText = 'Connected to server, receiving current status...';
+            // Current module statuses will be sent automatically by the server
         });
 
         // Listen for module-specific loading status
@@ -122,6 +123,20 @@
                 moduleStatusContainer.appendChild(moduleStatuses[module].element);
             }
             
+            // Check if this status indicates completion
+            const isComplete = status.toLowerCase().includes('complete') || 
+                             status.toLowerCase().includes('ready') ||
+                             status.toLowerCase().includes('initialized');
+            
+            if (isComplete && moduleStatuses[module].status !== 'complete') {
+                moduleStatuses[module].status = 'complete';
+                moduleStatuses[module].element.classList.remove('active', 'current');
+                moduleStatuses[module].element.classList.add('complete');
+                const statusIcon = moduleStatuses[module].element.querySelector('.status-icon');
+                statusIcon.innerHTML = '✓';
+                completedModules++;
+            }
+            
             updateModuleStatus(module, status);
             updateOverallProgress();
         });
@@ -131,26 +146,32 @@
             statusText.innerText = msg;
         });
 
-        // Listen for module ready event
-        socket.on('module_ready_{{ module_name }}', () => {
-            const moduleName = '{{ module_name }}';
-            if (moduleStatuses[moduleName]) {
-                moduleStatuses[moduleName].status = 'complete';
-                moduleStatuses[moduleName].element.classList.remove('active', 'current');
-                moduleStatuses[moduleName].element.classList.add('complete');
-                const statusIcon = moduleStatuses[moduleName].element.querySelector('.status-icon');
-                statusIcon.innerHTML = '✓';
-                const statusTextEl = moduleStatuses[moduleName].element.querySelector('.module-status-text');
-                statusTextEl.innerText = 'Initialization complete';
-            }
-            
-            completedModules++;
-            updateOverallProgress();
-            
-            // If this is the current page's module, reload
-            setTimeout(() => {
-                location.reload();
-            }, 1000);
+        // Listen for ALL module ready events using a pattern
+        // We'll set up listeners for each expected module
+        const currentModuleName = '{{ module_name }}';
+        moduleOrder.forEach(moduleName => {
+            socket.on(`module_ready_${moduleName}`, () => {
+                // Update the status for this specific module
+                if (moduleStatuses[moduleName]) {
+                    moduleStatuses[moduleName].status = 'complete';
+                    moduleStatuses[moduleName].element.classList.remove('active', 'current');
+                    moduleStatuses[moduleName].element.classList.add('complete');
+                    const statusIcon = moduleStatuses[moduleName].element.querySelector('.status-icon');
+                    statusIcon.innerHTML = '✓';
+                    const statusTextEl = moduleStatuses[moduleName].element.querySelector('.module-status-text');
+                    statusTextEl.innerText = 'Initialization complete';
+                }
+                
+                completedModules++;
+                updateOverallProgress();
+                
+                // Only reload if THIS is the current page's module
+                if (moduleName === currentModuleName) {
+                    setTimeout(() => {
+                        location.reload();
+                    }, 1000);
+                }
+            });
         });
 
         function createModuleElement(moduleName) {

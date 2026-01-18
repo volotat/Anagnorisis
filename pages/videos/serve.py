@@ -366,21 +366,28 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
         else:
             print("Error: File does not exist.")
 
-    @socketio.on('emit_videos_page_send_file_to_trash')
-    def send_file_to_trash(file_path):
-        if os.path.isfile(file_path):
-            send2trash.send2trash(file_path)
-            '''if sys.platform == "win32":    # Windows
-                # Move the file to the recycle bin
-                subprocess.run(["cmd", "/c", "del", "/q", "/f", file_path], check=True)
-            elif sys.platform == "darwin":    # macOS
-                # Move the file to the trash
-                subprocess.run(["trash", file_path], check=True)
-            else:    # Linux and other Unix-like OS
-                # Move the file to the trash
-                subprocess.run(["gio", "trash", file_path], check=True)'''
-        else:
-            print("Error: File does not exist.")    
+    # Only register delete handler if explicitly allowed
+    allow_file_deletion = os.environ.get('ALLOW_FILE_DELETION', 'false').lower() == 'true'
+    
+    if allow_file_deletion:
+        @socketio.on('emit_videos_page_send_file_to_trash')
+        def send_file_to_trash(file_path):
+            if os.path.isfile(file_path):
+                send2trash.send2trash(file_path)
+                print(f"File '{file_path}' sent to trash.")
+                '''if sys.platform == "win32":    # Windows
+                    # Move the file to the recycle bin
+                    subprocess.run(["cmd", "/c", "del", "/q", "/f", file_path], check=True)
+                elif sys.platform == "darwin":    # macOS
+                    # Move the file to the trash
+                    subprocess.run(["trash", file_path], check=True)
+                else:    # Linux and other Unix-like OS
+                    # Move the file to the trash
+                    subprocess.run(["gio", "trash", file_path], check=True)'''
+            else:
+                print("Error: File does not exist.")
+    else:
+        print("Videos module: File deletion handler disabled (ALLOW_FILE_DELETION=false)")
 
     @socketio.on('emit_videos_page_video_start_playing')
     def video_start_playing(file_path):

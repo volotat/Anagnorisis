@@ -99,9 +99,26 @@ class _TextEmbedderImpl:
             )
             print(f"Model '{self.model_name}' downloaded successfully.")
 
-        if not os.path.exists(config_file_path):
+        # Check if model directory and config exist
+        model_exists = os.path.exists(config_file_path)
+        weights_exist = False
+        
+        if model_exists:
+            # Check if at least one model weight file exists
+            weight_files = ['pytorch_model.bin', 'model.safetensors', 'tf_model.h5', 
+                          'model.ckpt.index', 'flax_model.msgpack']
+            weights_exist = any(os.path.exists(os.path.join(local_model_path, wf)) for wf in weight_files)
+            # Also check for sharded models (pytorch_model-00001-of-*.bin, model-00001-of-*.safetensors)
+            if not weights_exist:
+                import glob
+                weights_exist = bool(glob.glob(os.path.join(local_model_path, 'pytorch_model-*.bin')) or
+                                   glob.glob(os.path.join(local_model_path, 'model-*.safetensors')))
+        
+        if not model_exists or not weights_exist:
             try:
-                download(force=False)
+                if model_exists and not weights_exist:
+                    print(f"WARNING: Config found but model weights missing for '{self.model_name}'. Resuming download...")
+                download(force=False)  # resume_download=True will continue incomplete downloads
             except Exception as e:
                 print(f"ERROR: Failed to download model '{self.model_name}'.")
                 print(f"Error details: {e}")
@@ -294,13 +311,13 @@ class _TextEmbedderImpl:
         
         return segments
 
+# Set the process name for system tools (nvidia-smi, top, ps)
+import setproctitle
 
 def _worker_loop(input_queue, output_queue, cfg):
     """
     The loop running in the separate process.
     """
-    # Set the process name for system tools (nvidia-smi, top, ps)
-    import setproctitle
     setproctitle.setproctitle("Anagnorisis-TextEmbedder")
 
     try:
@@ -391,7 +408,8 @@ class TextEmbedder:
             time.sleep(5)
             with self._lock:
                 if self._process is not None and self._process.is_alive():
-                    if time.time() - self._last_used_time > self._idle_timeout:
+                    # Only enforce timeout if process has been used at least once
+                    if self._last_used_time > 0 and time.time() - self._last_used_time > self._idle_timeout:
                         print(f"TextEmbedder: Idle for {self._idle_timeout}s. Terminating subprocess to free GPU.")
                         self._terminate_process()
 
@@ -421,7 +439,7 @@ class TextEmbedder:
     def _ensure_process_running(self):
         """Starts the process if it's not running."""
         # Must be called within self._lock
-        self._last_used_time = time.time()
+        # Don't update _last_used_time here - only update when commands COMPLETE
         
         if self._process is None or not self._process.is_alive():
             print("TextEmbedder: Starting worker subprocess...")
@@ -447,7 +465,13 @@ class TextEmbedder:
         self._input_queue.put((command, args, kwargs))
         
         try:
-            status, result = self._output_queue.get(timeout=300) # 5 min timeout for heavy loads
+            # The worse case timeout is during model loading, so we set 48 hours here to allow the model to load
+            if command == 'initiate':
+                timeout = 48 * 3600
+            else:
+                timeout = 25 * 60 # 25 minutes for other commands
+                
+            status, result = self._output_queue.get(timeout=timeout)
         except queue.Empty:
             self._terminate_process()
             raise RuntimeError("TextEmbedder subprocess timed out.")
@@ -455,12 +479,13 @@ class TextEmbedder:
         if status == 'error':
             raise result
         return result
-
+    
     def _execute(self, command, *args, **kwargs):
         """Public wrapper to execute commands safely."""
         with self._lock:
             self._ensure_process_running()
             result = self._send_command_internal(command, args, kwargs)
+            # Update last used time AFTER command completes successfully
             self._last_used_time = time.time()
             return result
 
@@ -468,7 +493,7 @@ class TextEmbedder:
 
     def initiate(self, models_folder: str):
         self._models_folder = models_folder
-        # We execute this to ensure the process starts and loads the model
+        # Execute to ensure the process starts and loads the model
         res = self._execute('initiate', models_folder)
         self.embedding_dim = res['embedding_dim']
         self.model_hash = res.get('model_hash', 'unknown_hash')

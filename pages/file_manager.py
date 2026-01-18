@@ -214,42 +214,62 @@ class FileManager:
 
     def _build_folder_tree_cached(self, path: str, media_extensions: set[str]) -> dict:
         """
-        Build folder tree with per-directory caching keyed by (dir_path, dir_mtime).
-        Only recurses into subdirs whose own mtime changed (or not cached yet).
+        Build folder tree with per-directory caching keyed by (dir_path, dir_mtime, contents_hash).
+        The contents_hash ensures cache invalidation when subfolders are moved in/out.
         """
         name = os.path.basename(path)
+        
+        # Scan directory to get current contents
+        try:
+            entries = list(os.scandir(path))
+        except FileNotFoundError:
+            return {"name": name, "num_files": 0, "total_files": 0, "subfolders": {}}
+        except Exception:
+            return {"name": name, "num_files": 0, "total_files": 0, "subfolders": {}}
+        
+        # Cache is temporarily disabled due to issues with subfolders file counts not updating correctly
+        # TODO: Fix this one day 
+
+        # # Build a signature of the directory contents (sorted child names)
+        # # This ensures that moving subfolders/files in/out invalidates the cache
+        # child_names = sorted(e.name for e in entries)
+        # contents_sig = hashlib.md5(",".join(child_names).encode()).hexdigest()[:8]
+        
+        # # Try to get cached result for this directory
+        # # Note: We rely on contents_sig instead of mtime for cache invalidation
+        # # because mtime updates can be delayed on some filesystems (especially Docker volumes)
+        # ext_sig = ",".join(sorted(media_extensions)) if media_extensions else "-"
+        # cache_key = f"FOLDER_TREE::{path}|{contents_sig}|{ext_sig}"
+        
+        # cached_result = self._fast_cache.get(cache_key)
+        # if cached_result is not None:
+        #     return cached_result
+        
+        # Build the folder structure from the entries we already scanned
         num_files = 0
         subfolders = {}
 
-        try:
-            it = os.scandir(path)
-        except FileNotFoundError:
-            return {"name": name, "num_files": 0, "total_files": 0, "subfolders": {}}
-
-        with it:
-            for entry in it:
-                try:
-                    if entry.is_file(follow_symlinks=False):
-                        ext = os.path.splitext(entry.name)[1].lower()
-                        if ext in media_extensions:
-                            num_files += 1
-                    elif entry.is_dir(follow_symlinks=False):
-                        try:
-                            st = entry.stat(follow_symlinks=False)
-                            child_key = f"SUBFOLDERS_OF::{entry.path}|{st.st_mtime_ns}"
-                        except FileNotFoundError:
-                            continue
-                        child = self._fast_cache.get(child_key)
-                        if child is None:
-                            child = self._build_folder_tree_cached(entry.path, media_extensions)
-                            self._fast_cache.set(child_key, child)
-                        subfolders[entry.name] = child
-                except Exception:
-                    # Skip entries that vanish mid-scan or are inaccessible
-                    continue
+        for entry in entries:
+            try:
+                if entry.is_file(follow_symlinks=False):
+                    ext = os.path.splitext(entry.name)[1].lower()
+                    if ext in media_extensions:
+                        num_files += 1
+                elif entry.is_dir(follow_symlinks=False):
+                    # Recursively get subfolder structure (which will use its own cache)
+                    child = self._build_folder_tree_cached(entry.path, media_extensions)
+                    subfolders[entry.name] = child
+            except Exception:
+                # Skip entries that vanish mid-scan or are inaccessible
+                continue
 
         total_files = num_files + sum(sf["total_files"] for sf in subfolders.values())
-        return {"name": name, "num_files": num_files, "total_files": total_files, "subfolders": subfolders}
+        result = {"name": name, "num_files": num_files, "total_files": total_files, "subfolders": subfolders}
+        
+        # Cache the result for this directory
+        # self._fast_cache.set(cache_key, result)
+        
+        return result
 
 
     def get_folders(self, path = ""):

@@ -61,6 +61,12 @@ The preferred way to run the project is from Docker. This should be much more st
     Note: if you are using Docker Desktop you have to explicitly provide access to `/path/to/your/data` folders in the Docker settings. Otherwise, you will not be able to access it from the container. To do so, go to Docker Desktop settings, then to Resources -> File Sharing and add the path to your data folder.
 4. Access the application at http://localhost:5001 (or whichever port you configured) in your web browser.
 
+## Initialization
+
+To avoid issues with corrupted models being downloaded, **be patient while the application is initializing for the first time**. All models are quite large and might take some time to download depending on your internet connection speed. You can check the progress in the `logs/{CONTAINER_NAME}_log.txt` file that will appear in the project's root folder. The project UI will also show the initialization status, but  for now without download progress percentages. 
+
+If for some reason the initialization process is interrupted (for example you stopped the container while models were being downloaded), upon the next start the application will check for corrupted models and try to re-download them automatically. If this does not help, please delete the `models` folder inside the project's root folder and start the application again. This will force the application to download all models from scratch. 
+
 ## Troubleshooting
 
 In case you encounter and error like this:
@@ -69,7 +75,6 @@ ERROR: for {your application container name} Cannot start service anagnorisis: e
 ```
 
 You have to create the folder specified in `PROJECT_CONFIG_FOLDER_PATH` environment variable manually on your host machine. Docker sometimes cannot create such folders by itself due to permission issues.
-
 
 ## Additional notes for installation
 The Docker container includes Ubuntu 22.04, CUDA drives and several large machine learning models and dependencies, which results in a significant storage footprint. After the container is built it will take about 45GB of storage on your disk. 

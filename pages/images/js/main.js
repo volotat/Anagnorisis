@@ -686,8 +686,32 @@ import MetaEditor from '/pages/MetaEditor.js';
         files: selected_files,
         target_folder: target_folder
       });
-      // refresh page
-      location.reload();
+      
+      // Close modal and show loading state
+      $('#move_files_modal').removeClass('is-active');
+      $('#move_files_modal input').val(''); // Clear input for next time
+    });
+
+    // Handle move completion
+    socket.on('emit_images_page_move_complete', (data) => {
+      console.log('Move complete:', data);
+      
+      let message = data.message;
+      if (data.errors && data.errors.length > 0) {
+        message += '\n\nErrors:\n' + data.errors.join('\n');
+        alert(message); // Show errors in alert
+      }
+      
+      // Refresh page to show updated file list
+      setTimeout(() => {
+        location.reload();
+      }, 500);
+    });
+
+    // Handle move errors
+    socket.on('emit_images_page_show_error', (data) => {
+      console.error('Error:', data.message);
+      alert('Error: ' + data.message);
     });
 
     // Close modal when clicking modal-close elements (background, X button, Cancel button)

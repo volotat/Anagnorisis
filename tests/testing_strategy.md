@@ -25,17 +25,19 @@ VIDEOS_MODULE_DATA_PATH=/path/to/folder/Videos # The path to the folder with you
 
 * Run the Docker container with the test .env file.
 ```
-docker-compose up -d
+docker-compose up -d --build
 ```
 
-* Wait until all the models are downloaded and the application is fully started. Watch the progress in the `logs/{CONTAINER_NAME}_log.txt` file. Or even better break the downloading process by stopping the container and make sure that all the corrupted models are correctly identified and re-downloaded upon the next start.
+* After the container has been build successfully, open specified `http://localhost:{EXTERNAL_PORT}` in your web browser to see that initialization process is properly displayed and all the on going initialization steps are shown.
 
-* Access the application at http://localhost:5001 (or whichever port you configured) in your web browser.
+* Wait until all the models are downloaded and the application is fully started. Watch the progress in the `logs/{CONTAINER_NAME}_log.txt` file. Or even better break the downloading process by stopping the container and make sure that all the corrupted models are correctly identified and re-downloaded upon the next start.
 
 * Check that all the modules are opens and show their files correctly.
 
 * After opening all the modules, check the logs to make sure there were no silent errors.
 
-
-
-1. Download fresh install of the project from the git into a new folder to avoid any prior data in the folder affecting the test results.
+## Caution
+In case there is any changes in the codebase while testing, **do not forget** to update the code from the main project folder to the test folder again by running:
+```
+git ls-files -z | rsync -av --files-from=- --from0 ./ ../Anagnorisis-test
+```
