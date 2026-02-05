@@ -53,6 +53,11 @@ Add new downloadable module for 'Deep Research'-like functionality that uses use
 
 ## Versions History
 
+### Version 0.3.1 (06.02.2026)
+*   **Images Module:**
+    *   Fixed a crucial issue that prevented recommendation model training process initialization.
+    *   Added `Show full search description` option to the context menu. This opens a `MetaEditor` modal showing the full text payload used for generating search embeddings, with all necessary backend functionality implemented to support this feature.
+
 ### Version 0.3.0 (19.01.2026)
 *   **File Management & Database:**
     *   Moving files between folders is now fully supported in the `Images` module. When a file is moved, its database entry is updated to reflect the new path, ensuring that all associated metadata and embeddings remain intact. This prevents duplication of entries and maintains data integrity. Both full destination paths on the host system and Docker container paths are correctly handled. External meta files (`{file}.meta`) are also moved accordingly as well.

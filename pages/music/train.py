@@ -46,7 +46,7 @@ def train_music_evaluator(cfg, callback=None, socketio=None):
   file_paths = existing_file_paths
   music_scores = existing_music_scores
 
-  embeddings = music_engine.process_audio(file_paths, media_folder=media_dir, callback=embedding_gathering_callback)
+  embeddings = music_engine.process_files(file_paths, media_folder=media_dir, callback=embedding_gathering_callback)
   # Keep only non-zero embeddings (failed or missing files become zero vectors)
   mask = embeddings.abs().sum(dim=1) > 0.00001
   if mask.sum().item() == 0:

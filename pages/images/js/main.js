@@ -434,6 +434,30 @@ import MetaEditor from '/pages/MetaEditor.js';
     });
   }
 
+  const fullDescriptionMetaEditor = new MetaEditor({
+    api: {
+      // Load full description (Images backend expects the file_path string, returns {content, file_path})
+      load: (filePath, onLoaded) => {
+        socket.emit('emit_images_page_get_full_metadata_description', filePath, (response)=>{
+          onLoaded(response.content || '');
+        });
+      },
+      // Save full description (not implemented)
+      save: (filePath, content) => {
+        // No saving for full description
+        return Promise.resolve();
+      }
+    },
+    readOnly: true, // Always read-only
+  });
+  
+  function openFullDescriptionForFile(fileData) {
+    fullDescriptionMetaEditor.open({
+      filePath: fileData.file_path,                                     // relative path inside media dir
+      displayName: (fileData.base_name + ' full search description') || '',   // optional nice title
+    });
+  }
+
   // Create context menu for file items
   const ctxMenu = new ContextMenuComponent();
   function createContextMenuForFile(fileData, event) {
@@ -466,6 +490,13 @@ import MetaEditor from '/pages/MetaEditor.js';
         label: 'Edit .meta file',
         icon: 'fas fa-file-pen',
         action: () => { openMetaEditorForFile(fileData); }
+      },
+      {
+        label: 'Show full search description',
+        icon: 'fas fa-info-circle',
+        action: () => { 
+          openFullDescriptionForFile(fileData);
+        }
       },
       { type: 'divider'},
       {

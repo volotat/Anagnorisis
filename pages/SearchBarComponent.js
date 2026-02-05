@@ -373,6 +373,10 @@ export default class SearchBarComponent {
 
   setMode(mode) {
     if (!this.options.enableModes.includes(mode)) return;
+    // Preserve current input value
+    if (this.searchInput) {
+      this.state.text_query = this.searchInput.value;
+    }
     this.state.mode = mode;
     this.syncUIWithState();
     this.notifyStateChange();
@@ -380,6 +384,10 @@ export default class SearchBarComponent {
 
   setOrder(order) {
     if (!['most-relevant', 'least-relevant'].includes(order)) return;
+    // Preserve current input value
+    if (this.searchInput) {
+      this.state.text_query = this.searchInput.value;
+    }
     this.state.order = order;
     this.syncUIWithState();
     this.notifyStateChange();
@@ -388,6 +396,10 @@ export default class SearchBarComponent {
   setTemperature(t) {
     const value = Number(t);
     if (!this.options.temperatures.map(Number).includes(value)) return;
+    // Preserve current input value
+    if (this.searchInput) {
+      this.state.text_query = this.searchInput.value;
+    }
     this.state.temperature = value;
     this.syncUIWithState();
     this.notifyStateChange();

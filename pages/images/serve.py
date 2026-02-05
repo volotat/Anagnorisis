@@ -665,6 +665,16 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
         except Exception as e:
             print(f"Error saving metadata for {file_path}: {e}")
 
+    @socketio.on('emit_images_page_get_full_metadata_description')
+    def get_full_metadata_description(file_path):
+        """
+        Generates a full metadata description for a single file.
+        """
+        nonlocal media_directory
+        full_path = os.path.join(media_directory, file_path)
+        content = metadata_search_engine.generate_full_description(full_path, media_directory)
+        return {"content": content, "file_path": file_path}
+
     common_socket_events.show_loading_status('Images module ready!')
 
     

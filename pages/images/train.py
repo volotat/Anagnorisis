@@ -27,7 +27,7 @@ def train_image_evaluator(cfg, callback=None):
   file_paths = [os.path.join(media_dir, e.file_path) for e in images_library_entries]
   image_scores = [e.user_rating for e in images_library_entries]
 
-  embeddings = images_engine.process_audio(file_paths, media_folder=media_dir)
+  embeddings = images_engine.process_files(file_paths, media_folder=media_dir)
   # Keep only non-zero embeddings (failed or missing files become zero vectors)
   mask = embeddings.abs().sum(dim=1) > 0
   if mask.sum().item() == 0:

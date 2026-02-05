@@ -23,16 +23,61 @@ from src.model_manager import ModelManager # Still needed for ImageEvaluator, bu
 
 def get_image_metadata(file_path):
     """
-    Extracts relevant metadata from an image file.
-    Currently, it only extracts the image resolution, but can be extended.
+    Extracts relevant metadata from an image file and returns a flat dictionary
+    with string values suitable for metadata search.
     """
     metadata = {}
+    max_value_length = 1000  # Skip very long values (e.g., base64 data)
+    
     try:
         with Image.open(file_path) as img:
-            metadata['resolution'] = img.size  # (width, height)
+            # Basic image properties
+            metadata['format'] = str(img.format) if img.format else 'Unknown'
+            metadata['mode'] = str(img.mode) if img.mode else 'Unknown'
+            
+            if img.size:
+                width, height = img.size
+                metadata['width'] = str(width)
+                metadata['height'] = str(height)
+                metadata['resolution'] = f"{width}x{height}"
+            
+            # Extract EXIF data if available
+            exif_data = img.getexif()
+            if exif_data:
+                from PIL.ExifTags import TAGS
+                for tag_id, value in exif_data.items():
+                    tag = TAGS.get(tag_id, f'EXIF_{tag_id}')
+                    
+                    # Convert bytes to string
+                    if isinstance(value, bytes):
+                        try:
+                            value = value.decode('utf-8', errors='ignore').strip()
+                        except:
+                            continue
+                    
+                    # Convert to string and filter by length
+                    value_str = str(value)
+                    if len(value_str) <= max_value_length and value_str.strip():
+                        metadata[str(tag)] = value_str
+            
+            # Extract general info dict if available (PNG, GIF, etc.)
+            if hasattr(img, 'info') and img.info:
+                for key, value in img.info.items():
+                    # Skip binary/bytes data
+                    if isinstance(value, bytes):
+                        continue
+                    
+                    # Convert to string and filter
+                    if isinstance(value, (str, int, float, bool)):
+                        value_str = str(value)
+                        if len(value_str) <= max_value_length and value_str.strip():
+                            # Prefix with 'INFO_' to distinguish from EXIF
+                            metadata[f'INFO_{key}'] = value_str
+                
     except Exception as e:
-        # print(f"Error extracting metadata from {file_path}: {e}") # Suppress frequent error messages
-        metadata['resolution'] = None  # Or some default value
+        # On error, return basic info
+        metadata['error'] = f"Failed to extract metadata: {str(e)[:200]}"
+        
     return metadata
 
 class ImageSearch(BaseSearchEngine):

@@ -36,6 +36,8 @@ docker-compose up -d --build
 
 * After opening all the modules, check the logs to make sure there were no silent errors.
 
+* Check that all recommendation models could be trained without any errors on the `Train` page for each module.
+
 ## Caution
 In case there is any changes in the codebase while testing, **do not forget** to update the code from the main project folder to the test folder again by running:
 ```
