@@ -22,6 +22,10 @@ You repeat these steps again and again, getting each time model that better and 
 
 The big vision of this project is to provide a platform that creates a local, private model of your interests. That likes what you like and sees importance where you would see it. Then you can use this model to search and filter local and global information on your behalf in a way you would do it yourself but in a much faster and efficient way. Making this platform (in the future) a go to place to see news, recommendations and insights, and so on, tailored specifically for you. As the internet gets populated with bots and AI slop, a platform like this might create a necessary filter to be able to navigate in this chaotic information space efficiently.
 
+## Search Capabilities
+Please watch this video to see how to effectively search your data across all modules:  
+[![Watch the video](https://i3.ytimg.com/vi/X1Go7yYgFlY/hqdefault.jpg?1)](https://youtu.be/X1Go7yYgFlY)  
+
 ## Music Module
 Please watch this video to see presentation of 'Music' module usage:  
 [![Watch the video](https://i3.ytimg.com/vi/vux7mDaRCeY/hqdefault.jpg?1)](https://youtu.be/vux7mDaRCeY)  
