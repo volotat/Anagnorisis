@@ -1,0 +1,76 @@
+# =============================================================================
+# Anagnorisis — User Configuration
+# =============================================================================
+# 
+# Copy this file to create your configuration:
+#
+#   cp docker-compose.override.example.yaml docker-compose.override.yaml
+#
+# Then edit docker-compose.override.yaml with your actual folder paths.
+# After that, start the application as usual:
+#
+#   docker compose up -d
+#
+# Docker Compose automatically merges this file with docker-compose.yaml.
+# You only need to edit this file once. After that, just use:
+#
+#   docker compose up -d     (to start)
+#   docker compose down      (to stop)
+#
+# =============================================================================
+
+services:
+  anagnorisis:
+
+    # --- Container name (used for log file naming) ---
+    container_name: anagnorisis-app
+
+    # --- Port ---
+    # Access the application at http://localhost:5001
+    # Change the first number to use a different port on your machine.
+    ports:
+      - "127.0.0.1:5001:5001"
+
+    # --- Media Folders ---
+    # Mount your media folders below. The format is:
+    #
+    #   - /path/on/your/computer:/mnt/media/TYPE/LABEL
+    #
+    # where TYPE is one of: images, music, text, videos
+    # and LABEL is a name of your choice (will appear as a folder in the app).
+    #
+    # You can mount as many folders as you need for each type.
+    # Only the folders you list here will be accessible inside the container.
+    #
+    # IMPORTANT: Use absolute paths (starting with / on Linux/Mac,
+    # or drive letter like C:/ on Windows).
+    #
+    # Examples:
+    #   - /home/user/Photos:/mnt/media/images/Photos
+    #   - /media/external/DCIM:/mnt/media/images/Phone
+    #   - D:/Music:/mnt/media/music/MyMusic
+    #
+    volumes:
+      # Project config (database, trained models, cache)
+      - /path/to/your/config/folder:/mnt/project_config
+
+      # Your image folders:
+      - /path/to/your/images:/mnt/media/images/MyImages
+
+      # Your music folders:
+      - /path/to/your/music:/mnt/media/music/MyMusic
+
+      # Your text folders:
+      - /path/to/your/text:/mnt/media/text/MyText
+
+      # Your video folders:
+      - /path/to/your/videos:/mnt/media/videos/MyVideos
+
+    # --- Optional Settings ---
+    environment:
+      # Uncomment to password-protect the application:
+      # - ANAGNORISIS_USERNAME=your_username
+      # - ANAGNORISIS_PASSWORD=your_password
+      
+      # Uncomment to enable file deletion features (send to trash):
+      # - ALLOW_FILE_DELETION=true

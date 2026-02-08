@@ -1,0 +1,29 @@
+# Family/shared instance — a separate instance on a different port.
+# 
+# Start:  docker compose -f docker-compose.yaml -f instances/family.yaml up -d
+# Stop:   docker compose -f docker-compose.yaml -f instances/family.yaml down
+# Access: http://localhost:5002
+
+# Project name must be unique per instance to avoid conflicts
+name: anagnorisis-family
+
+services:
+  anagnorisis:
+    container_name: anagnorisis-family
+    ports:
+      - "127.0.0.1:5002:5001"
+    volumes:
+      # Project config — MUST be different from other instances
+      - /path/to/family-config:/mnt/project_config
+
+      # Shared family photo folders:
+      - /path/to/family/photos:/mnt/media/images/FamilyPhotos
+
+      # Shared video folders:
+      - /path/to/family/videos:/mnt/media/videos/FamilyVideos
+
+    environment:
+      - CONTAINER_NAME=anagnorisis-family
+      # Password-protect the family instance:
+      - ANAGNORISIS_USERNAME=family
+      - ANAGNORISIS_PASSWORD=changeme

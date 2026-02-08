@@ -1,0 +1,37 @@
+# Personal instance — customize with your paths and port.
+# 
+# Start:  docker compose -f docker-compose.yaml -f instances/personal.yaml up -d
+# Stop:   docker compose -f docker-compose.yaml -f instances/personal.yaml down
+# Access: http://localhost:5001
+
+# Project name must be unique per instance to avoid conflicts
+name: anagnorisis-personal
+
+services:
+  anagnorisis:
+    container_name: anagnorisis-personal
+    ports:
+      - "127.0.0.1:5001:5001"
+    volumes:
+      # Project config (database, trained models) — must be unique per instance
+      - /path/to/your/personal-config:/mnt/project_config
+
+      # Image folders (add as many as you need):
+      - /path/to/photos:/mnt/media/images/Photos
+      - /path/to/screenshots:/mnt/media/images/Screenshots
+
+      # Music folders:
+      - /path/to/music:/mnt/media/music/Music
+
+      # Text folders:
+      - /path/to/documents:/mnt/media/text/Documents
+
+      # Video folders:
+      - /path/to/videos:/mnt/media/videos/Videos
+
+    environment:
+      - CONTAINER_NAME=anagnorisis-personal
+      # Uncomment to password-protect this instance:
+      # - ANAGNORISIS_USERNAME=your_username
+      # - ANAGNORISIS_PASSWORD=your_password
+      # - ALLOW_FILE_DELETION=true

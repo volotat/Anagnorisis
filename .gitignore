@@ -175,3 +175,10 @@ docker-compose-k.yaml
 docker-compose-m.yaml
 *_log.txt
 docker_commands.sh
+
+# User-specific configuration (the .example files ARE tracked)
+docker-compose.override.yaml
+instances/*
+!instances/README.md
+!instances/example-*.yaml
+.env

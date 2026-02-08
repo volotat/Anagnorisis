@@ -37,33 +37,94 @@ Please watch this video to see presentation of 'Images' module usage:
 Or you can read the guide at the [Images wiki](wiki/images.md) page.
 
 ## Running from Docker
-The preferred way to run the project is from Docker. This should be much more stable than running it from the local environment, especially on Windows. But be aware that all paths in the projects would be relative the `DATA_PATH` folder that you mount to the container. 
+The preferred way to run the project is from Docker. This should be much more stable than running it from the local environment, especially on Windows.
 
 1. Make sure that you have Docker installed. In case it is not go to [Docker installation page](https://www.docker.com/get-started/) and install it. 
 2. Clone this repository:
     ```bash
-        git clone https://github.com/volotat/Anagnorisis.git
-        cd Anagnorisis
+    git clone https://github.com/volotat/Anagnorisis.git
+    cd Anagnorisis
     ```
-3. Specify your environment variables in a `.env` file. You can see the example in the `.env.example` file.
+3. Create your configuration file from the provided example:
     ```bash
-        # .env.example
-        CONTAINER_NAME=anagnorisis-app # The name of the Docker container
-        EXTERNAL_PORT=5001 # The external port for accessing the application
-        # ANAGNORISIS_USERNAME=**** # The username for accessing the application (uncomment if you want to use it)
-        # ANAGNORISIS_PASSWORD=**** # The password for accessing the application (uncomment if you want to use it)
-        PROJECT_CONFIG_FOLDER_PATH=/path/to/folder/Anagnorisis-app # The path to the folder where your personal database and personally trained recommendation models will be stored
-        IMAGES_MODULE_DATA_PATH=/path/to/folder/Images # The path to the folder with your images data
-        MUSIC_MODULE_DATA_PATH=/path/to/folder/Music # The path to the folder with your music data
-        TEXT_MODULE_DATA_PATH=/path/to/folder/Text # The path to the folder with your text data
-        VIDEOS_MODULE_DATA_PATH=/path/to/folder/Videos # The path to the folder with your videos data
+    cp docker-compose.override.example.yaml docker-compose.override.yaml
     ```
-4. Launch the application
+4. Open `docker-compose.override.yaml` in any text editor and replace the placeholder paths with your actual folder paths. For example:
+    ```yaml
+    volumes:
+      # Project config (database, trained models, cache)
+      - /home/user/Anagnorisis-config:/mnt/project_config
+
+      # Your image folders:
+      - /home/user/Photos:/mnt/media/images/Photos
+
+      # Your music folders:
+      - /home/user/Music:/mnt/media/music/Music
+
+      # Your text folders:
+      - /home/user/Documents:/mnt/media/text/Documents
+
+      # Your video folders:
+      - /home/user/Videos:/mnt/media/videos/Videos
+    ```
+    Each line follows the format: `/path/on/your/computer:/mnt/media/TYPE/LABEL`  
+    - Use **absolute paths** (starting with `/` on Linux/Mac, or `C:/` on Windows).  
+    - `TYPE` is one of: `images`, `music`, `text`, `videos`.  
+    - `LABEL` is any name you choose — it will appear as a folder name in the app.  
+    
+    **Only the folders you list here will be accessible from inside the container.** No other folders on your system can be reached.
+
+5. Launch the application:
     ```bash
-        docker-compose up -d
+    docker compose up -d
     ```
-    Note: if you are using Docker Desktop you have to explicitly provide access to `/path/to/your/data` folders in the Docker settings. Otherwise, you will not be able to access it from the container. To do so, go to Docker Desktop settings, then to Resources -> File Sharing and add the path to your data folder.
-4. Access the application at http://localhost:5001 (or whichever port you configured) in your web browser.
+    Note: if you are using Docker Desktop you have to explicitly provide access to your data folders in the Docker settings. To do so, go to Docker Desktop settings, then to Resources -> File Sharing and add the paths to your data folders.
+6. Access the application at http://localhost:5001 (or whichever port you configured) in your web browser.
+7. To stop the application:
+    ```bash
+    docker compose down
+    ```
+
+Your configuration in `docker-compose.override.yaml` is preserved between restarts. You only need to edit it once.
+
+### Multiple Media Folders Per Module
+
+You can mount **as many folders as you need** for each media type. Each folder will appear as a separate top-level folder in the app's file browser. For example, to add multiple image sources:
+
+```yaml
+volumes:
+  - /home/user/Anagnorisis-config:/mnt/project_config
+  
+  # Multiple image sources:
+  - /home/user/Photos:/mnt/media/images/Photos
+  - /media/external/DCIM:/mnt/media/images/Phone
+  - /home/user/Screenshots:/mnt/media/images/Screenshots
+
+  # Multiple music sources:
+  - /home/user/Music/Spotify:/mnt/media/music/Spotify
+  - /media/external/Vinyl:/mnt/media/music/Vinyl
+
+  # ...
+```
+
+Inside the app, the Images module would show three top-level folders: `Photos`, `Phone`, and `Screenshots`, each containing the files from the corresponding folder on your computer. All search, sorting, and recommendation features work across all folders seamlessly.
+
+### Running Multiple Instances
+
+You can run several Anagnorisis instances simultaneously (e.g. for different family members) using separate configuration files. See the `instances/` folder for examples.
+
+1. Copy an example and customize it:
+    ```bash
+    cp instances/example-personal.yaml instances/personal.yaml
+    ```
+2. Edit `instances/personal.yaml` with your paths, a unique port, and a unique container name.
+3. Start and stop with the `-f` flag:
+    ```bash
+    docker compose -f docker-compose.yaml -f instances/personal.yaml up -d
+    docker compose -f docker-compose.yaml -f instances/personal.yaml down
+    ```
+
+Each instance needs a **unique project name** (the `name` key at the top of the file), a **unique container name**, a **unique port**, and its **own project config folder** (for separate databases and trained models). You can run as many instances as your hardware supports.
 
 ## Initialization
 
@@ -73,26 +134,26 @@ If for some reason the initialization process is interrupted (for example you st
 
 ## Troubleshooting
 
-In case you encounter and error like this:
+In case you encounter an error like this:
 ```
-ERROR: for {your application container name} Cannot start service anagnorisis: error while creating mount source path '{PROJECT_CONFIG_FOLDER_PATH}': chown {PROJECT_CONFIG_FOLDER_PATH}: operation not permitted
+ERROR: for {your container name} Cannot start service anagnorisis: error while creating mount source path '/path/to/config': chown /path/to/config: operation not permitted
 ```
 
-You have to create the folder specified in `PROJECT_CONFIG_FOLDER_PATH` environment variable manually on your host machine. Docker sometimes cannot create such folders by itself due to permission issues.
+You have to create the folder specified as your project config mount target (the path before `:/mnt/project_config` in your `docker-compose.override.yaml`) manually on your host machine. Docker sometimes cannot create such folders by itself due to permission issues.
 
 ## Additional notes for installation
 The Docker container includes Ubuntu 22.04, CUDA drives and several large machine learning models and dependencies, which results in a significant storage footprint. After the container is built it will take about 45GB of storage on your disk. 
 
 For best user experience I would recommend running the project with relatively modern Nvidia GPU with at least 8Gb of VRAM and 32Gb of RAM . At least this is the configuration I am using myself. However, the project should be able to run on lower configurations, but performance might be poor especially without CUDA-friendly GPU. It is usually take less then 4GB of VRAM to run the project, however when training recommendation models it usually spikes up to 5-7Gb of VRAM usage.
 
-After initializing the project, you will find new `database` folder inside of `PROJECT_CONFIG_FOLDER_PATH` folder. In this folder project's database, migrations, models and configuration file will be stored. After running the project for the first time, `{PROJECT_CONFIG_FOLDER_PATH}/database/project.db` file will be crated. That DB will store your preferences, that will be used later to fine-tune evaluation models. Try to make backups of this file from time to time, as it contains all of your preferences, and some additional data, such as playback history.
+After initializing the project, you will find new `database` folder inside of the project config folder you specified. In this folder project's database, migrations, models and configuration file will be stored. After running the project for the first time, the `database/project.db` file will be created. That DB will store your preferences, that will be used later to fine-tune evaluation models. Try to make backups of this file from time to time, as it contains all of your preferences, and some additional data, such as playback history.
 
 If you have a lot of data in your data folder, for the first time hash cache and embedding cache will be gathered. Please be patient, as it may take a while. The percentage of the progress will be shown in the status bar.
 
 The project requires GPU to run properly. When running the project inside the Docker container, make sure that `NVIDIA Container Toolkit` is installed for Linux and `WSL2` for Windows.
 
 ## Security notes
-The project is meant to be run on the localhost only for now. The default configuration ip address is set to `127.0.0.1` inside `docker-compose.yml` file. This means that the application will only be accessible from the machine it is running on. If you want to access it from other devices on your local network, you can change this address to `0.0.0.0`. You can even tunnel it to the internet using services like [ngrok](https://ngrok.com/) or [cloudflare tunnel](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/). However, I would strongly recommend against exposing the service to the internet (unless you are 100% know what you are doing) as there is no proper security work has been done yet. 
+The project is meant to be run on the localhost only for now. The default configuration ip address is set to `127.0.0.1` inside `docker-compose.yaml` file. This means that the application will only be accessible from the machine it is running on. If you want to access it from other devices on your local network, you can change the port binding in your `docker-compose.override.yaml` to `0.0.0.0:5001:5001`. You can even tunnel it to the internet using services like [ngrok](https://ngrok.com/) or [cloudflare tunnel](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/). However, I would strongly recommend against exposing the service to the internet (unless you are 100% know what you are doing) as there is no proper security work has been done yet. 
 
 ## Embedding models
 To make audio, visual and text search possible the project uses these models:  

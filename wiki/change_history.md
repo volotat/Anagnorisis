@@ -53,6 +53,20 @@ Add new downloadable module for 'Deep Research'-like functionality that uses use
 
 ## Versions History
 
+### Version 0.3.2 (09.02.2026)
+*   **Configuration & Deployment (Breaking Changes):**
+    *   **Replaced `.env`-based configuration with `docker-compose.override.yaml`.** Users now configure all instance-specific settings (media folders, port, container name, authentication) in a single `docker-compose.override.yaml` file instead of a separate `.env` file. A well-documented `docker-compose.override.example.yaml` template is provided. This is a **breaking change** — existing users must migrate their settings from `.env` to the new override file (see migration notes below).
+    *   **Multiple media folders per module.** Each module (images, music, text, videos) now supports mounting multiple source folders. Each folder appears as a separate top-level directory in the app's file browser. All search, sorting, and recommendation features work seamlessly across all folders. No application code changes were needed — this works via Docker's native multi-mount capability.
+    *   **Multi-instance support via `instances/` directory.** Running multiple Anagnorisis instances simultaneously (e.g. for different family members) is now cleanly supported using separate compose override files in the `instances/` folder, with example templates provided.
+    *   **`docker-compose.yaml` is now developer-maintained only.** Users should not edit `docker-compose.yaml` directly. All user-specific configuration goes into `docker-compose.override.yaml` (for single instance) or files in `instances/` (for multiple instances).
+    *   The `.env` file and `.env.example` are no longer used by the project. Environment variables previously set in `.env` (such as `CONTAINER_NAME`, `ANAGNORISIS_USERNAME`, `ANAGNORISIS_PASSWORD`, `ALLOW_FILE_DELETION`) are now set in the `environment` section of the override file.
+*   **Migration from previous versions:**
+    1.  Create your new config: `cp docker-compose.override.example.yaml docker-compose.override.yaml`
+    2.  Move your folder paths from `.env` into the `volumes` section of `docker-compose.override.yaml`.
+    3.  Move any environment variables (`ANAGNORISIS_USERNAME`, `ANAGNORISIS_PASSWORD`, `ALLOW_FILE_DELETION`) into the `environment` section.
+    4.  Your `.env` file can be deleted after migration.
+    5.  Start with `docker compose up -d` as before.
+
 ### Version 0.3.1 (06.02.2026)
 *   **Images Module:**
     *   Fixed a crucial issue that prevented recommendation model training process initialization.
