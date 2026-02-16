@@ -217,7 +217,7 @@ class TextSearch(BaseSearchEngine):
         return np.array(scores)
     
 # Create scoring model singleton class
-class TextEvaluator(src.scoring_models.Evaluator):
+class TextEvaluator(src.scoring_models.TransformerEvaluator):
     _instance = None 
 
     def __new__(cls, *args, **kwargs):

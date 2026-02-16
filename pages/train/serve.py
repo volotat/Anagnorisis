@@ -27,6 +27,7 @@ from tqdm import tqdm
 import pandas as pd
 import pages.music.train
 import pages.images.train
+import pages.text.train
 
 import time
 
@@ -102,6 +103,25 @@ def init_socket_events(socketio, cfg=None, app=None, data_folder='./project_data
         socketio.emit("emit_train_page_status", {"active": True})
         try:
             pages.images.train.train_image_evaluator(cfg, callback)
+        finally:
+            TRAINING_ACTIVE = False
+            socketio.emit("emit_train_page_status", {"active": False})
+
+    @socketio.on("emit_train_page_start_text_evaluator_training")
+    def handle_emit_start_text_evaluator_training():
+        global TRAINING_ACTIVE
+        nonlocal train_accuracy_hist, test_accuracy_hist
+        train_accuracy_hist = []
+        test_accuracy_hist = []
+
+        if TRAINING_ACTIVE:
+            socketio.emit("emit_train_page_status", {"active": True}, room=request.sid)
+            return
+
+        TRAINING_ACTIVE = True
+        socketio.emit("emit_train_page_status", {"active": True})
+        try:
+            pages.text.train.train_text_evaluator(cfg, callback)
         finally:
             TRAINING_ACTIVE = False
             socketio.emit("emit_train_page_status", {"active": False})

@@ -101,7 +101,7 @@ volumes:
   - /home/user/Screenshots:/mnt/media/images/Screenshots
 
   # Multiple music sources:
-  - /home/user/Music/Spotify:/mnt/media/music/Spotify
+  - /home/user/Music/MyCollection:/mnt/media/music/MyCollection
   - /media/external/Vinyl:/mnt/media/music/Vinyl
 
   # ...
@@ -153,7 +153,7 @@ If you have a lot of data in your data folder, for the first time hash cache and
 The project requires GPU to run properly. When running the project inside the Docker container, make sure that `NVIDIA Container Toolkit` is installed for Linux and `WSL2` for Windows.
 
 ## Security notes
-The project is meant to be run on the localhost only for now. The default configuration ip address is set to `127.0.0.1` inside `docker-compose.yaml` file. This means that the application will only be accessible from the machine it is running on. If you want to access it from other devices on your local network, you can change the port binding in your `docker-compose.override.yaml` to `0.0.0.0:5001:5001`. You can even tunnel it to the internet using services like [ngrok](https://ngrok.com/) or [cloudflare tunnel](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/). However, I would strongly recommend against exposing the service to the internet (unless you are 100% know what you are doing) as there is no proper security work has been done yet. 
+The project is meant to be run on the localhost only for now. The default configuration ip address is set to `127.0.0.1` inside `docker-compose.override.yaml` file. This means that the application will only be accessible from the machine it is running on. If you want to access it from other devices on your local network, you can change the port binding in your `docker-compose.override.yaml` to `0.0.0.0:5001:5001`. You can even tunnel it to the internet using services like [ngrok](https://ngrok.com/) or [cloudflare tunnel](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/). However, I would strongly recommend against exposing the service to the internet (unless you are 100% know what you are doing) as there is no proper security work has been done yet. 
 
 ## Embedding models
 To make audio, visual and text search possible the project uses these models:  

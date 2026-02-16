@@ -53,6 +53,18 @@ Add new downloadable module for 'Deep Research'-like functionality that uses use
 
 ## Versions History
 
+### Version 0.3.3 (17.02.2026)
+*   **Text Module — Evaluator Model & Training:**
+    *   Implemented a new `TransformerEvaluator` architecture in `src/scoring_models.py` — a lightweight transformer-based model that takes a variable-length sequence of chunk embeddings as input and produces a rating score. Architecture: linear projection (1024→1024 for now, reserve for future optimizations), learnable [CLS] token, sinusoidal positional encoding, 2-layer TransformerEncoder (4 heads, FFN=512), LayerNorm + MLP head → 11-class rating output. Designed to train efficiently on 8GB GPUs.
+    *   `TextEvaluator` in `pages/text/engine.py` now inherits from `TransformerEvaluator` instead of the MLP-based `Evaluator`, properly handling the variable-length chunk embeddings that text files produce.
+    *   Created `pages/text/train.py` with `train_text_evaluator()` function, analogous to the existing image evaluator training pipeline. Queries rated text files from the database, generates embeddings via `TextSearch`, and trains the transformer model with progress reporting.
+    *   Wired up `text_evaluator.predict()` in `pages/text/serve.py` — model ratings for text files are now computed and saved to the database instead of being hardcoded to `None`.
+*   **Text Module — User Rating UI:**
+    *   Added an interactive star rating widget (using the shared `StarRatingComponent`) to the text file preview modal. Users can now rate text files directly from the viewer.
+    *   Added `emit_text_page_set_text_rating` socket event handler in `pages/text/serve.py` to persist user ratings to the `TextLibrary` database.
+*   **Training Page:**
+    *   Added "Train text evaluator" button to the training page (`pages/train/page.html`), with full backend wiring in `pages/train/serve.py`. The button is disabled during any active training session, consistent with existing music and image evaluator buttons.
+
 ### Version 0.3.2 (09.02.2026)
 *   **Configuration & Deployment (Breaking Changes):**
     *   **Replaced `.env`-based configuration with `docker-compose.override.yaml`.** Users now configure all instance-specific settings (media folders, port, container name, authentication) in a single `docker-compose.override.yaml` file instead of a separate `.env` file. A well-documented `docker-compose.override.example.yaml` template is provided. This is a **breaking change** — existing users must migrate their settings from `.env` to the new override file (see migration notes below).

@@ -1,5 +1,6 @@
 import os
 import time
+import datetime
 
 from flask import Flask, render_template, send_from_directory
 from flask_socketio import SocketIO
@@ -126,8 +127,8 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
         
 
         # Rate all files in case they are not rated or model was updated
-        embeddings = text_search_engine.process_files(filtered_files_list, callback=embedding_gathering_callback, media_folder=media_directory) #.cpu().detach().numpy() 
-        # model_ratings = text_evaluator.predict(embeddings)
+        embeddings = text_search_engine.process_files(filtered_files_list, callback=embedding_gathering_callback, media_folder=media_directory)
+        model_ratings = text_evaluator.predict(embeddings)
 
         # Update the model ratings in the database
         common_socket_events.show_search_status(f"Updating model ratings of files...") 
@@ -135,12 +136,9 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
         update_items = []
         last_shown_time = 0
         for ind, full_path in enumerate(filtered_files_list):
-            # print(f"Updating model ratings for {ind+1}/{len(filtered_files_list)} files.")
-
             hash = files_list_hash_map[full_path]
 
-            # print('model_ratings[ind]', model_ratings[ind])
-            model_rating = None #model_ratings[ind].mean().item()
+            model_rating = model_ratings[ind].item()
 
             music_db_item = db_models.TextLibrary.query.filter_by(hash=hash).first()
             if music_db_item:
@@ -249,6 +247,35 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
         except Exception as e:
             print(f"Error saving file: {full_path}: {e}") # Log error
             # Optionally emit error event to frontend
+
+    @socketio.on('emit_text_page_set_text_rating')
+    def set_text_rating(data):
+        text_hash = data['hash']
+        text_rating = data['rating']
+        text_path = data['file_path']
+
+        print('Set text rating:', text_hash, text_rating)
+
+        text_db_item = db_models.TextLibrary.query.filter_by(hash=text_hash).first()
+
+        if text_db_item is None:
+            # Create new instance if there is no entry in the database
+            text_data = {
+                "hash": text_hash,
+                "hash_algorithm": text_search_engine.get_hash_algorithm(),
+                "file_path": text_path,
+                "user_rating": float(text_rating),
+                "user_rating_date": datetime.datetime.now()
+            }
+            text_db_item = db_models.TextLibrary(**text_data)
+            db_models.db.session.add(text_db_item)
+            db_models.db.session.commit()
+        else:
+            # Update the existing instance
+            text_db_item.file_path = text_path  # in case the file was moved
+            text_db_item.user_rating = float(text_rating)
+            text_db_item.user_rating_date = datetime.datetime.now()
+            db_models.db.session.commit()
 
     @socketio.on('emit_text_page_get_path_to_media_folder')
     def get_path_to_media_folder():

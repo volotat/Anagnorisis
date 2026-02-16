@@ -2,6 +2,7 @@ import FolderViewComponent from '/pages/FolderViewComponent.js';
 import FileGridComponent from '/pages/FileGridComponent.js';
 import PaginationComponent from '/pages/PaginationComponent.js';
 import SearchBarComponent from '/pages/SearchBarComponent.js';
+import StarRatingComponent from '/pages/StarRating.js';
 
 //// CONSTANTS AND VARIABLES
 let num_files_on_page = 24;
@@ -67,8 +68,6 @@ function renderTextPreview(fileData) { // Function for Text module preview
 
 function renderCustomData(fileData) { // Function for custom data rendering
     const dataContainer = document.createElement('div');
-    dataContainer.className = 'file-custom-data';
-    dataContainer.style.wordBreak = 'break-word';
 
     // Search matching scores
     if (fileData.search_score !== null && fileData.search_score !== undefined) {
@@ -78,35 +77,29 @@ function renderCustomData(fileData) { // Function for custom data rendering
         dataContainer.appendChild(searchScoresElement);
     }
 
-    // File Path
-    const filePathElement = document.createElement('p');
-    filePathElement.className = 'file-info file-path';
-    filePathElement.innerHTML = `<b>Path:</b>&nbsp;${fileData.file_path}`;
-    dataContainer.appendChild(filePathElement);
+    const data = document.createElement('p');
+    data.style.wordBreak = 'break-all';
 
-    // Hash
-    const hashElement = document.createElement('p');
-    hashElement.className = 'file-info file-hash';
-    hashElement.innerHTML = `<b>Hash:</b>&nbsp;${shortenHash(fileData.hash)}`;
-    dataContainer.appendChild(hashElement);
+    $(data).append('<b>Path:</b>&nbsp;' + fileData.file_path + '<br>');
+    $(data).append('<b>Hash:</b>&nbsp;' + shortenHash(fileData.hash) + '<br>');
 
     // User Rating
-    const userRatingElement = document.createElement('p');
-    userRatingElement.className = 'file-info file-user-rating';
-    userRatingElement.innerHTML = `<b>User rating:</b>&nbsp;${fileData.user_rating !== null ? fileData.user_rating : 'N/A'}`;
-    dataContainer.appendChild(userRatingElement);
+    if (fileData.file_info.user_rating != null) {
+        $(data).append('<b>User rating:</b>&nbsp;' + fileData.file_info.user_rating.toFixed(2) + '/10<br>');
+    } else {
+        $(data).append('<b>User rating:</b>&nbsp;N/A<br>');
+    }
 
     // Model Rating
-    const modelRatingElement = document.createElement('p');
-    modelRatingElement.className = 'file-info file-model-rating';
-    modelRatingElement.innerHTML = `<b>Model rating:</b>&nbsp;${fileData.model_rating !== null ? fileData.model_rating : 'N/A'}`;
-    dataContainer.appendChild(modelRatingElement);
+    if (fileData.file_info.model_rating != null) {
+        $(data).append('<b>Model rating:</b>&nbsp;' + fileData.file_info.model_rating.toFixed(2) + '/10<br>');
+    } else {
+        $(data).append('<b>Model rating:</b>&nbsp;N/A<br>');
+    }
 
-    // File Size
-    const fileSizeElement = document.createElement('p');
-    fileSizeElement.className = 'file-info file-size';
-    fileSizeElement.innerHTML = `<b>Size:</b>&nbsp;${fileData.file_size}`;
-    dataContainer.appendChild(fileSizeElement);
+    $(data).append('<b>File size:</b>&nbsp;' + fileData.file_size + '<br>');
+
+    dataContainer.appendChild(data);
 
     return dataContainer;
 }
@@ -225,7 +218,41 @@ $(document).ready(function() {
             handleFileClick: (fileData) => {
                 currentFilePath = fileData.file_path; // Store current file path
                 socket.emit('emit_text_page_get_file_content', { file_path: fileData.file_path });
-                $('#text_file_modal_title').text(fileData.base_name); // Set modal title to filename
+                $('#text_file_modal_title .scrolling-title').text(fileData.base_name); // Set modal title to filename
+
+                // Create an interactive star rating component for the modal
+                const modalRatingContainer = document.getElementById('text_file_modal_rating');
+                modalRatingContainer.innerHTML = ''; // Clear previous rating widget
+                
+                // Determine which rating to show: user rating if available, otherwise model rating
+                const hasUserRating = fileData.file_info.user_rating !== null && fileData.file_info.user_rating !== undefined;
+                const displayRating = hasUserRating ? fileData.file_info.user_rating : fileData.file_info.model_rating;
+                
+                const modalStarRating = new StarRatingComponent({
+                    callback: (rating) => {
+                        socket.emit('emit_text_page_set_text_rating', {
+                            hash: fileData.hash,
+                            file_path: fileData.file_path,
+                            rating: rating,
+                        });
+                        // Update in-memory data so reopening the modal shows the new rating
+                        fileData.file_info.user_rating = rating;
+                        // Mark as user-rated and update display colors
+                        modalStarRating.isUserRated = true;
+                        modalStarRating.updateAllContainers();
+                    },
+                    initialRating: displayRating,
+                });
+                
+                // Override isUserRated flag if showing model rating
+                modalStarRating.isUserRated = hasUserRating;
+                
+                const starRatingElement = modalStarRating.issueNewHtmlComponent({
+                    containerType: 'span',
+                    isActive: true,
+                });
+                modalRatingContainer.appendChild(starRatingElement);
+
                 $('#text_file_modal').addClass('is-active'); // Show modal
                 $('#text_content_textarea').val('Loading...'); // Loading text
                 // Switch to Raw Text tab initially

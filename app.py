@@ -23,6 +23,7 @@ from contextlib import contextmanager
 from src.db_models import db
 from src.config_loader import load_config
 from src.log_streamer import LogStreamer
+# from src.share_api import init_share_api
 
 # Add after your imports, before loading config
 import argparse
@@ -163,6 +164,8 @@ def before_request_auth():
 # Set the socketio parameters
 socketio = SocketIO(app, cors_allowed_origins="*", path="/socket.io")
 
+# Register the Share API (REST endpoints for cross-instance file sharing)
+# init_share_api(app, cfg)
 
 # List all folders in the extensions directory
 extension_names = [entry.name for entry in os.scandir('pages') if entry.is_dir()]

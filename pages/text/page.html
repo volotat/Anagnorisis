@@ -13,6 +13,25 @@
   #text_content_markdown li:has(input[type="checkbox"]) {
       list-style: none;
   }
+
+  /* Scrolling title for long file names */
+  #text_file_modal_title span {
+      display: inline-block;
+      max-width: 100%;
+  }
+  #text_file_modal_title .scrolling-title {
+      display: inline-block;
+      white-space: nowrap;
+  }
+  #text_file_modal_title:hover .scrolling-title {
+      animation: scroll-title 6s linear infinite;
+  }
+  @keyframes scroll-title {
+      0%   { transform: translateX(0); }
+      10%  { transform: translateX(0); }
+      90%  { transform: translateX(calc(-100% + 200px)); }
+      100% { transform: translateX(calc(-100% + 200px)); }
+  }
 </style>
 
 <div class="container is-fluid columns is-centered py-6 mb-6">
@@ -70,9 +89,14 @@
 <div class="modal" id="text_file_modal">
   <div class="modal-background modal-close-action"></div>
   <div class="modal-card" style="width: 80%; max-width: 960px; height: 90vh; display: flex; flex-direction: column;">
-    <header class="modal-card-head">
-      <p class="modal-card-title" id="text_file_modal_title">File Content</p>
-      <button class="delete modal-close modal-close-action" aria-label="close"></button>
+    <header class="modal-card-head" style="align-items: center;">
+      <p class="modal-card-title" id="text_file_modal_title" style="flex: 1 1 0; min-width: 0; overflow: hidden; white-space: nowrap; margin-bottom: 0;">
+        <span style="display: inline-block; max-width: 100%; overflow: hidden; white-space: nowrap;">
+          <span class="scrolling-title">File Content</span>
+        </span>
+      </p>
+      <span id="text_file_modal_rating" style="flex-shrink: 0; margin-left: 1rem; margin-right: 1rem;"></span>
+      <button class="delete modal-close modal-close-action" aria-label="close" style="flex-shrink: 0;"></button>
     </header>
     <section class="modal-card-body" style="flex: 1; display: flex; flex-direction: column; padding-bottom: 0;">
       <!-- Tabs - fixed position -->

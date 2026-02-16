@@ -11,6 +11,12 @@
     </div>
   </form>
 
+  <form class="box" action="#">
+    <div class="column is-full">
+      <button class="button is-primary is-fullwidth" id="startText">Train text evaluator</button>
+    </div>
+  </form>
+
   <div class="box">
     <p class="mb-3" id="fine_tuning_status">Training status</p>
     <progress id="fine_tuning_progress" class="progress" value="0" max="100">0%</progress>
@@ -205,6 +211,7 @@
     function setTrainingActive(active) {
       document.getElementById('startMusic').disabled = !!active;
       document.getElementById('startImages').disabled = !!active;
+      document.getElementById('startText').disabled = !!active;
     }
 
     $("document").ready(function(){
@@ -230,6 +237,10 @@
 
       $('#startImages').on('click', function(){
         socket.emit("emit_train_page_start_image_evaluator_training")
+      });
+
+      $('#startText').on('click', function(){
+        socket.emit("emit_train_page_start_text_evaluator_training")
       });
     });
   </script>    
