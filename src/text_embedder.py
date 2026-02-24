@@ -436,6 +436,16 @@ class TextEmbedder:
             import gc
             gc.collect()
 
+    def unload(self):
+        """
+        Immediately terminate the worker subprocess to free GPU/CPU memory.
+        model_hash, embedding_dim and _models_folder are preserved so the
+        process restarts transparently on the next call.
+        """
+        with self._lock:
+            self._terminate_process()
+        print("TextEmbedder: Unloaded subprocess (model_hash preserved for restart).")
+
     def _ensure_process_running(self):
         """Starts the process if it's not running."""
         # Must be called within self._lock

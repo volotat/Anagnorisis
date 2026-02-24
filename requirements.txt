@@ -12,10 +12,10 @@ torchaudio
 send2trash
 Pillow
 requests
-transformers
+transformers==4.51.0
 huggingface-hub
 tqdm
-opencv-python
+opencv-python-headless
 imageio
 scikit-learn
 datasets
@@ -36,3 +36,12 @@ moviepy==1.0.3
 watchdog
 rapidfuzz
 setproctitle
+bitsandbytes>=0.46.1
+accelerate
+librosa 
+soundfile
+minicpmo
+onnx
+hyperpyyaml
+diffusers
+onnxruntime

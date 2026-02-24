@@ -173,7 +173,7 @@ $(document).ready(function() {
         showOrder: true,
         showTemperature: true,
         temperatures: [0, 0.2, 1, 2],
-        keywords: [], //['recommendation', 'rating', 'random', 'file_size', 'length', 'similarity'],
+        keywords: ['rating'], //['recommendation', 'random', 'file_size', 'length', 'similarity'],
         autoSyncUrl: true,
         ensureDefaultsInUrl: true,
     });

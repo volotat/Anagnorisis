@@ -51,3 +51,13 @@ text:
   chunk_size: 384 # Max tokens per chunk
   chunk_overlap: 128 # Overlap between chunks
   embedding_dimension: 1024 # Dimension to truncate to (Optional, match Matryoshka)
+omni:
+  model_name: "openbmb/MiniCPM-o-4_5"
+  load_in_4bit: true  # BitsAndBytes 4-bit quantization (~5 GB VRAM instead of ~18 GB)
+  max_new_tokens: 1024
+  do_sample: false
+  temperature: 0.3
+  image_prompt: "Describe this image in detail. Include objects, scene, colors, actions, and any text visible."
+  audio_prompt: "Summarize the main content of the audio."
+  video_prompt: "Describe the video in detail. Include the scene, actions, objects, and any notable events."
+  text_prompt: "Please provide a detailed summary of the following text:"

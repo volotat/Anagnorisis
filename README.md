@@ -7,10 +7,15 @@ Anagnorisis - is a local recommendation system that allows you to fine-tune mode
 The project uses [Flask](https://flask.palletsprojects.com/) libraries for backend and [Bulma](https://bulma.io/) as frontend CSS framework. For all ML-related stuff [Transformers](https://github.com/huggingface/transformers) and [PyTorch](https://pytorch.org/) are used. This is the main technological stack, however there are more libraries used for specific purposes.
 
 
-To read more about the ideas behind the project you can read these articles:  
+To find more about the project and ideas behind it you can read these articles:  
 [Anagnorisis. Part 1: A Vision for Better Information Management.](https://volotat.github.io/p/anagnorisis-part-1-a-vision-for-better-information-management/)  
 [Anagnorisis. Part 2: The Music Recommendation Algorithm.](https://volotat.github.io/p/anagnorisis-part-2-the-music-recommendation-algorithm/)  
 [Anagnorisis. Part 3: Why Should You Go Local?](https://volotat.github.io/p/anagnorisis-part-3-why-should-you-go-local/)  
+
+And watch these videos:  
+[Anagnorisis: Search Your Data Effectively (v0.3.1)](https://www.youtube.com/watch?v=X1Go7yYgFlY) - How to effectively search your data across all modules.  
+[Anagnorisis: Music Module Preview (v0.1.6)](https://www.youtube.com/watch?v=vux7mDaRCeY) - Presentation of 'Music' module usage. To see how the algorithm works in details, please read this wiki page: [Music](wiki/music.md)  
+[Anagnorisis: Images module preview (v0.1.0)](https://www.youtube.com/watch?v=S70Lp0oL7aQ) - Presentation of 'Images' module usage. Or you can read the guide at the [Images wiki](wiki/images.md) page.  
 
 ## General
 Here is the main pipeline of working with the project:  
@@ -21,20 +26,6 @@ Here is the main pipeline of working with the project:
 You repeat these steps again and again, getting each time model that better and better aligns to your preferences.  
 
 The big vision of this project is to provide a platform that creates a local, private model of your interests. That likes what you like and sees importance where you would see it. Then you can use this model to search and filter local and global information on your behalf in a way you would do it yourself but in a much faster and efficient way. Making this platform (in the future) a go to place to see news, recommendations and insights, and so on, tailored specifically for you. As the internet gets populated with bots and AI slop, a platform like this might create a necessary filter to be able to navigate in this chaotic information space efficiently.
-
-## Search Capabilities
-Please watch this video to see how to effectively search your data across all modules:  
-[![Watch the video](https://i3.ytimg.com/vi/X1Go7yYgFlY/hqdefault.jpg?1)](https://youtu.be/X1Go7yYgFlY)  
-
-## Music Module
-Please watch this video to see presentation of 'Music' module usage:  
-[![Watch the video](https://i3.ytimg.com/vi/vux7mDaRCeY/hqdefault.jpg?1)](https://youtu.be/vux7mDaRCeY)  
-To see how the algorithm works in details, please read this wiki page: [Music](wiki/music.md)
-
-## Images Module
-Please watch this video to see presentation of 'Images' module usage:  
-[![Watch the video](https://i3.ytimg.com/vi/S70Lp0oL7aQ/hqdefault.jpg?1)](https://youtu.be/S70Lp0oL7aQ)   
-Or you can read the guide at the [Images wiki](wiki/images.md) page.
 
 ## Running from Docker
 The preferred way to run the project is from Docker. This should be much more stable than running it from the local environment, especially on Windows.
@@ -156,12 +147,20 @@ The project requires GPU to run properly. When running the project inside the Do
 The project is meant to be run on the localhost only for now. The default configuration ip address is set to `127.0.0.1` inside `docker-compose.override.yaml` file. This means that the application will only be accessible from the machine it is running on. If you want to access it from other devices on your local network, you can change the port binding in your `docker-compose.override.yaml` to `0.0.0.0:5001:5001`. You can even tunnel it to the internet using services like [ngrok](https://ngrok.com/) or [cloudflare tunnel](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/). However, I would strongly recommend against exposing the service to the internet (unless you are 100% know what you are doing) as there is no proper security work has been done yet. 
 
 ## Embedding models
-To make audio, visual and text search possible the project uses these models:  
-[LAION-AI/CLAP](https://github.com/LAION-AI/CLAP)  
-[Google/SigLIP](https://arxiv.org/pdf/2303.15343)  
-[JinaAI/jina-embeddings-v3](https://huggingface.co/jinaai/jina-embeddings-v3)
+To make audio, visual, video and text search possible the project uses these models:  
+[MiniCPM-o-4_5](https://huggingface.co/openbmb/MiniCPM-o-4_5) - as omni-descriptor model to convert all data modalities into text descriptions. 
+[JinaAI/jina-embeddings-v3](https://huggingface.co/jinaai/jina-embeddings-v3) - for text embedding.
 
-All embedding models are downloaded automatically when the project is started for the first time. This might take some time depending on the internet connection. You can see the progress inside `logs/anagnorisis-app_log.txt` file that will appear in the project's root folder if you run the project from the Docker container.
+Both omni-descriptor and text-embedding models are downloaded automatically when the project is started for the first time. This might take some time depending on the internet connection. You can see the progress inside `logs/anagnorisis-app_log.txt` file that will appear in the project's root folder if you run the project from the Docker container.
+
+---
+
+> [!NOTE] 
+> Since verion 0.3.4 the approach to embedding generation is going to be dramatically different. Instead of using several pretrained CLIP-like embedding models as before ([LAION-AI/CLAP](https://github.com/LAION-AI/CLAP), [Google/SigLIP](https://arxiv.org/pdf/2303.15343)) there are going to be one unified omni model to convert all the data modalities into the text descriptions and then the search and recommendations will be done on the text level using text embeddings. While this approach is more demanding to the hardware, much slower and probably less accurate at the start, it allows to create a more unified and consistent search experience across all data modalities. I also believe that this approch is much more scalable with new releases of more powerful and efficient omni models. For now [MiniCPM-o-4_5](https://huggingface.co/openbmb/MiniCPM-o-4_5) is used that with 4-bit quantization could work under 8Gb of VRAM with small but reasonable context window. This approach also allows to unify semantic-based search and metadata-based search, as everything is converted into text descriptions. Even better approach would be using a [Universal-Embedding Model](https://volotat.github.io/p/there-is-a-way-to-make-training-llms-way-cheaper-and-more-accessible/) but as for my knowledge such model is do not yet exists.
+> 
+> In the future, when omni-models will be small enough and/or typical personal hardware will be powerful enough, users will be able to fine-tune the omni-descriptor model itself on their '.meta' custom made descriptions with [LORA](https://arxiv.org/abs/2106.09685)/[DORA](https://arxiv.org/abs/2402.09353)/[ELLA](https://arxiv.org/abs/2601.02232)-like approaches so automatic descriptions would be done in the user-like fashion, making the search experience even more personalized and accurate.
+> 
+> We are also no longer need to train separate recommendation models for each data modality, as everything is derived from text and eventually mapped onto a unified embedding space, the single `TransformerEvaluator` model is now responsible for grading all the types of data, finally achieving one of the main goals of the project - creating a single unified model of user preferences, i.e. some form of digital twin of the user that can be used to search and filter information on the user's behalf.
 
 ## Wiki
 The project has its own wiki that is integrated into the project itself, you might access it by running the project, or simply reading it as markdown files.

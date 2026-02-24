@@ -53,6 +53,20 @@ Add new downloadable module for 'Deep Research'-like functionality that uses use
 
 ## Versions History
 
+### Version 0.3.4 (24.02.2026)
+*   **Model Re-Rating After Retraining:**
+    *   Fixed a bug where `update_model_ratings` was never called after retraining an evaluator model. The `file_manager.get_files()` only passed files with `model_rating is None` to the rating callback, so files already rated by the old model were silently skipped. Added a new `evaluator_hash` parameter to `get_files()` — files whose `model_hash` differs from the current evaluator hash are now included in the re-rating list alongside unrated files. Applied consistently across all three modules (images, music, text).
+*   **OmniDescriptor — New Omni-Modal Description Module (`src/omni_descriptor.py`):**
+    *   Implemented `OmniDescriptor` — a singleton proxy class that manages a long-lived worker subprocess holding the [MiniCPM-o-4.5](https://huggingface.co/openbmb/MiniCPM-o-4_5) model. The subprocess isolates the CUDA context from the main Flask process and is automatically terminated after 5 minutes of inactivity (same pattern as `TextEmbedder`) to free GPU memory, then transparently restarted on the next call. 
+    *   Model is loaded with BitsAndBytes 4-bit NF4 double-quantization (`bfloat16` compute dtype, `device_map='auto'`, `init_tts=False`) to fit within 8 GB VRAM. 
+    * There are now several main methods for generating descriptions from different modalities available in the module:
+        - **`describe_image(path, prompt)`** — generates a detailed text description of an image file via PIL + `model.chat()`.
+        - **`describe_audio_sampled(path, n_samples, sample_duration_s, prompt)`** — memory-safe audio description. Samples `n_samples` evenly-spaced windows of `sample_duration_s` seconds each, runs the model independently on each, then synthesises a combined summary. Per-segment OOM is caught and skipped with `torch.cuda.empty_cache()`.
+        - **`describe_video_sampled(path, n_samples, sample_duration_s, frames_per_segment, prompt)`** — memory-safe video description. For each of `n_samples` evenly-spaced time windows: extracts `frames_per_segment` frames via `cv2` (PIL images) and the corresponding audio waveform via `ffmpeg pipe:1 → io.BytesIO → librosa`. Passes both modalities together (`frames + [audio_chunk, prompt]`, `use_tts_template=True`) in a single `model.chat()` call per segment, then synthesises the per-segment descriptions into one summary. Uses `num_beams=1` throughout to prevent beam-search OOM.
+        - **`describe_text(text, prompt)`** — summarises long text via `model.chat()`.
+    *   Added a comprehensive `__main__` test suite to ensure its stability and reliability of the new module.
+    *   To make all the modalities properly working, new set of liraries added to the `requierments.txt` (`opencv-python-headless`, `minicpmo`, `hyperpyyaml`, `diffusers`, and `onnxruntime`).
+
 ### Version 0.3.3 (17.02.2026)
 *   **Text Module — Evaluator Model & Training:**
     *   Implemented a new `TransformerEvaluator` architecture in `src/scoring_models.py` — a lightweight transformer-based model that takes a variable-length sequence of chunk embeddings as input and produces a rating score. Architecture: linear projection (1024→1024 for now, reserve for future optimizations), learnable [CLS] token, sinusoidal positional encoding, 2-layer TransformerEncoder (4 heads, FFN=512), LayerNorm + MLP head → 11-class rating output. Designed to train efficiently on 8GB GPUs.

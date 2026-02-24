@@ -359,7 +359,7 @@ class FileManager:
             all_files.extend(self._walk_files_cached(d, media_exts))
         return all_files
 
-    def get_files(self, path = "", pagination = 0, limit = 100, text_query = None, seed = None, filters: dict = {}, get_file_info = None, update_model_ratings = None, mode = 'file-name', order = 'most-relevant', temperature = 0):
+    def get_files(self, path = "", pagination = 0, limit = 100, text_query = None, seed = None, filters: dict = {}, get_file_info = None, update_model_ratings = None, mode = 'file-name', order = 'most-relevant', temperature = 0, evaluator_hash = None):
 
         if self.media_directory is None:
             self.show_status(f"{self.module_name} media folder is not set.")
@@ -475,8 +475,10 @@ class FileManager:
         if db_updated:
             db.session.commit()
 
-        # Check if there files without model rating
-        no_model_rating_files = [os.path.join(self.media_directory, item.file_path) for item in db_items if item.model_rating is None and item.file_path is not None]
+        # Check if there files without model rating or with stale model hash
+        no_model_rating_files = [os.path.join(self.media_directory, item.file_path) for item in db_items if item.file_path is not None and (
+            item.model_rating is None or (evaluator_hash is not None and item.model_hash != evaluator_hash)
+        )]
         # print('no_model_rating_files size', len(no_model_rating_files))
 
         # Add files that are not in the database yet

@@ -356,6 +356,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
             "filters": filters,
             "get_file_info": get_file_info,
             "update_model_ratings": update_model_ratings,
+            "evaluator_hash": image_evaluator.hash,
         })
         return images_file_manager.get_files(**input_params)
 

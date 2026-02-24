@@ -87,6 +87,9 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
     common_socket_events.show_loading_status('Initializing text evaluator...')
     text_evaluator = TextEvaluator(embedding_dim=text_search_engine.embedding_dim)
 
+    common_socket_events.show_loading_status('Loading text evaluator model...')
+    text_evaluator.load(os.path.join(cfg.main.personal_models_path, 'text_evaluator.pt'))
+
     embedding_gathering_callback = EmbeddingGatheringCallback(common_socket_events.show_search_status)
 
     common_socket_events.show_loading_status('Setting up file manager...')
@@ -192,7 +195,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
             # "length": filter_by_length,
             # "similarity": filter_by_similarity, 
             # "random": filter_by_random, 
-            # "rating": filter_by_rating, 
+            "rating": common_filters.filter_by_rating,
             # "recommendation": filter_by_recommendation
         }
 
@@ -218,6 +221,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
             "filters": filters,
             "get_file_info": get_file_info,
             "update_model_ratings": update_model_ratings,
+            "evaluator_hash": text_evaluator.hash,
         })
         return text_file_manager.get_files(**input_params)
 

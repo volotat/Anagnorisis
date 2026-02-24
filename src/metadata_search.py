@@ -3,9 +3,11 @@ import torch
 import numpy as np
 import traceback
 import threading
+from typing import Optional
 
 from src.text_embedder import TextEmbedder
 from src.caching import TwoLevelCache
+from src.omni_descriptor import OmniDescriptor
 
 class MetadataSearch:
     """
@@ -37,6 +39,7 @@ class MetadataSearch:
             
         self.cfg = cfg
         self.text_embedder = TextEmbedder(self.cfg) 
+        self.omni_descriptor = OmniDescriptor(self.cfg)
 
         # Define cache location and TTLs
         cache_folder = os.path.join(self.cfg.main.cache_path, 'metadata_cache')
@@ -55,7 +58,7 @@ class MetadataSearch:
         Returns the current hashing algorithm identifier used by this engine.
         Used for cache invalidation when the algorithm changes.
         """
-        return "meta-search-v1.3" 
+        return "meta-search-v1.5" 
 
     def _read_meta_snippet(self, meta_path: str) -> tuple[str, bool]:
         """
@@ -79,8 +82,99 @@ class MetadataSearch:
         return ''.join(lines), truncated
 
     def process_query(self, query_text: str) -> np.ndarray:
+        # Unload to free VRAM, if it was loaded for description generation
+        self.omni_descriptor.unload() 
+        
         return self.text_embedder.embed_query(query_text)
-    
+
+    def _extension_to_describe_method(self, ext: str) -> Optional[str]:
+        """
+        Returns the OmniDescriptor method name to use for a given file extension,
+        or None if the extension is not handled by any configured module.
+        """
+        cfg = self.cfg
+        try:
+            image_fmts = set(cfg.images.media_formats)
+        except Exception:
+            image_fmts = set()
+        try:
+            music_fmts = set(cfg.music.media_formats)
+        except Exception:
+            music_fmts = set()
+        try:
+            video_fmts = set(cfg.videos.media_formats)
+        except Exception:
+            video_fmts = set()
+        try:
+            text_fmts = set(cfg.text.media_formats)
+        except Exception:
+            text_fmts = set()
+
+        if ext in image_fmts:
+            return 'describe_image'
+        if ext in music_fmts:
+            return 'describe_audio_sampled'
+        if ext in video_fmts:
+            return 'describe_video_sampled'
+        if ext in text_fmts:
+            return 'describe_text'
+        return None
+
+    def _get_auto_description(self, file_path: str) -> str:
+        """
+        Uses OmniDescriptor to generate an automatic description of the file.
+        Cached by (file_hash, omni_model_hash) so recomputation only happens
+        when the file content or the descriptor model changes.
+        Returns an empty string if OmniDescriptor is unavailable or not yet initiated.
+        """
+
+        print(f"Generating auto-description for {file_path} using OmniDescriptor...")
+
+        # Try to get cached description first, using file hash and model hash for invalidation.
+        descriptor = self.omni_descriptor
+
+        try:
+            file_hash = self.engine.get_file_hash(file_path)
+        except Exception:
+            raise ValueError(f"Failed to get file hash for {file_path}, cannot generate auto-description.")
+        
+        ext = os.path.splitext(file_path)[1].lower()
+        method_name = self._extension_to_describe_method(ext)
+        if method_name is None:
+            raise ValueError(f"Unsupported file extension for auto-description: {ext}")
+
+        cache_key = f"auto_desc::{file_hash}::{descriptor.model_hash}::{method_name}"
+        cached = self._fast_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        # Unload TextEmbedder before starting OmniDescriptor — both are large GPU models
+        # and cannot comfortably coexist in VRAM. TextEmbedder auto-restarts on next embed call.
+        self.text_embedder.unload()
+
+        # Initiate the descriptor if not already done (lazy loading). This will load the model into VRAM.
+        if not getattr(descriptor, 'model_hash', None):
+            models_folder = self.cfg.main.embedding_models_path
+            descriptor.initiate(models_folder)
+
+        try:
+            method = getattr(descriptor, method_name)
+            if method_name == 'describe_text':
+                # Read text content first; cap at 30 000 chars to stay within model context.
+                with open(file_path, 'r', encoding='utf-8', errors='ignore') as fh:
+                    text_content = fh.read(30_000)
+                description = method(text_content)
+            else:
+                description = method(file_path)
+        except Exception as e:
+            print(f"[MetadataSearch] Auto-description failed for {file_path}: {e}")
+            raise ValueError(f"Auto-description failed for {file_path}: {e}")
+
+        self._fast_cache.set(cache_key, description)
+
+        print(f"Generated auto-description for {file_path} (method: {method_name}): {description[:100]}{'...' if len(description) > 100 else ''}")
+        return description
+
     def generate_full_description(self, file_path: str, media_folder: str) -> str:
         """Generates a full metadata description for a single file."""
         media_folder = media_folder or ''
@@ -89,6 +183,15 @@ class MetadataSearch:
         
         full_description = f"File Name: {file_name}\nFile Path: {relative_path}\n"
         full_description += "\n"
+
+        # Automatic description generated by OmniDescriptor (image captioning / audio summary /
+        # video description / text summary). Cached by (file_hash, model_hash) — free when
+        # the model is not loaded.
+        auto_desc = self._get_auto_description(file_path)
+        if auto_desc:
+            full_description += "# Automatic description:\n"
+            full_description += auto_desc
+            full_description += "\n\n"
 
         # Include basic internal metadata, only textual fields
         internal_meta = self.engine.get_metadata(file_path)
@@ -108,13 +211,17 @@ class MetadataSearch:
             full_description += meta_content
             full_description += "\n"
 
-        # TODO: Include automatically generated descriptions from VLMs and other ML models. 
         return full_description
     
     def _generate_embedding(self, file_path: str, media_folder: str) -> np.ndarray:
         """Generates a metadata embedding for a single file."""
         meta_text = self.generate_full_description(file_path, media_folder)
-        
+
+        # OmniDescriptor (if used) has finished. Unload it before TextEmbedder
+        # reclaims VRAM to generate the embedding. OmniDescriptor auto-restarts
+        # on the next describe call.
+        self.omni_descriptor.unload()
+
         meta_embeddings = self.text_embedder.embed_text(meta_text)
         
         if meta_embeddings is not None and len(meta_embeddings) > 0:
@@ -146,6 +253,7 @@ class MetadataSearch:
                 f"meta::{file_path}::"
                 f"{file_stat.st_mtime}::{file_stat.st_size}::"
                 f"meta::{meta_sig}::"
+                # f"auto_desc_hash::{self.omni_descriptor.model_hash if getattr(self.omni_descriptor, 'model_hash', None) else 'no_desc'}::"
                 f"alg::{self.get_algorithm_version()}"
             )
 
@@ -173,6 +281,19 @@ class MetadataSearch:
         Generates embeddings for this metadata text.
         Returns a list of lists of numpy arrays (one list per file, each containing one metadata embedding).
         """
+        # To avoid getting omni and text embedding models constantly loading and unloading from VRAM, 
+        # we want to call 'generate_full_description' on all files in list first to populate the description cache
+        # while only omni descriptor is loaded, then when we will call '_process_single_file_meta' it will gather
+        # descriptions from cache and only text embedding model will be loaded. This is a bit of a hack but it 
+        # allows us to use the cache effectively and avoid VRAM issues.
+
+        for file_path in file_paths:
+            try:
+                self.generate_full_description(file_path, media_folder)
+            except Exception as e:
+                print(f"Error generating full description for {file_path}: {e}")
+                traceback.print_exc()
+
         all_files_meta_embeddings = []
         for ind, file_path in enumerate(file_paths):
             embedding_list = self._process_single_file_meta(file_path, media_folder)
@@ -193,6 +314,9 @@ class MetadataSearch:
             query_embedding_np = query_embedding.to(torch.float32).cpu().numpy()
         else:
             query_embedding_np = query_embedding
+
+        # Unload to free VRAM, if it was loaded for description generation
+        self.omni_descriptor.unload()  
 
         beta = 16.0  # tune (4..20). Higher -> closer to max.
         
