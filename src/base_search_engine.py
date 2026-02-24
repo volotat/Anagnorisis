@@ -10,7 +10,6 @@ from abc import ABC, abstractmethod
 from huggingface_hub import snapshot_download
 from transformers import AutoConfig
 from tqdm import tqdm
-import pages.images.db_models as db_models
 import pages.file_manager as file_manager
 import numpy as np
 from src.caching import TwoLevelCache

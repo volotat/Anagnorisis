@@ -7,15 +7,6 @@ import numpy as np
 import time
 
 
-# loading our model weights from https://huggingface.co/m-a-p/MERT-v1-95M
-model = AutoModel.from_pretrained("m-a-p/MERT-v1-95M", trust_remote_code=True)
-# loading the corresponding preprocessor config
-processor = Wav2Vec2FeatureExtractor.from_pretrained("m-a-p/MERT-v1-95M", trust_remote_code=True)
-# set the model to evaluation mode (just to be sure)
-model.eval()
-
-
-
 sampling_rate = 24000 # 24kHz is the REQUERED sampling rate for the MERT model used in this module
 context_window_seconds = 5 # MERT model is trained on 5 second tracks
 
@@ -91,9 +82,3 @@ def embed_audio(audio_path):
   weighted_avg_hidden_states_1 = get_time_reduced_embedding(outputs_1)
 
   letter_representation = convert_vector_to_letters(weighted_avg_hidden_states_1)
-
-
-
-#use example
-#with AudioEmbedder() as audio_embedder:
-#  vector, string = audio_embedder.embed_audio("path/to/audio.wav")

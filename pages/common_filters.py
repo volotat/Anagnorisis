@@ -3,7 +3,7 @@ import torch
 import numpy as np
 import gc
 
-from pages.utils import SortingProgressCallback, EmbeddingGatheringCallback
+from pages.utils import ArbitraryProgressCallback, SortingProgressCallback, EmbeddingGatheringCallback
 
 import rapidfuzz 
 import unicodedata
@@ -60,7 +60,7 @@ class CommonFilters:
         self.update_model_ratings_func = update_model_ratings_func
 
         self.embedding_gathering_callback = EmbeddingGatheringCallback(self.common_socket_events.show_search_status, name="")
-        self.meta_embedding_gathering_callback = EmbeddingGatheringCallback(self.common_socket_events.show_search_status, name="metadata")   
+        self.meta_embedding_gathering_callback = ArbitraryProgressCallback(self.common_socket_events.show_search_status, name="metadata")   
 
     def filter_by_file(self, all_files, text_query):
         target_path = text_query

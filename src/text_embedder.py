@@ -402,6 +402,8 @@ class TextEmbedder:
         
         self._initialized = True
 
+        # self.initiate(models_folder=cfg.main.embedding_models_path) # Default models folder
+
     def _monitor_idle(self):
         """Background thread to kill the process when idle."""
         while not self._shutdown_event.is_set():
@@ -509,6 +511,8 @@ class TextEmbedder:
         self.model_hash = res.get('model_hash', 'unknown_hash')
         # Update device type if needed, though main process usually stays on CPU for this proxy
         # self.device = torch.device(res['device_type']) 
+
+        self.unload()
 
     def embed_query(self, query_text: str) -> np.ndarray:
         return self._execute('embed_query', query_text)

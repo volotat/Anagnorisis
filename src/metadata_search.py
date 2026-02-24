@@ -282,25 +282,31 @@ class MetadataSearch:
         Returns a list of lists of numpy arrays (one list per file, each containing one metadata embedding).
         """
         # To avoid getting omni and text embedding models constantly loading and unloading from VRAM, 
-        # we want to call 'generate_full_description' on all files in list first to populate the description cache
+        # we want to call '_get_auto_description' on all files in list first to populate the description cache
         # while only omni descriptor is loaded, then when we will call '_process_single_file_meta' it will gather
         # descriptions from cache and only text embedding model will be loaded. This is a bit of a hack but it 
         # allows us to use the cache effectively and avoid VRAM issues.
 
-        for file_path in file_paths:
-            try:
-                self.generate_full_description(file_path, media_folder)
-            except Exception as e:
-                print(f"Error generating full description for {file_path}: {e}")
-                traceback.print_exc()
+        total_files = len(file_paths)
+
+        for ind, file_path in enumerate(file_paths):
+            if callback: 
+                # Calculate the percentage of processed files
+                percent = ((ind+1) / total_files) * 100
+                callback(f"Extracting automatic descriptions for {ind+1}/{total_files} ({percent:.2f}%) files...")
+
+            self._get_auto_description(file_path)
 
         all_files_meta_embeddings = []
         for ind, file_path in enumerate(file_paths):
+            if callback:
+                percent = ((ind + 1) / total_files) * 100
+                callback(f"Extracting full metadata embeddings for {ind + 1}/{total_files} ({percent:.2f}%) files...")
+
             embedding_list = self._process_single_file_meta(file_path, media_folder)
             all_files_meta_embeddings.append(embedding_list)
             
-            if callback:
-                callback(ind + 1, len(file_paths))
+            
         
         return all_files_meta_embeddings
     

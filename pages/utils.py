@@ -131,3 +131,21 @@ class EmbeddingGatheringCallback:
             # Show the status
             self.show_status_function(f"Extracted {self.name} embeddings for {num_extracted}/{num_total} ({percent:.2f}%) files.")
             self.last_shown_time = current_time
+
+
+###########################################
+# Arbitrary Progress Callback
+
+class ArbitraryProgressCallback:
+    def __init__(self, show_status_function=None, name=""):
+        self.last_shown_time = 0
+        self.start_time = time.time()
+        self.show_status_function = show_status_function
+        self.name = name
+
+    def __call__(self, msg):
+        current_time = time.time()
+        if current_time - self.last_shown_time >= 1:
+            # Show the status
+            self.show_status_function(msg)
+            self.last_shown_time = current_time

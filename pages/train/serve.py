@@ -4,7 +4,6 @@ import datasets
 import random
 import json
 
-import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig, AutoTokenizer
 from peft import PeftModel, LoraConfig
 from transformers import TrainingArguments
@@ -25,9 +24,23 @@ from src.scoring_models import Evaluator
 from tqdm import tqdm
 
 import pandas as pd
-import pages.music.train
-import pages.images.train
-import pages.text.train
+
+
+# Check if module exists before importing
+try:
+    import pages.music.train
+except ImportError:
+    print("pages.music.train module not found. Music evaluator training will be unavailable.")
+
+try:
+    import pages.images.train
+except ImportError:
+    print("pages.images.train module not found. Image evaluator training will be unavailable.")
+
+try:
+    import pages.text.train
+except ImportError:
+    print("pages.text.train module not found. Text evaluator training will be unavailable.")
 
 import time
 

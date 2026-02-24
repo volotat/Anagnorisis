@@ -166,6 +166,8 @@ class Evaluator():
       bytes = f.read()  # Read the entire file as bytes
       self.hash = hashlib.md5(bytes).hexdigest()
 
+    self.model.unload_model()
+
   def save(self, model_path):
     # save the model to the folder
     torch.save(self.model.state_dict(), model_path)
