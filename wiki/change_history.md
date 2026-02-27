@@ -53,7 +53,7 @@ Add new downloadable module for 'Deep Research'-like functionality that uses use
 
 ## Versions History
 
-### Version 0.3.4 (24.02.2026)
+### Version 0.3.4 (27.02.2026)
 *   **Model Re-Rating After Retraining:**
     *   Fixed a bug where `update_model_ratings` was never called after retraining an evaluator model. The `file_manager.get_files()` only passed files with `model_rating is None` to the rating callback, so files already rated by the old model were silently skipped. Added a new `evaluator_hash` parameter to `get_files()` — files whose `model_hash` differs from the current evaluator hash are now included in the re-rating list alongside unrated files. Applied consistently across all three modules (images, music, text).
 *   **OmniDescriptor — New Omni-Modal Description Module (`src/omni_descriptor.py`):**
@@ -66,7 +66,9 @@ Add new downloadable module for 'Deep Research'-like functionality that uses use
         - **`describe_text(text, prompt)`** — summarises long text via `model.chat()`.
     *   Added a comprehensive `__main__` test suite to ensure its stability and reliability of the new module.
     *   To make all the modalities properly working, new set of liraries added to the `requierments.txt` (`opencv-python-headless`, `minicpmo`, `hyperpyyaml`, `diffusers`, and `onnxruntime`).
-
+*   **UX Improvements:**
+    *   When gathering descriptions and text embeddings in the `metadata-based-search` mode, the status message reflects the amount of files processed out of the total and estimated time remaining, providing better feedback during long operations.
+    
 ### Version 0.3.3 (17.02.2026)
 *   **Text Module — Evaluator Model & Training:**
     *   Implemented a new `TransformerEvaluator` architecture in `src/scoring_models.py` — a lightweight transformer-based model that takes a variable-length sequence of chunk embeddings as input and produces a rating score. Architecture: linear projection (1024→1024 for now, reserve for future optimizations), learnable [CLS] token, sinusoidal positional encoding, 2-layer TransformerEncoder (4 heads, FFN=512), LayerNorm + MLP head → 11-class rating output. Designed to train efficiently on 8GB GPUs.

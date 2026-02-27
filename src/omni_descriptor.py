@@ -498,6 +498,14 @@ class _OmniDescriptorImpl:
 
         segment_descriptions: List[str] = []
 
+        # determine optional scaling filter from config
+        max_size = self.cfg.omni.get('video_sample_max_size', None)
+        if max_size is not None:
+            # maintain aspect ratio, cap larger dimension to max_size
+            scale_filter = f"scale='if(gt(iw,ih),{max_size},-1)':'if(gt(ih,iw),{max_size},-1)'"
+        else:
+            scale_filter = None
+
         for idx, start_s in enumerate(start_times):
             end_s = min(start_s + sample_duration_s, total_s)
             print(
@@ -506,31 +514,55 @@ class _OmniDescriptorImpl:
             )
 
             # --------------------------------------------------------------
-            # Extract frames for this window
+            # Extract frames for this window (use ffmpeg if possible to avoid
+            # OpenCV pixel-format warnings and to allow on-the-fly scaling)
             # --------------------------------------------------------------
-            start_frame = int(start_s * fps)
-            end_frame   = min(int(end_s * fps), total_frames - 1)
-            seg_frames  = end_frame - start_frame
+            segment_duration = end_s - start_s
+            timestamps = []
+            if frames_per_segment > 0:
+                step = segment_duration / frames_per_segment
+                # take one frame in the middle of each subwindow
+                timestamps = [start_s + (i + 0.5) * step for i in range(frames_per_segment)]
 
-            if frames_per_segment >= seg_frames:
-                frame_indices = list(range(start_frame, end_frame + 1))
-            else:
-                f_step = seg_frames / frames_per_segment
-                frame_indices = [
-                    min(int(start_frame + i * f_step + f_step / 2), end_frame)
-                    for i in range(frames_per_segment)
-                ]
-
-            cap = cv2.VideoCapture(video_path)
             pil_frames = []
-            for fi in frame_indices:
-                cap.set(cv2.CAP_PROP_POS_FRAMES, fi)
-                ret, frame = cap.read()
-                if ret:
-                    pil_frames.append(
-                        PILImage.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
-                    )
-            cap.release()
+            if timestamps:
+                # try ffmpeg extraction for each timestamp
+                for t in timestamps:
+                    # ask ffmpeg for a single PNG frame; disable hwaccel and
+                    # force RGB pixel format to avoid decoder warnings/errors.
+                    cmd = [
+                        'ffmpeg', '-loglevel', 'error', '-hide_banner',
+                        '-hwaccel', 'none',
+                        '-err_detect', 'ignore_err',
+                        '-ss', str(t), '-i', video_path,
+                        '-vframes', '1', '-pix_fmt', 'rgb24',
+                        '-f', 'image2pipe', '-vcodec', 'png',
+                        'pipe:1',
+                    ]
+                    if scale_filter:
+                        cmd[8:8] = ['-vf', scale_filter]
+                    try:
+                        proc = subprocess.run(cmd, capture_output=True, timeout=300, stderr=subprocess.DEVNULL)
+                        if proc.returncode == 0 and proc.stdout:
+                            img = PILImage.open(io.BytesIO(proc.stdout)).convert('RGB')
+                            pil_frames.append(img)
+                        else:
+                            # fallback to cv2 if ffmpeg fails for some reason
+                            raise RuntimeError(f"ffmpeg frame extraction failed (code {proc.returncode})")
+                    except Exception:
+                        # fallback to OpenCV; this is last resort and may still
+                        # emit AV1 warnings via VideoCapture, but it only occurs
+                        # when ffmpeg completely failed.
+                        cap = cv2.VideoCapture(video_path)
+                        if scale_filter:
+                            cap.set(cv2.CAP_PROP_FRAME_WIDTH, max_size)
+                            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, max_size)
+                        cap.set(cv2.CAP_PROP_POS_MSEC, t * 1000)
+                        ret, frame = cap.read()
+                        cap.release()
+                        if ret:
+                            pil_frames.append(PILImage.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)))
+            # if no timestamps, leave pil_frames empty
 
             # --------------------------------------------------------------
             # Extract audio for this window via ffmpeg pipe

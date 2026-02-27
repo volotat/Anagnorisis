@@ -56,7 +56,8 @@ omni:
   load_in_4bit: true  # BitsAndBytes 4-bit quantization (~5 GB VRAM instead of ~18 GB)
   max_new_tokens: 256
   do_sample: false
-  temperature: 0.3
+  temperature: 0.2
+  video_sample_max_size: 512 # Max dimension (width or height) for video frame sampling to the omni descriptor
   image_max_size: 512 # Max dimension (width or height) for input images to the omni descriptor
   image_prompt: "Describe this image in detail. Include objects, scene, colors, actions, and any text visible."
   audio_prompt: "Describe the audio in detail. Include instruments, genre, mood, tempo, and any notable features."

@@ -9,14 +9,15 @@ git ls-files -z | rsync -av --files-from=- --from0 ./ ../Anagnorisis-test
 cd ../Anagnorisis-test
 ```
 
+# TODO: Update this section with proper .overwrite file instructions.
 * Set up .env file so the proper folders are used for testing.
 ```
 # .env.example
-CONTAINER_NAME=anagnorisis-app # The name of the Docker container
+CONTAINER_NAME=anagnorisis-app-test # The name of the Docker container
 EXTERNAL_PORT=5001 # The external port for accessing the application
 # ANAGNORISIS_USERNAME=**** # The username for accessing the application (uncomment if you want to use it)
 # ANAGNORISIS_PASSWORD=**** # The password for accessing the application (uncomment if you want to use it)
-PROJECT_CONFIG_FOLDER_PATH=/path/to/folder/Anagnorisis-app # The path to the folder where your personal database and personally trained recommendation models will be stored
+PROJECT_CONFIG_FOLDER_PATH=/path/to/folder/Anagnorisis-app-test # The path to the folder where your personal database and personally trained recommendation models will be stored
 IMAGES_MODULE_DATA_PATH=/path/to/folder/Images # The path to the folder with your images data
 MUSIC_MODULE_DATA_PATH=/path/to/folder/Music # The path to the folder with your music data
 TEXT_MODULE_DATA_PATH=/path/to/folder/Text # The path to the folder with your text data

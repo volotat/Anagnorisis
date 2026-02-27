@@ -471,7 +471,8 @@ class TwoLevelCache:
             self.ram.set(key, val)
         return val
 
-    def set(self, key: str, value: Any) -> None:
+    def set(self, key: str, value: Any, save_to_disk: bool = True) -> None:
         # Write-through both tiers
         self.ram.set(key, value)
-        self.disk.set(key, value)
+        if save_to_disk:
+            self.disk.set(key, value)

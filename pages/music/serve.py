@@ -331,6 +331,9 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
     audiofile_data = music_search_engine.get_metadata(full_path)
     audiofile_data['hash'] = music_search_engine.get_file_hash(full_path)
     db_item = db_models.MusicLibrary.query.filter_by(hash=audiofile_data['hash']).first()
+    if not db_item:
+      raise Exception(f"File '{full_path}' with hash '{audiofile_data['hash']}' not found in the database.")
+    
     audiofile_data['user_rating'] = db_item.user_rating
     audiofile_data['model_rating'] = db_item.model_rating
     audiofile_data['file_path'] = file_path
