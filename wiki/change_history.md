@@ -53,6 +53,11 @@ Add new downloadable module for 'Deep Research'-like functionality that uses use
 
 ## Versions History
 
+
+### Version 0.3.5 ()
+* OmniDescriptor is no longer require a workaround for streaming regime as the bug was fix by the MiniCPM-o-4.5 developers, so all the extra code was removed.
+* Now weights and code of the model are updated differently, so we can update the model code without redownloading the massive weights of the model.
+
 ### Version 0.3.4 (27.02.2026)
 *   **Model Re-Rating After Retraining:**
     *   Fixed a bug where `update_model_ratings` was never called after retraining an evaluator model. The `file_manager.get_files()` only passed files with `model_rating is None` to the rating callback, so files already rated by the old model were silently skipped. Added a new `evaluator_hash` parameter to `get_files()` — files whose `model_hash` differs from the current evaluator hash are now included in the re-rating list alongside unrated files. Applied consistently across all three modules (images, music, text).

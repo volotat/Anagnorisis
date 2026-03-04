@@ -59,33 +59,73 @@ class _OmniDescriptorImpl:
             return "unknown_hash"
 
     def _ensure_model_downloaded(self, models_folder: str, model_name: str):
-        """Ensure the HF model is present locally."""
+        """Ensure the HF model is present locally.
+
+        Strategy
+        --------
+        * Weight files (.safetensors / .bin / …) are large — only download them
+          once and never re-fetch unless they are missing entirely.
+        * Code files (*.py, *.json, tokenizer files, …) are small and may receive
+          upstream bug-fixes (e.g. attribute changes required by newer transformers).
+          These are **always** synced from the Hub on every startup so that fixes
+          propagate automatically to all users without needing a manual re-download.
+        """
         from huggingface_hub import snapshot_download
         from transformers import AutoConfig
 
         local_model_path = os.path.join(models_folder, model_name.replace('/', '__'))
         config_file_path = os.path.join(local_model_path, 'config.json')
 
-        def download(force=False):
-            print(f"{'Re-downloading' if force else 'Downloading'} model '{self.model_name}' to '{local_model_path}'...")
+        # Patterns that identify large binary weight files — we skip these during
+        # the lightweight "code refresh" pass so it stays fast on every startup.
+        _weight_patterns = [
+            "*.safetensors", "*.bin", "*.pt", "*.pth",
+            "*.gguf", "*.ggml", "*.h5", "*.msgpack",
+        ]
+
+        def download_weights():
+            """Full download including weights (first-time or recovery)."""
+            print(f"Downloading model '{self.model_name}' to '{local_model_path}'...")
             snapshot_download(
                 repo_id=self.model_name,
                 local_dir=local_model_path,
                 local_dir_use_symlinks=False,
-                force_download=force,
-                resume_download=True
+                force_download=False,
+                resume_download=True,
             )
             print(f"Model '{self.model_name}' downloaded successfully.")
+
+        def refresh_code_files():
+            """Re-download only non-weight files (Python, JSON, tokenizer, …).
+
+            This is fast (typically a few MB) and ensures model code is always
+            up-to-date with the latest upstream fixes.
+            """
+            print(f"OmniDescriptor: Refreshing model code files for '{self.model_name}'...")
+            try:
+                snapshot_download(
+                    repo_id=self.model_name,
+                    local_dir=local_model_path,
+                    local_dir_use_symlinks=False,
+                    force_download=False,
+                    resume_download=True,
+                    ignore_patterns=_weight_patterns,
+                )
+                print(f"OmniDescriptor: Model code files refreshed.")
+            except Exception as e:
+                # Non-fatal — we already have local copies; log and continue.
+                print(f"OmniDescriptor: WARNING — could not refresh model code files "
+                      f"(offline?): {e}")
 
         model_exists = os.path.exists(config_file_path)
         weights_exist = False
 
         if model_exists:
+            import glob
             weight_files = ['pytorch_model.bin', 'model.safetensors', 'tf_model.h5',
                             'model.ckpt.index', 'flax_model.msgpack']
             weights_exist = any(os.path.exists(os.path.join(local_model_path, wf)) for wf in weight_files)
             if not weights_exist:
-                import glob
                 weights_exist = bool(glob.glob(os.path.join(local_model_path, 'pytorch_model-*.bin')) or
                                      glob.glob(os.path.join(local_model_path, 'model-*.safetensors')))
 
@@ -93,12 +133,16 @@ class _OmniDescriptorImpl:
             try:
                 if model_exists and not weights_exist:
                     print(f"WARNING: Config found but model weights missing for '{self.model_name}'. Resuming download...")
-                download(force=False)
+                download_weights()
             except Exception as e:
                 print(f"ERROR: Failed to download model '{self.model_name}'.")
                 raise RuntimeError(f"Failed to download model '{self.model_name}': {e}") from e
         else:
-            print(f"Found existing model '{self.model_name}' at '{local_model_path}'. Verifying integrity...")
+            print(f"Found existing model '{self.model_name}' at '{local_model_path}'.")
+            # Always refresh code files so upstream bug-fixes (e.g. new transformers
+            # compatibility patches) reach users automatically.
+            refresh_code_files()
+            # Verify the config is still loadable after the refresh.
             try:
                 cfg = AutoConfig.from_pretrained(local_model_path, trust_remote_code=True)
                 del cfg
@@ -106,7 +150,7 @@ class _OmniDescriptorImpl:
             except Exception as e:
                 print(f"WARNING: Local model at '{local_model_path}' seems corrupted. Re-downloading...")
                 try:
-                    download(force=True)
+                    download_weights()
                 except Exception as download_e:
                     raise RuntimeError(f"Failed to re-download model '{self.model_name}': {download_e}") from download_e
 
@@ -769,23 +813,6 @@ class _OmniDescriptorImpl:
           ('error',        exception)  — on failure
 
         The caller must drain the queue until stream_done or error.
-
-        Implementation notes
-        --------------------
-        model.chat(stream=True) has a bug: _decode_stream() correctly starts a
-        generation thread that fills a TextIteratorStreamer, but after generate()
-        returns (streamer, {}), chat() unconditionally does outputs.sequences[0]
-        on the empty dict and raises AttributeError — BEFORE returning the
-        streamer to us.
-
-        Workaround: temporarily replace model.generate with a thin wrapper that
-        captures the (streamer, {}) tuple on its way out.  After catching the
-        expected AttributeError from chat(), the generation thread is still
-        running and we can iterate the captured streamer normally.
-
-        We also force num_beams=1 because the default config uses num_beams=3
-        (beam search), and HF's generate() raises an error if a streamer is
-        combined with beam search.
         """
         if not self.model:
             output_queue.put(('error', RuntimeError("OmniDescriptor not initiated.")))
@@ -794,47 +821,17 @@ class _OmniDescriptorImpl:
         try:
             msgs = self._convert_messages_to_msgs(messages)
 
-            # --- Capture the streamer before chat() crashes ---
-            streamer_ref = []
-            original_generate = self.model.generate  # bound method
+            result = self.model.chat(
+                msgs=msgs,
+                stream=True,
+                use_tts_template=False,
+                enable_thinking=False,
+                max_new_tokens=self.cfg.omni.get('max_new_tokens', 1024),
+                do_sample=True,
+            )
 
-            def _capturing_generate(*args, **kwargs):
-                result = original_generate(*args, **kwargs)
-                # stream=True path returns (TextIteratorStreamer, {})
-                if (isinstance(result, tuple) and len(result) == 2
-                        and isinstance(result[1], dict) and not result[1]):
-                    streamer_ref.append(result[0])
-                return result
-
-            self.model.generate = _capturing_generate
-            try:
-                self.model.chat(
-                    msgs=msgs,
-                    stream=True,
-                    do_sample=True,   # stream=True requires do_sample=True
-                    num_beams=1,      # beam search is incompatible with streamers
-                    use_tts_template=False,
-                    enable_thinking=False,
-                    max_new_tokens=self.cfg.omni.get('max_new_tokens', 1024),
-                )
-            except AttributeError as e:
-                if 'sequences' not in str(e):
-                    raise   # unexpected error, re-raise
-                # Expected: chat() crashes at outputs.sequences[0] since
-                # outputs={} in stream mode.  The generation thread is alive;
-                # streamer_ref[0] is valid and being filled.
-            finally:
-                self.model.generate = original_generate
-
-            if not streamer_ref:
-                raise RuntimeError(
-                    "Failed to capture streaming iterator — "
-                    "model.generate() may not have been called."
-                )
-
-            streamer = streamer_ref[0]
             full_text = ""
-            for token_text in streamer:
+            for token_text in result:
                 if token_text:
                     full_text += token_text
                     output_queue.put(('stream_token', token_text))
