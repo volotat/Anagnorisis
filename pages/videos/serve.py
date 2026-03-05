@@ -33,6 +33,7 @@ from pages.common_filters import CommonFilters
 from pages.utils import convert_size, convert_length, time_difference
 
 from src.metadata_search import MetadataSearch
+from pages.train.universal_train import UniversalEvaluator
 
 # EVENTS:
 
@@ -119,95 +120,108 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
     # Create metadata search engine
     common_socket_events.show_loading_status('Initializing metadata search...')
     metadata_search_engine = MetadataSearch(engine=videos_search_engine)
-  
+
+    common_socket_events.show_loading_status('Initializing universal evaluator...')
+    videos_evaluator = UniversalEvaluator()
+    print('Loading universal evaluator model from', os.path.join(cfg.main.personal_models_path, 'universal_evaluator.pt'))
+    videos_evaluator.load(os.path.join(cfg.main.personal_models_path, 'universal_evaluator.pt'))
+
     def update_model_ratings(files_list):
-        print('update_model_ratings')
+        # Skip if the universal evaluator has not been trained yet
+        if videos_evaluator.hash is None:
+            print('[Videos] Universal evaluator not trained yet. Skipping model rating update.')
+            return
 
-        # files_list_hash_map = {file_path: videos_search_engine.get_file_hash(file_path) for file_path in files_list}
-        # hash_list = list(files_list_hash_map.values())
+        # Filter out files that already have an up-to-date rating in the DB
+        files_list_hash_map = {}
+        for ind, file_path in enumerate(files_list):
+            common_socket_events.show_search_status(f"Computing files hashes {ind+1}/{len(files_list)}")
+            file_hash = videos_search_engine.get_file_hash(file_path)
+            files_list_hash_map[file_path] = file_hash
 
-        # # Update file paths in the DB if none
-        # for file_path, file_hash in files_list_hash_map.items():
-        #     db_item = db_models.VideosLibrary.query.filter_by(hash=file_hash).first()
-        #     if db_item is None or db_item.file_path is None:
-        #         file_data = {
-        #             "hash": file_hash,
-        #             "hash_algorithm": videos_search_engine.get_hash_algorithm(),
-        #             "file_path": os.path.relpath(file_path, media_directory),
-        #             "model_rating": None,
-        #             "model_hash": None,
-        #         }
-        #         new_item = db_models.VideosLibrary(**file_data)
-        #         db_models.db.session.add(new_item)
+        hash_list = list(files_list_hash_map.values())
 
-        # db_models.db.session.commit()
+        # Fetch files that already have an up-to-date rating in the database
+        rated_files_db_items = db_models.VideosLibrary.query.filter(
+            db_models.VideosLibrary.hash.in_(hash_list),
+            db_models.VideosLibrary.model_rating.isnot(None),
+            db_models.VideosLibrary.model_hash.is_(videos_evaluator.hash)
+        ).all()
 
-        # ==== ????
+        # Create a set of hashes for already-rated files
+        rated_files_hashes = {item.hash for item in rated_files_db_items}
 
-        # # filter out files that already have a rating in the DB
-        # files_list_hash_map = {file_path: videos_search_engine.get_file_hash(file_path) for file_path in files_list}
-        # hash_list = list(files_list_hash_map.values())
+        # Filter out files that already have a rating in the database
+        filtered_files_list = [file_path for file_path, file_hash in files_list_hash_map.items() if file_hash not in rated_files_hashes]
+        if not filtered_files_list: return
 
-        # # Fetch rated files from the database in a single query
-        # rated_files_db_items = db_models.VideosLibrary.query.filter(
-        #     db_models.VideosLibrary.hash.in_(hash_list),
-        #     db_models.VideosLibrary.model_rating.isnot(None),
-        #     db_models.VideosLibrary.model_hash.is_(videos_evaluator.hash)
-        # ).all()
+        # Generate metadata descriptions and text embeddings for unrated files.
+        # Uses only cached auto-descriptions (generate_desc_if_not_in_cache=False) to keep
+        # browsing fast. Descriptions are populated over time via metadata search.
+        common_socket_events.show_search_status(f"Computing metadata embeddings for {len(filtered_files_list)} files...")
+        all_embeddings = []
+        embedding_dim = metadata_search_engine.text_embedder.embedding_dim or 1024
+        for ind, full_path in enumerate(filtered_files_list):
+            common_socket_events.show_search_status(f"Computing metadata embeddings {ind+1}/{len(filtered_files_list)}")
+            try:
+                description = metadata_search_engine.generate_full_description(
+                    full_path,
+                    media_folder=media_directory,
+                    generate_desc_if_not_in_cache=False,
+                )
+                chunk_embeddings = metadata_search_engine.text_embedder.embed_text(description)
+                if chunk_embeddings is not None and len(chunk_embeddings) > 0:
+                    all_embeddings.append(np.array(chunk_embeddings, dtype=np.float32))
+                else:
+                    all_embeddings.append(np.zeros((1, embedding_dim), dtype=np.float32))
+            except Exception as e:
+                print(f"Error computing metadata embedding for {full_path}: {e}")
+                all_embeddings.append(np.zeros((1, embedding_dim), dtype=np.float32))
 
-        # # Create a list of hashes for rated files
-        # rated_files_hashes = {item.hash for item in rated_files_db_items}
+        model_ratings = videos_evaluator.predict(all_embeddings)
 
-        # # Filter out files that already have a rating in the database
-        # filtered_files_list = [file_path for file_path, file_hash in files_list_hash_map.items() if file_hash not in rated_files_hashes]
-        # if not filtered_files_list: return
-        
+        # Update the model ratings in the database
+        common_socket_events.show_search_status(f"Updating model ratings of files...")
+        new_items = []
+        update_items = []
+        for ind, full_path in enumerate(filtered_files_list):
+            file_hash = files_list_hash_map[full_path]
+            model_rating = float(model_ratings[ind])
 
-        # # Rate all files in case they are not rated or model was updated
-        # embeddings = videos_search_engine.process_files(filtered_files_list, callback=embedding_gathering_callback, media_folder=media_directory) #.cpu().detach().numpy() 
-        # # model_ratings = text_evaluator.predict(embeddings)
+            video_db_item = db_models.VideosLibrary.query.filter_by(hash=file_hash).first()
+            if video_db_item:
+                video_db_item.model_rating = model_rating
+                video_db_item.model_hash = videos_evaluator.hash
+                update_items.append(video_db_item)
+            else:
+                file_data = {
+                    "hash": file_hash,
+                    "hash_algorithm": videos_search_engine.get_hash_algorithm(),
+                    "file_path": os.path.relpath(full_path, media_directory),
+                    "model_rating": model_rating,
+                    "model_hash": videos_evaluator.hash,
+                }
+                new_items.append(db_models.VideosLibrary(**file_data))
 
-        # # Update the model ratings in the database
-        # common_socket_events.show_search_status(f"Updating model ratings of files...") 
-        # new_items = []
-        # update_items = []
-        # last_shown_time = 0
-        # for ind, full_path in enumerate(filtered_files_list):
-        #     print(f"Updating model ratings for {ind+1}/{len(filtered_files_list)} files.")
+            common_socket_events.show_search_status(f"Updated model ratings for {ind+1}/{len(filtered_files_list)} files.")
 
-        #     hash = files_list_hash_map[full_path]
+        # Deduplicate new_items by hash to avoid UNIQUE constraint violations
+        # when the same file (identical hash) appears more than once in the media folder.
+        seen_hashes = set()
+        deduped_new_items = []
+        for item in new_items:
+            if item.hash not in seen_hashes:
+                seen_hashes.add(item.hash)
+                deduped_new_items.append(item)
 
-        #     # print('model_ratings[ind]', model_ratings[ind])
-        #     model_rating = None #model_ratings[ind].mean().item()
+        # Bulk update and insert
+        if update_items:
+            db_models.db.session.bulk_save_objects(update_items)
+        if deduped_new_items:
+            db_models.db.session.bulk_save_objects(deduped_new_items)
 
-        #     music_db_item = db_models.VideosLibrary.query.filter_by(hash=hash).first()
-        #     if music_db_item:
-        #         music_db_item.model_rating = model_rating
-        #         music_db_item.model_hash = videos_evaluator.hash
-        #         update_items.append(music_db_item)
-        #     else:
-        #         file_data = {
-        #                 "hash": hash,
-        #                 "hash_algorithm": videos_search_engine.get_hash_algorithm(),
-        #                 "file_path": os.path.relpath(full_path, media_directory),
-        #                 "model_rating": model_rating,
-        #                 "model_hash": videos_evaluator.hash
-        #         }
-        #         new_items.append(db_models.VideosLibrary(**file_data))
-
-        #     current_time = time.time()
-        #     if current_time - last_shown_time >= 1:
-        #         common_socket_events.show_search_status(f"Updated model ratings for {ind+1}/{len(filtered_files_list)} files.")
-        #         last_shown_time = current_time     
-
-        # # Bulk update and insert
-        # if update_items:
-        #         db_models.db.session.bulk_save_objects(update_items)
-        # if new_items:
-        #         db_models.db.session.bulk_save_objects(new_items)
-
-        # # Commit the transaction
-        # db_models.db.session.commit()
+        # Commit the transaction
+        db_models.db.session.commit()
 
 
     common_socket_events.show_loading_status('Setting up filters and routes...')
@@ -281,7 +295,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
             # "length": filter_by_length,
             # "similarity": filter_by_similarity, 
             "random": common_filters.filter_by_random, 
-            # "rating": filter_by_rating, 
+            "rating": common_filters.filter_by_rating, 
             "recommendation": filter_by_recommendation
         }
 
@@ -337,6 +351,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
             "filters": filters,
             "get_file_info": get_file_info,
             "update_model_ratings": update_model_ratings,
+            "evaluator_hash": videos_evaluator.hash,
         })
         return videos_file_manager.get_files(**input_params)
 

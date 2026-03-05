@@ -13,7 +13,7 @@
 
   <form class="box" action="#">
     <div class="column is-full">
-      <button class="button is-primary is-fullwidth" id="startText">Train text evaluator</button>
+      <button class="button is-primary is-fullwidth" id="startUniversal">Train universal evaluator</button>
     </div>
   </form>
 
@@ -211,7 +211,7 @@
     function setTrainingActive(active) {
       document.getElementById('startMusic').disabled = !!active;
       document.getElementById('startImages').disabled = !!active;
-      document.getElementById('startText').disabled = !!active;
+      document.getElementById('startUniversal').disabled = !!active;
     }
 
     $("document").ready(function(){
@@ -239,8 +239,8 @@
         socket.emit("emit_train_page_start_image_evaluator_training")
       });
 
-      $('#startText').on('click', function(){
-        socket.emit("emit_train_page_start_text_evaluator_training")
+      $('#startUniversal').on('click', function(){
+        socket.emit("emit_train_page_start_universal_evaluator_training")
       });
     });
   </script>    

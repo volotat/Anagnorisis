@@ -249,7 +249,7 @@ import MetaEditor from '/pages/MetaEditor.js';
       showOrder: true,
       showTemperature: true,
       temperatures: [0, 0.2, 1, 2],
-      keywords: ['recommendation',  'random'],
+      keywords: ['recommendation',  'random', 'rating'],
       autoSyncUrl: true,
       ensureDefaultsInUrl: true,
     });

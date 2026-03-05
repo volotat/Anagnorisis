@@ -51,6 +51,11 @@ text:
   chunk_size: 384 # Max tokens per chunk
   chunk_overlap: 128 # Overlap between chunks
   embedding_dimension: 1024 # Dimension to truncate to (Optional, match Matryoshka)
+evaluator:
+  # Controls how text files are embedded when scoring / training the universal evaluator.
+  # "full_text": embed full chunked content via TextSearch.process_files() (cached, fast)
+  # "metadata":  embed via MetadataSearch.generate_full_description() like all other modules
+  text_embedding_method: "full_text"
 omni:
   model_name: "openbmb/MiniCPM-o-4_5"
   load_in_4bit: true  # BitsAndBytes 4-bit quantization (~5 GB VRAM instead of ~18 GB)

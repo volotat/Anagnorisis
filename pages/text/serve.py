@@ -12,7 +12,8 @@ from pages.socket_events import CommonSocketEvents
 
 import numpy as np
 
-from pages.text.engine import TextSearch, TextEvaluator
+from pages.text.engine import TextSearch
+from pages.train.universal_train import UniversalEvaluator
 from pages.utils import SortingProgressCallback, EmbeddingGatheringCallback
 from pages.common_filters import CommonFilters
 
@@ -84,11 +85,11 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
     # cached_file_hash = text_search_engine.cached_file_hash
     # cached_metadata = text_search_engine.cached_metadata
 
-    common_socket_events.show_loading_status('Initializing text evaluator...')
-    text_evaluator = TextEvaluator(embedding_dim=text_search_engine.embedding_dim)
+    common_socket_events.show_loading_status('Initializing universal evaluator for text module...')
+    text_evaluator = UniversalEvaluator()
 
-    common_socket_events.show_loading_status('Loading text evaluator model...')
-    text_evaluator.load(os.path.join(cfg.main.personal_models_path, 'text_evaluator.pt'))
+    common_socket_events.show_loading_status('Loading universal evaluator model...')
+    text_evaluator.load(os.path.join(cfg.main.personal_models_path, 'universal_evaluator.pt'))
 
     embedding_gathering_callback = EmbeddingGatheringCallback(common_socket_events.show_search_status)
 
@@ -127,10 +128,30 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
         # Filter out files that already have a rating in the database
         filtered_files_list = [file_path for file_path, file_hash in files_list_hash_map.items() if file_hash not in rated_files_hashes]
         if not filtered_files_list: return
-        
 
-        # Rate all files in case they are not rated or model was updated
-        embeddings = text_search_engine.process_files(filtered_files_list, callback=embedding_gathering_callback, media_folder=media_directory)
+        # Choose embedding strategy from config (mirrors universal training)
+        text_embed_method = OmegaConf.select(cfg, "evaluator.text_embedding_method", default="full_text")
+        if text_embed_method == "full_text":
+            # Full chunked content via TextSearch cache — consistent with universal training
+            embeddings = text_search_engine.process_files(
+                filtered_files_list, callback=embedding_gathering_callback, media_folder=media_directory
+            )
+        else:
+            # Metadata/summary description path — one description per file
+            embeddings = []
+            for file_path in filtered_files_list:
+                description = metadata_search_engine.generate_full_description(
+                    file_path,
+                    media_folder=media_directory,
+                    generate_desc_if_not_in_cache=False,
+                )
+                metadata_search_engine.omni_descriptor.unload()
+                if description and len(description.strip()) >= 10:
+                    chunk_embs = metadata_search_engine.text_embedder.embed_text(description)
+                    embeddings.append(chunk_embs if chunk_embs is not None else [])
+                else:
+                    embeddings.append([])
+
         model_ratings = text_evaluator.predict(embeddings)
 
         # Update the model ratings in the database
@@ -160,11 +181,20 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
 
             common_socket_events.show_search_status(f"Updated model ratings for {ind+1}/{len(filtered_files_list)} files.")   
 
+        # Deduplicate new_items by hash to avoid UNIQUE constraint violations
+        # when the same file (identical hash) appears more than once in the media folder.
+        seen_hashes = set()
+        deduped_new_items = []
+        for item in new_items:
+            if item.hash not in seen_hashes:
+                seen_hashes.add(item.hash)
+                deduped_new_items.append(item)
+
         # Bulk update and insert
         if update_items:
                 db_models.db.session.bulk_save_objects(update_items)
-        if new_items:
-                db_models.db.session.bulk_save_objects(new_items)
+        if deduped_new_items:
+                db_models.db.session.bulk_save_objects(deduped_new_items)
 
         # Commit the transaction
         db_models.db.session.commit()

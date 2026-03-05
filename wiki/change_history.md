@@ -54,9 +54,23 @@ Add new downloadable module for 'Deep Research'-like functionality that uses use
 ## Versions History
 
 
-### Version 0.3.5 ()
-* OmniDescriptor is no longer require a workaround for streaming regime as the bug was fix by the MiniCPM-o-4.5 developers, so all the extra code was removed.
-* Now weights and code of the model are updated differently, so we can update the model code without redownloading the massive weights of the model.
+### Version 0.3.5 (06.03.2026)
+*   **OmniDescriptor Fixes:**
+    *   `OmniDescriptor` no longer requires a workaround for streaming mode — the underlying bug was fixed by the MiniCPM-o-4.5 developers, so all extra workaround code has been removed.
+    *   Model weights and code are now updated independently, making it possible to update the model code without re-downloading the large weight files.
+*   **Universal Evaluator — Cross-Module Rating Model:**
+    *   Introduced `UniversalEvaluator` (`pages/train/universal_train.py`) — a singleton `TransformerEvaluator` that trains on user-rated files from **all** media modules (music, images, videos, text) simultaneously, producing a single shared scoring model (`universal_evaluator.pt`).
+    *   A two-phase embedding strategy is used during training: for text files, full chunked content is embedded via `TextSearch.process_files()` (cached, fast, identical to the old per-module text training path); for all other modules, `MetadataSearch.generate_full_description()` is used (filename + OmniDescriptor summary + internal metadata). The strategy for text files is controlled by `evaluator.text_embedding_method` in `config.yaml` (`"full_text"` / `"metadata"`).
+    *   Added `generate_desc_if_not_in_cache` parameter to `MetadataSearch.generate_full_description()` (default `True`, preserving all existing callers). Training passes `False` to skip slow OmniDescriptor inference and rely only on already-cached descriptions.
+    *   Replaced the "Train text evaluator" button on the training page with a "Train universal evaluator" button, wired through `pages/train/serve.py`.
+*   **Videos Module — Model Ratings:**
+    *   Wired `UniversalEvaluator` into `pages/videos/serve.py`. `update_model_ratings` now hashes video files, skips already-rated files (by `model_hash` comparison), generates metadata descriptions via `MetadataSearch`, and stores predictions in `VideosLibrary`. The `evaluator_hash` is passed to `get_files()` so stale ratings are detected and refreshed on browse.
+*   **Text Module — Unified Evaluator:**
+    *   Replaced the module-specific `TextEvaluator` with `UniversalEvaluator` in `pages/text/serve.py`. The text module now loads `universal_evaluator.pt` and uses the same embedding strategy as training (controlled by `evaluator.text_embedding_method`).
+    *   `update_model_ratings` in the text module branches on the config switch: `"full_text"` uses `TextSearch.process_files()` (batch, cached); `"metadata"` uses `MetadataSearch.generate_full_description()` per file, consistent with all other modules.
+    *   Removed the `TextEvaluator` singleton class from `pages/text/engine.py` and deleted the now-superseded `pages/text/train.py`.
+*   **Bug Fixes:**
+    *   Fixed a `UNIQUE constraint failed` crash in `update_model_ratings` for the Videos and Text modules. When duplicate files (same content, different paths) appeared in the media folder, both passed the already-rated filter, `query.filter_by(hash=...).first()` returned `None` for each, and both were queued for INSERT — triggering a hash collision on `bulk_save_objects`. New items are now deduplicated by hash before the bulk insert, consistent with the fix applied to the Images module in v0.2.15.
 
 ### Version 0.3.4 (27.02.2026)
 *   **Model Re-Rating After Retraining:**

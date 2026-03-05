@@ -10,6 +10,9 @@ export default class MetaEditor {
     this.readOnly = !!readOnly;
     this.currentFilePath = null;
     this._listenerCleanup = null;
+    this.textareaPlaceholder = `Loading...
+
+If you open this for the first time, the omni-descriptor model will try to generate general description of the content in this file, which may take a while. Please just wait and it should appear here as soon as possible.`;
 
     this.modal = document.createElement('div');
     this.modal.className = 'modal';
@@ -30,7 +33,7 @@ export default class MetaEditor {
             style=" min-height: 0;
                     resize: none;
                     max-height: -webkit-fill-available;"
-            placeholder="Loading..."
+            placeholder="${this.textareaPlaceholder}"
           ></textarea>
         </section>
         <footer class="modal-card-foot py-2 px-3 is-justify-content-flex-end">
@@ -94,7 +97,7 @@ export default class MetaEditor {
     this.$title.textContent = `${displayName || filePath}${this.readOnly ? ' (read-only)' : ''}`;
 
     // Reset UI
-    this.$textarea.value = 'Loading...';
+    this.$textarea.value = this.textareaPlaceholder;
 
     // Load content
     let cancelListener = null;

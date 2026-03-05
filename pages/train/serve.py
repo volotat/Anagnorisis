@@ -38,9 +38,9 @@ except ImportError:
     print("pages.images.train module not found. Image evaluator training will be unavailable.")
 
 try:
-    import pages.text.train
+    import pages.train.universal_train
 except ImportError:
-    print("pages.text.train module not found. Text evaluator training will be unavailable.")
+    print("pages.train.universal_train module not found. Universal evaluator training will be unavailable.")
 
 import time
 
@@ -120,8 +120,8 @@ def init_socket_events(socketio, cfg=None, app=None, data_folder='./project_data
             TRAINING_ACTIVE = False
             socketio.emit("emit_train_page_status", {"active": False})
 
-    @socketio.on("emit_train_page_start_text_evaluator_training")
-    def handle_emit_start_text_evaluator_training():
+    @socketio.on("emit_train_page_start_universal_evaluator_training")
+    def handle_emit_start_universal_evaluator_training():
         global TRAINING_ACTIVE
         nonlocal train_accuracy_hist, test_accuracy_hist
         train_accuracy_hist = []
@@ -134,7 +134,7 @@ def init_socket_events(socketio, cfg=None, app=None, data_folder='./project_data
         TRAINING_ACTIVE = True
         socketio.emit("emit_train_page_status", {"active": True})
         try:
-            pages.text.train.train_text_evaluator(cfg, callback)
+            pages.train.universal_train.train_universal_evaluator(cfg, callback)
         finally:
             TRAINING_ACTIVE = False
             socketio.emit("emit_train_page_status", {"active": False})
