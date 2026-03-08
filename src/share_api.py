@@ -26,7 +26,7 @@ import hashlib
 from pathlib import Path
 from flask import Blueprint, jsonify, request, send_file, abort
 
-from pages.file_manager import get_folder_structure
+from src.file_manager import get_folder_structure
 
 
 # ---------------------------------------------------------------------------

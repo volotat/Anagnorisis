@@ -10,20 +10,20 @@ import torch
 import gc
 
 
-import pages.file_manager as file_manager
+import src.file_manager as file_manager
 import pages.music.db_models as db_models
 
 from pages.music.engine import MusicSearch, MusicEvaluator
 
-from pages.utils import convert_size, convert_length, time_difference
+from src.utils import convert_size, convert_length, time_difference
 
-from pages.recommendation_engine import sort_files_by_recommendation
+from src.recommendation_engine import sort_files_by_recommendation
 
-from pages.utils import SortingProgressCallback, EmbeddingGatheringCallback
+from src.utils import SortingProgressCallback, EmbeddingGatheringCallback
 
-from pages.socket_events import CommonSocketEvents
-from pages.common_filters import CommonFilters
+from src.socket_events import CommonSocketEvents
 
+from src.common_filters import CommonFilters
 from src.metadata_search import MetadataSearch
 
 # EVENTS:

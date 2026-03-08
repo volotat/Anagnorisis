@@ -557,7 +557,7 @@ log_file_name = f"{container_name}_log.txt"
 log_file_path = os.path.join(script_folder, 'logs', log_file_name)
 log_streamer = LogStreamer(socketio, log_file_path)
 
-from pages.socket_events import CommonSocketEvents
+from src.socket_events import CommonSocketEvents
 
 @socketio.on('connect')
 def handle_connect():

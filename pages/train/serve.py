@@ -138,38 +138,3 @@ def init_socket_events(socketio, cfg=None, app=None, data_folder='./project_data
         finally:
             TRAINING_ACTIVE = False
             socketio.emit("emit_train_page_status", {"active": False})
-
-    '''@socketio.on("emit_train_page_export_audio_dataset")
-    def handle_emit_export_audio_dataset():
-        return None
-    
-        # Create dataset from DB, select only music with user rating
-        music_library_entries = src.db_models.MusicLibrary.query.filter(src.db_models.MusicLibrary.user_rating != None).all()
-
-        # filter all non-mp3 files
-        music_library_entries = [entry for entry in music_library_entries if entry.file_path.endswith('.mp3')]
-
-        music_files = [entry.file_path for entry in music_library_entries]
-        music_scores = [entry.user_rating for entry in music_library_entries]
-
-        # get embeddings for that music
-        embedder = AudioEmbedder(audio_embedder_model_path = "./models/MERT-v1-95M")
-
-        print('Embed music files...')
-        data = []
-        for ind, music_entry in enumerate(tqdm(music_library_entries)):
-            file_path = music_files[ind]
-            score = music_scores[ind]
-
-            embedding = embedder.embed_audio(file_path).tolist()
-            data.append({
-                "artist": music_entry.artist, 
-                "title": music_entry.title,
-                "score": score,
-                "embedding": embedding,
-            })
-
-
-        df = pd.DataFrame(data)
-        df.to_csv("audio_scores_dataset.csv", index=False)
-        print("Dataset has been generated and exported as 'audio_scores_dataset.csv'!")'''

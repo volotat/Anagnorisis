@@ -5,20 +5,21 @@ import datetime
 from flask import Flask, render_template, send_from_directory
 from flask_socketio import SocketIO
 
-import pages.utils
-import pages.file_manager as file_manager # or pages.utils if you put get_folder_structure there
+import src.utils
+import src.file_manager as file_manager 
 import pages.text.db_models as db_models
-from pages.socket_events import CommonSocketEvents
+from src.socket_events import CommonSocketEvents
 
 import numpy as np
 
 from pages.text.engine import TextSearch
 from pages.train.universal_train import UniversalEvaluator
-from pages.utils import SortingProgressCallback, EmbeddingGatheringCallback
-from pages.common_filters import CommonFilters
+from src.utils import SortingProgressCallback, EmbeddingGatheringCallback
+
 
 from omegaconf import OmegaConf
 
+from src.common_filters import CommonFilters
 from src.metadata_search import MetadataSearch
 
 # EVENTS:

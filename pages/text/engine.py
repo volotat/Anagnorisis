@@ -15,7 +15,7 @@ from tqdm import tqdm
 from omegaconf import OmegaConf
 
 import src.scoring_models
-import pages.file_manager as file_manager
+import src.file_manager as file_manager
 import pages.text.db_models as db_models
 from src.base_search_engine import BaseSearchEngine
 from src.text_embedder import TextEmbedder 

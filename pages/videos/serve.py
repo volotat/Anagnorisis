@@ -22,18 +22,20 @@ import uuid
 import tempfile
 import shutil
 
-from pages.socket_events import CommonSocketEvents
+from src.socket_events import CommonSocketEvents
 
-import pages.file_manager as file_manager
+import src.file_manager as file_manager
 import pages.videos.db_models as db_models
 from pages.videos.engine import VideoSearch, VideoEvaluator
-from pages.recommendation_engine import sort_files_by_recommendation
-from pages.common_filters import CommonFilters
-
-from pages.utils import convert_size, convert_length, time_difference
-
-from src.metadata_search import MetadataSearch
+from src.recommendation_engine import sort_files_by_recommendation
 from pages.train.universal_train import UniversalEvaluator
+
+
+from src.utils import convert_size, convert_length, time_difference
+
+from src.common_filters import CommonFilters
+from src.metadata_search import MetadataSearch
+
 
 # EVENTS:
 

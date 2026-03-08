@@ -1,6 +1,6 @@
 import datetime
 import numpy as np
-from pages.utils import weighted_shuffle
+from src.utils import weighted_shuffle
 from typing import List
 
 def sigmoid(x):

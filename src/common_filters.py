@@ -3,7 +3,7 @@ import torch
 import numpy as np
 import gc
 
-from pages.utils import ArbitraryProgressCallback, SortingProgressCallback, EmbeddingGatheringCallback
+from src.utils import ArbitraryProgressCallback, SortingProgressCallback, EmbeddingGatheringCallback
 
 import rapidfuzz 
 import unicodedata

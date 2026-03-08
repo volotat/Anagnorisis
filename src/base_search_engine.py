@@ -10,7 +10,7 @@ from abc import ABC, abstractmethod
 from huggingface_hub import snapshot_download
 from transformers import AutoConfig
 from tqdm import tqdm
-import pages.file_manager as file_manager
+import src.file_manager as file_manager
 import numpy as np
 from src.caching import TwoLevelCache
 from src.model_manager import ModelManager # Assuming ModelManager is already implemented and works

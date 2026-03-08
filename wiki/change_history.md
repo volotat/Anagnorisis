@@ -54,47 +54,51 @@ Add new downloadable module for 'Deep Research'-like functionality that uses use
 ## Versions History
 
 
+### Version 0.3.6 ()
+* Files reshuffling for better project structure and maintainability. All core backend logic is now in `src/` folder.  
+
+
 ### Version 0.3.5 (06.03.2026)
 *   **OmniDescriptor Fixes:**
-    *   `OmniDescriptor` no longer requires a workaround for streaming mode — the underlying bug was fixed by the MiniCPM-o-4.5 developers, so all extra workaround code has been removed.
+    *   `OmniDescriptor` no longer requires a workaround for streaming mode - the underlying bug was fixed by the MiniCPM-o-4.5 developers, so all extra workaround code has been removed.
     *   Model weights and code are now updated independently, making it possible to update the model code without re-downloading the large weight files.
-*   **Universal Evaluator — Cross-Module Rating Model:**
-    *   Introduced `UniversalEvaluator` (`pages/train/universal_train.py`) — a singleton `TransformerEvaluator` that trains on user-rated files from **all** media modules (music, images, videos, text) simultaneously, producing a single shared scoring model (`universal_evaluator.pt`).
+*   **Universal Evaluator - Cross-Module Rating Model:**
+    *   Introduced `UniversalEvaluator` (`pages/train/universal_train.py`) - a singleton `TransformerEvaluator` that trains on user-rated files from **all** media modules (music, images, videos, text) simultaneously, producing a single shared scoring model (`universal_evaluator.pt`).
     *   A two-phase embedding strategy is used during training: for text files, full chunked content is embedded via `TextSearch.process_files()` (cached, fast, identical to the old per-module text training path); for all other modules, `MetadataSearch.generate_full_description()` is used (filename + OmniDescriptor summary + internal metadata). The strategy for text files is controlled by `evaluator.text_embedding_method` in `config.yaml` (`"full_text"` / `"metadata"`).
     *   Added `generate_desc_if_not_in_cache` parameter to `MetadataSearch.generate_full_description()` (default `True`, preserving all existing callers). Training passes `False` to skip slow OmniDescriptor inference and rely only on already-cached descriptions.
     *   Replaced the "Train text evaluator" button on the training page with a "Train universal evaluator" button, wired through `pages/train/serve.py`.
-*   **Videos Module — Model Ratings:**
+*   **Videos Module - Model Ratings:**
     *   Wired `UniversalEvaluator` into `pages/videos/serve.py`. `update_model_ratings` now hashes video files, skips already-rated files (by `model_hash` comparison), generates metadata descriptions via `MetadataSearch`, and stores predictions in `VideosLibrary`. The `evaluator_hash` is passed to `get_files()` so stale ratings are detected and refreshed on browse.
-*   **Text Module — Unified Evaluator:**
+*   **Text Module - Unified Evaluator:**
     *   Replaced the module-specific `TextEvaluator` with `UniversalEvaluator` in `pages/text/serve.py`. The text module now loads `universal_evaluator.pt` and uses the same embedding strategy as training (controlled by `evaluator.text_embedding_method`).
     *   `update_model_ratings` in the text module branches on the config switch: `"full_text"` uses `TextSearch.process_files()` (batch, cached); `"metadata"` uses `MetadataSearch.generate_full_description()` per file, consistent with all other modules.
     *   Removed the `TextEvaluator` singleton class from `pages/text/engine.py` and deleted the now-superseded `pages/text/train.py`.
 *   **Bug Fixes:**
-    *   Fixed a `UNIQUE constraint failed` crash in `update_model_ratings` for the Videos and Text modules. When duplicate files (same content, different paths) appeared in the media folder, both passed the already-rated filter, `query.filter_by(hash=...).first()` returned `None` for each, and both were queued for INSERT — triggering a hash collision on `bulk_save_objects`. New items are now deduplicated by hash before the bulk insert, consistent with the fix applied to the Images module in v0.2.15.
+    *   Fixed a `UNIQUE constraint failed` crash in `update_model_ratings` for the Videos and Text modules. When duplicate files (same content, different paths) appeared in the media folder, both passed the already-rated filter, `query.filter_by(hash=...).first()` returned `None` for each, and both were queued for INSERT - triggering a hash collision on `bulk_save_objects`. New items are now deduplicated by hash before the bulk insert, consistent with the fix applied to the Images module in v0.2.15.
 
 ### Version 0.3.4 (27.02.2026)
 *   **Model Re-Rating After Retraining:**
-    *   Fixed a bug where `update_model_ratings` was never called after retraining an evaluator model. The `file_manager.get_files()` only passed files with `model_rating is None` to the rating callback, so files already rated by the old model were silently skipped. Added a new `evaluator_hash` parameter to `get_files()` — files whose `model_hash` differs from the current evaluator hash are now included in the re-rating list alongside unrated files. Applied consistently across all three modules (images, music, text).
-*   **OmniDescriptor — New Omni-Modal Description Module (`src/omni_descriptor.py`):**
-    *   Implemented `OmniDescriptor` — a singleton proxy class that manages a long-lived worker subprocess holding the [MiniCPM-o-4.5](https://huggingface.co/openbmb/MiniCPM-o-4_5) model. The subprocess isolates the CUDA context from the main Flask process and is automatically terminated after 5 minutes of inactivity (same pattern as `TextEmbedder`) to free GPU memory, then transparently restarted on the next call. 
+    *   Fixed a bug where `update_model_ratings` was never called after retraining an evaluator model. The `file_manager.get_files()` only passed files with `model_rating is None` to the rating callback, so files already rated by the old model were silently skipped. Added a new `evaluator_hash` parameter to `get_files()` - files whose `model_hash` differs from the current evaluator hash are now included in the re-rating list alongside unrated files. Applied consistently across all three modules (images, music, text).
+*   **OmniDescriptor - New Omni-Modal Description Module (`src/omni_descriptor.py`):**
+    *   Implemented `OmniDescriptor` - a singleton proxy class that manages a long-lived worker subprocess holding the [MiniCPM-o-4.5](https://huggingface.co/openbmb/MiniCPM-o-4_5) model. The subprocess isolates the CUDA context from the main Flask process and is automatically terminated after 5 minutes of inactivity (same pattern as `TextEmbedder`) to free GPU memory, then transparently restarted on the next call. 
     *   Model is loaded with BitsAndBytes 4-bit NF4 double-quantization (`bfloat16` compute dtype, `device_map='auto'`, `init_tts=False`) to fit within 8 GB VRAM. 
     * There are now several main methods for generating descriptions from different modalities available in the module:
-        - **`describe_image(path, prompt)`** — generates a detailed text description of an image file via PIL + `model.chat()`.
-        - **`describe_audio_sampled(path, n_samples, sample_duration_s, prompt)`** — memory-safe audio description. Samples `n_samples` evenly-spaced windows of `sample_duration_s` seconds each, runs the model independently on each, then synthesises a combined summary. Per-segment OOM is caught and skipped with `torch.cuda.empty_cache()`.
-        - **`describe_video_sampled(path, n_samples, sample_duration_s, frames_per_segment, prompt)`** — memory-safe video description. For each of `n_samples` evenly-spaced time windows: extracts `frames_per_segment` frames via `cv2` (PIL images) and the corresponding audio waveform via `ffmpeg pipe:1 → io.BytesIO → librosa`. Passes both modalities together (`frames + [audio_chunk, prompt]`, `use_tts_template=True`) in a single `model.chat()` call per segment, then synthesises the per-segment descriptions into one summary. Uses `num_beams=1` throughout to prevent beam-search OOM.
-        - **`describe_text(text, prompt)`** — summarises long text via `model.chat()`.
+        - **`describe_image(path, prompt)`** - generates a detailed text description of an image file via PIL + `model.chat()`.
+        - **`describe_audio_sampled(path, n_samples, sample_duration_s, prompt)`** - memory-safe audio description. Samples `n_samples` evenly-spaced windows of `sample_duration_s` seconds each, runs the model independently on each, then synthesises a combined summary. Per-segment OOM is caught and skipped with `torch.cuda.empty_cache()`.
+        - **`describe_video_sampled(path, n_samples, sample_duration_s, frames_per_segment, prompt)`** - memory-safe video description. For each of `n_samples` evenly-spaced time windows: extracts `frames_per_segment` frames via `cv2` (PIL images) and the corresponding audio waveform via `ffmpeg pipe:1 → io.BytesIO → librosa`. Passes both modalities together (`frames + [audio_chunk, prompt]`, `use_tts_template=True`) in a single `model.chat()` call per segment, then synthesises the per-segment descriptions into one summary. Uses `num_beams=1` throughout to prevent beam-search OOM.
+        - **`describe_text(text, prompt)`** - summarises long text via `model.chat()`.
     *   Added a comprehensive `__main__` test suite to ensure its stability and reliability of the new module.
     *   To make all the modalities properly working, new set of liraries added to the `requierments.txt` (`opencv-python-headless`, `minicpmo`, `hyperpyyaml`, `diffusers`, and `onnxruntime`).
 *   **UX Improvements:**
     *   When gathering descriptions and text embeddings in the `metadata-based-search` mode, the status message reflects the amount of files processed out of the total and estimated time remaining, providing better feedback during long operations.
     
 ### Version 0.3.3 (17.02.2026)
-*   **Text Module — Evaluator Model & Training:**
-    *   Implemented a new `TransformerEvaluator` architecture in `src/scoring_models.py` — a lightweight transformer-based model that takes a variable-length sequence of chunk embeddings as input and produces a rating score. Architecture: linear projection (1024→1024 for now, reserve for future optimizations), learnable [CLS] token, sinusoidal positional encoding, 2-layer TransformerEncoder (4 heads, FFN=512), LayerNorm + MLP head → 11-class rating output. Designed to train efficiently on 8GB GPUs.
+*   **Text Module - Evaluator Model & Training:**
+    *   Implemented a new `TransformerEvaluator` architecture in `src/scoring_models.py` - a lightweight transformer-based model that takes a variable-length sequence of chunk embeddings as input and produces a rating score. Architecture: linear projection (1024→1024 for now, reserve for future optimizations), learnable [CLS] token, sinusoidal positional encoding, 2-layer TransformerEncoder (4 heads, FFN=512), LayerNorm + MLP head → 11-class rating output. Designed to train efficiently on 8GB GPUs.
     *   `TextEvaluator` in `pages/text/engine.py` now inherits from `TransformerEvaluator` instead of the MLP-based `Evaluator`, properly handling the variable-length chunk embeddings that text files produce.
     *   Created `pages/text/train.py` with `train_text_evaluator()` function, analogous to the existing image evaluator training pipeline. Queries rated text files from the database, generates embeddings via `TextSearch`, and trains the transformer model with progress reporting.
-    *   Wired up `text_evaluator.predict()` in `pages/text/serve.py` — model ratings for text files are now computed and saved to the database instead of being hardcoded to `None`.
-*   **Text Module — User Rating UI:**
+    *   Wired up `text_evaluator.predict()` in `pages/text/serve.py` - model ratings for text files are now computed and saved to the database instead of being hardcoded to `None`.
+*   **Text Module - User Rating UI:**
     *   Added an interactive star rating widget (using the shared `StarRatingComponent`) to the text file preview modal. Users can now rate text files directly from the viewer.
     *   Added `emit_text_page_set_text_rating` socket event handler in `pages/text/serve.py` to persist user ratings to the `TextLibrary` database.
 *   **Training Page:**
@@ -102,8 +106,8 @@ Add new downloadable module for 'Deep Research'-like functionality that uses use
 
 ### Version 0.3.2 (09.02.2026)
 *   **Configuration & Deployment (Breaking Changes):**
-    *   **Replaced `.env`-based configuration with `docker-compose.override.yaml`.** Users now configure all instance-specific settings (media folders, port, container name, authentication) in a single `docker-compose.override.yaml` file instead of a separate `.env` file. A well-documented `docker-compose.override.example.yaml` template is provided. This is a **breaking change** — existing users must migrate their settings from `.env` to the new override file (see migration notes below).
-    *   **Multiple media folders per module.** Each module (images, music, text, videos) now supports mounting multiple source folders. Each folder appears as a separate top-level directory in the app's file browser. All search, sorting, and recommendation features work seamlessly across all folders. No application code changes were needed — this works via Docker's native multi-mount capability.
+    *   **Replaced `.env`-based configuration with `docker-compose.override.yaml`.** Users now configure all instance-specific settings (media folders, port, container name, authentication) in a single `docker-compose.override.yaml` file instead of a separate `.env` file. A well-documented `docker-compose.override.example.yaml` template is provided. This is a **breaking change** - existing users must migrate their settings from `.env` to the new override file (see migration notes below).
+    *   **Multiple media folders per module.** Each module (images, music, text, videos) now supports mounting multiple source folders. Each folder appears as a separate top-level directory in the app's file browser. All search, sorting, and recommendation features work seamlessly across all folders. No application code changes were needed - this works via Docker's native multi-mount capability.
     *   **Multi-instance support via `instances/` directory.** Running multiple Anagnorisis instances simultaneously (e.g. for different family members) is now cleanly supported using separate compose override files in the `instances/` folder, with example templates provided.
     *   **`docker-compose.yaml` is now developer-maintained only.** Users should not edit `docker-compose.yaml` directly. All user-specific configuration goes into `docker-compose.override.yaml` (for single instance) or files in `instances/` (for multiple instances).
     *   The `.env` file and `.env.example` are no longer used by the project. Environment variables previously set in `.env` (such as `CONTAINER_NAME`, `ANAGNORISIS_USERNAME`, `ANAGNORISIS_PASSWORD`, `ALLOW_FILE_DELETION`) are now set in the `environment` section of the override file.

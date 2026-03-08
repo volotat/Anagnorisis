@@ -8,7 +8,7 @@ import os
 import pickle
 import torch  
 
-from pages.socket_events import CommonSocketEvents
+from src.socket_events import CommonSocketEvents
 
 
 def train_music_evaluator(cfg, callback=None, socketio=None):
