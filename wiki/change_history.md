@@ -54,9 +54,26 @@ Add new downloadable module for 'Deep Research'-like functionality that uses use
 ## Versions History
 
 
-### Version 0.3.6 ()
-* Files reshuffling for better project structure and maintainability. All core backend logic is now in `src/` folder.  
-
+### Version 0.3.6 (10.03.2026)
+*   **Module Self-Containment:**
+    *   Each module now owns its own `requirements.txt` (Python dependencies) and `config.defaults.yaml` (default configuration values), placed directly inside the module folder.
+    *   The `Dockerfile` was updated to auto-discover and install all `pages/*/requirements.txt` files at build time via a `find … -exec pip install` pattern - no more manually listing module dependencies in the root `requirements.txt`.
+    *   `app.py` now auto-discovers and deep-merges each module's `config.defaults.yaml` at startup using `OmegaConf.merge`, giving modules sensible defaults without requiring the user to add anything to the root `config.yaml`. User-provided values always take precedence.
+    *   Root `requirements.txt` and `config.yaml` now contain only core application dependencies and settings; all module-specific additions live inside the module folder.
+*   **Module Template & Documentation:**
+    *   Added `pages/_module_template/` - a fully documented reference implementation for building new modules, including `serve.py`, `db_models.py`, `engine.py`, `page.html`, `js/main.js`, and `train.py`.
+    *   Added `pages/_module_template/README.md` - step-by-step guide for creating a new module from scratch.
+    *   Added `pages/_module_template/ARCHITECTURE.md` - explains the auto-discovery lifecycle, file responsibilities, shared Python utilities, shared JavaScript components, and the universal evaluator training pipeline.
+    *   Added `pages/_module_template/BEST_PRACTICES.md` - naming conventions, Python and frontend code style guidelines, database model guidelines, search engine best practices, and a common pitfalls table.
+*   **Universal Evaluator Training - Extensible Plugin System:**
+    *   `universal_train.py` now auto-discovers `pages/*/train.py` files and calls `get_training_pairs(cfg, text_embedder, status_callback)` on any module that exposes it, collecting `(chunk_embeddings, user_rating)` pairs and including them in the training set alongside the legacy modules.
+    *   The four legacy modules (music, images, videos, text) are excluded from auto-discovery by name to avoid double-counting; their existing `_MODULE_DEFS` path is unchanged.
+    *   New modules can contribute training data simply by adding a `train.py` with `get_training_pairs()` - no changes to core training code required.
+    *   `pages/_module_template/train.py` documents the full interface contract with inline comments covering both the text-native (embed file content directly) and media (embed generated description) strategies.
+*   **Database Migration Fix:**
+    *   Fixed a startup crash (`Error: Target database is not up to date`) in `app.py`. The migration sequence was inverted: `migrate()` (generate new revision) was running before `upgrade()` (apply pending revisions), which Alembic rejects. The order is now `upgrade()` first, then `migrate()`, ensuring pending migrations are always applied before any new drift is detected.
+*   **Project Structure:**
+    *   Files reshuffling for better project structure and maintainability. All core backend logic is now in `src/` folder.
 
 ### Version 0.3.5 (06.03.2026)
 *   **OmniDescriptor Fixes:**

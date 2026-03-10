@@ -62,6 +62,11 @@ _MODULE_DEFS = [
 ]
 
 
+# Modules handled by the legacy _MODULE_DEFS path — excluded from auto-discovery
+# to avoid counting their training data twice.
+_LEGACY_MODULE_NAMES = {mdef["name"] for mdef in _MODULE_DEFS}
+
+
 # ---------------------------------------------------------------------------
 # Singleton universal evaluator
 # ---------------------------------------------------------------------------
@@ -79,6 +84,73 @@ class UniversalEvaluator(TransformerEvaluator):
         if not hasattr(self, '_initialized'):
             super().__init__(embedding_dim, rate_classes, name="UniversalEvaluator")
             self._initialized = True
+
+
+# ---------------------------------------------------------------------------
+# Auto-discovery: gather training pairs from pages/*/train.py
+# ---------------------------------------------------------------------------
+def _gather_from_module_train_files(cfg, text_embedder, status_callback=None):
+    """
+    Scan pages/*/train.py for modules that expose get_training_pairs() and
+    collect already-embedded (chunk_embeddings, score) pairs from each.
+
+    Modules listed in _LEGACY_MODULE_NAMES (music, images, videos, text) are
+    skipped here because they are already handled by _gather_rated_files().
+    """
+    import importlib
+    import glob
+
+    # pages/ directory is one level above this file (pages/train/)
+    pages_dir = os.path.normpath(
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
+    )
+
+    extra_embeddings = []
+    extra_scores = []
+
+    train_files = sorted(glob.glob(os.path.join(pages_dir, '*', 'train.py')))
+
+    for train_file in train_files:
+        module_name = os.path.basename(os.path.dirname(train_file))
+
+        # Skip template / hidden folders
+        if module_name.startswith('_'):
+            continue
+
+        # Skip modules already gathered by the legacy path
+        if module_name in _LEGACY_MODULE_NAMES:
+            continue
+
+        module_import_path = f"pages.{module_name}.train"
+        try:
+            mod = importlib.import_module(module_import_path)
+        except Exception as exc:
+            print(f"[UniversalTrain] Could not import {module_import_path}: {exc}")
+            continue
+
+        if not hasattr(mod, 'get_training_pairs'):
+            print(f"[UniversalTrain] {module_import_path} has no get_training_pairs(), skipping.")
+            continue
+
+        print(f"[UniversalTrain] Gathering training pairs from '{module_name}'...")
+        if status_callback:
+            status_callback(f"Gathering training pairs from '{module_name}'...")
+
+        count = 0
+        try:
+            for chunk_embeddings, score in mod.get_training_pairs(
+                cfg, text_embedder, status_callback
+            ):
+                extra_embeddings.append(chunk_embeddings)
+                extra_scores.append(score)
+                count += 1
+        except Exception as exc:
+            print(f"[UniversalTrain] Error in get_training_pairs for '{module_name}': {exc}")
+            continue
+
+        print(f"[UniversalTrain] '{module_name}': collected {count} training pairs.")
+
+    return extra_embeddings, extra_scores
 
 
 # ---------------------------------------------------------------------------
@@ -354,6 +426,20 @@ def train_universal_evaluator(cfg, callback=None):
             continue
 
     print(f"[UniversalTrain] Valid: {len(valid_embeddings)}, Skipped: {skipped}")
+
+    # -------------------------------------------------------------------------
+    # Phase C: collect pre-embedded pairs from auto-discovered module train.py
+    # files (e.g. web_search).  These modules embed their own data, so no
+    # further description generation or embedding is needed here.
+    # -------------------------------------------------------------------------
+    extra_embeddings, extra_scores = _gather_from_module_train_files(
+        cfg, text_embedder,
+        status_callback=lambda msg: callback(msg, 0, 0) if callback else None,
+    )
+    if extra_embeddings:
+        print(f"[UniversalTrain] Auto-discovered modules: +{len(extra_embeddings)} additional pairs.")
+        valid_embeddings.extend(extra_embeddings)
+        valid_scores.extend(extra_scores)
 
     if len(valid_embeddings) < 2:
         msg = (f"Not enough valid embeddings ({len(valid_embeddings)}) to train. "

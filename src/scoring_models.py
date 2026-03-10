@@ -157,7 +157,7 @@ class Evaluator():
   def load(self, model_path):
     # load the model from folder
     if os.path.exists(model_path):
-      self.model.load_state_dict(torch.load(model_path, weights_only=True))
+      self.model.load_state_dict(torch.load(model_path, weights_only=True)) #, map_location='cpu'
     else:
       self.save(model_path)
 
@@ -496,7 +496,7 @@ class TransformerEvaluator:
 
   def load(self, model_path):
     if os.path.exists(model_path):
-      self.model.load_state_dict(torch.load(model_path, weights_only=True))
+      self.model.load_state_dict(torch.load(model_path, weights_only=True, map_location='cpu'))
     else:
       self.save(model_path)
 

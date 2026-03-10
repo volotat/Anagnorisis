@@ -64,6 +64,7 @@ omni:
   temperature: 0.2
   video_sample_max_size: 512 # Max dimension (width or height) for video frame sampling to the omni descriptor
   image_max_size: 512 # Max dimension (width or height) for input images to the omni descriptor
+  min_free_vram_to_run: 7680 # Minimum free VRAM in MB required to run the omni descriptor (prevents OOM crashes) 
   image_prompt: "Describe this image in detail. Include objects, scene, colors, actions, and any text visible."
   audio_prompt: "Describe the audio in detail. Include instruments, genre, mood, tempo, and any notable features."
   video_prompt: "Describe the video in detail. Include the scene, actions, objects, and any notable events."

@@ -70,6 +70,15 @@ print(f"Using data folder: {data_folder}")
 config_path = os.path.join(script_folder, 'config.yaml')
 cfg = OmegaConf.load(config_path)
 
+# Auto-merge module config defaults (pages/<module>/config.defaults.yaml).
+# Module defaults are loaded first, then the root config is applied on top,
+# so root config.yaml always wins as an override.
+import glob as _glob
+for _mod_cfg_path in sorted(_glob.glob(os.path.join(script_folder, 'pages', '*', 'config.defaults.yaml'))):
+    _mod_cfg = OmegaConf.load(_mod_cfg_path)
+    cfg = OmegaConf.merge(_mod_cfg, cfg)
+    print(f"Merged module config defaults: {_mod_cfg_path}")
+
 # Load local configuration if it exists
 project_config_folder_path = cfg.main.get('project_config_directory', 'project_config')
 
@@ -490,12 +499,16 @@ def migrate_database():
             print("Initializing migrations...")
             init(directory=migrations_dir)
             
-        # Generate migration
+        # Apply any existing migrations first (bring DB up to current head)
+        print("Applying migrations...")
+        upgrade(directory=migrations_dir)
+
+        # Generate a new migration if the models have changed since last revision
         print("Generating migrations...")
         migrate(directory=migrations_dir)
-        
-        # Apply migrations
-        print("Applying migrations...")
+
+        # Apply the new migration to update the database schema
+        print("Applying new migrations...")
         upgrade(directory=migrations_dir)
         
         print("Database migration completed successfully.")  

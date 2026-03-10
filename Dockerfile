@@ -34,6 +34,11 @@ RUN /venv/bin/pip install --no-cache-dir torch torchvision torchaudio --index-ur
 COPY requirements.txt /app/
 RUN /venv/bin/pip install --no-cache-dir -r requirements.txt
 
+# Copy and install module-specific requirements (each module may have its own requirements.txt)
+COPY pages/*/requirements.txt /tmp/module_reqs/
+RUN find /tmp/module_reqs/ -name 'requirements.txt' -exec /venv/bin/pip install --no-cache-dir -r {} \; 2>/dev/null || true
+RUN rm -rf /tmp/module_reqs
+
 # Expose the application port
 EXPOSE 5001
 
