@@ -37,6 +37,7 @@ class _OmniDescriptorImpl:
         self.model_name = model_name
         model_folder_name = model_name.replace('/', '__')
         local_model_path = os.path.join(models_folder, model_folder_name)
+        self._local_model_path = local_model_path
 
         self._ensure_model_downloaded(models_folder, model_name)
         self._load_model(local_model_path)
@@ -927,6 +928,7 @@ class _OmniDescriptorImpl:
         output_tokens_per_probe = 64   # small fixed output — we're testing input capacity
         results = []
         last_ok_input = 0
+        hit_limit = False
 
         for target in probe_targets:
             if has_cuda:
@@ -988,7 +990,10 @@ class _OmniDescriptorImpl:
             )
 
             if status != "ok":
+                hit_limit = True
                 break   # don't probe larger sizes after a failure
+        else:
+            hit_limit = False
 
         # ------------------------------------------------------------------
         # 5. Derive recommendation
@@ -1001,9 +1006,15 @@ class _OmniDescriptorImpl:
         # Clamp to model architectural max
         max_ctx_total   = min(max_ctx_by_vram, model_max)
 
-        # Sensible split: 80 % input, 20 % output, but cap output at 1024
-        suggested_input  = min(int(max_ctx_total * 0.80), last_ok_input or max_ctx_total)
-        suggested_output = min(int(max_ctx_total * 0.20), 1024)
+        # Sensible split: 80 % input, 20 % output.
+        # Only clamp to last_ok_input when a probe actually failed — if all
+        # probes passed, trust the theoretical budget.
+        theoretical_input = int(max_ctx_total * 0.80)
+        if hit_limit and last_ok_input:
+            suggested_input = min(theoretical_input, last_ok_input)
+        else:
+            suggested_input = theoretical_input
+        suggested_output = int(max_ctx_total * 0.20)
         # Round to nearest 256 for cleanliness
         suggested_input  = max(256, (suggested_input  // 256) * 256)
         suggested_output = max(64,  (suggested_output // 64)  * 64)
@@ -1038,6 +1049,497 @@ class _OmniDescriptorImpl:
             "probes":         results,
             "recommendation": recommendation,
         }
+
+    # ------------------------------------------------------------------
+    # Inference speed benchmarks
+    # ------------------------------------------------------------------
+
+    def _run_speed_probes(self, probe_configs=None) -> List[Dict]:
+        """
+        Run a series of inference speed probes on the current device.
+
+        Each probe sends a prompt of a target input length and asks the model
+        to generate a target number of output tokens.  Two passes are made per
+        probe:
+
+          1. ``max_new_tokens=1`` — approximates *time-to-first-token*
+             (prefill + one decode step).
+          2. ``max_new_tokens=target_output`` — full generation.
+             Generation throughput ≈ (output_tokens - 1) / (total - prefill).
+
+        Returns a list of per-probe result dicts.
+        """
+        import math
+
+        if probe_configs is None:
+            if self.device.type == 'cuda':
+                probe_configs = [(64, 32), (128, 64), (256, 128), (512, 128), (1024, 128)]
+            else:
+                probe_configs = [(32, 16), (64, 32), (128, 64), (256, 64)]
+
+        filler_sentence = (
+            "The quick brown fox jumps over the lazy dog. "
+            "History shows that empires rise and fall. "
+            "Mathematics is the language of the universe. "
+        )
+        filler_ids = self.tokenizer.encode(filler_sentence, add_special_tokens=False)
+        tokens_per_sentence = len(filler_ids)
+
+        def make_prompt(target_tokens: int) -> tuple:
+            repeats = math.ceil(target_tokens / tokens_per_sentence)
+            ids = (filler_ids * repeats)[:target_tokens]
+            text = self.tokenizer.decode(ids, skip_special_tokens=True)
+            full_prompt = f"Continue the following text:\n\n{text}"
+            actual = len(self.tokenizer.encode(full_prompt, add_special_tokens=True))
+            return full_prompt, actual
+
+        has_cuda = self.device.type == 'cuda'
+        results: List[Dict] = []
+
+        for target_input, target_output in probe_configs:
+            if has_cuda:
+                torch.cuda.synchronize()
+                torch.cuda.reset_peak_memory_stats(0)
+
+            prompt, actual_input = make_prompt(target_input)
+            msgs = [{"role": "user", "content": [prompt]}]
+
+            status = "ok"
+            prefill_time = 0.0
+            total_time = 0.0
+            actual_output = 0
+
+            try:
+                # Pass 1: max_new_tokens=1 → approximate prefill / TTFT
+                t0 = time.time()
+                _ = self.model.chat(
+                    msgs=msgs,
+                    use_tts_template=False,
+                    enable_thinking=False,
+                    max_new_tokens=1,
+                    do_sample=False,
+                    num_beams=1,
+                )
+                if has_cuda:
+                    torch.cuda.synchronize()
+                prefill_time = time.time() - t0
+
+                # Pass 2: full generation
+                t0 = time.time()
+                response = self.model.chat(
+                    msgs=msgs,
+                    use_tts_template=False,
+                    enable_thinking=False,
+                    max_new_tokens=target_output,
+                    do_sample=False,
+                    num_beams=1,
+                )
+                if has_cuda:
+                    torch.cuda.synchronize()
+                total_time = time.time() - t0
+
+                actual_output = len(
+                    self.tokenizer.encode(response, add_special_tokens=False)
+                )
+
+            except torch.cuda.OutOfMemoryError:
+                status = "oom"
+                if has_cuda:
+                    torch.cuda.empty_cache()
+            except Exception as exc:
+                status = f"error: {type(exc).__name__}: {str(exc)[:80]}"
+
+            # ---- compute throughput ----
+            gen_time = max(total_time - prefill_time, 0.001) if status == "ok" and total_time > prefill_time else total_time
+            prefill_tps = actual_input / prefill_time if prefill_time > 0 and status == "ok" else 0.0
+            gen_tps = max(actual_output - 1, 0) / gen_time if gen_time > 0 and status == "ok" else 0.0
+
+            entry = {
+                "input_tokens":          actual_input,
+                "output_tokens":         actual_output,
+                "prefill_time_s":        round(prefill_time, 3),
+                "total_time_s":          round(total_time, 3),
+                "generation_time_s":     round(gen_time, 3),
+                "prefill_tok_per_s":     round(prefill_tps, 1),
+                "generation_tok_per_s":  round(gen_tps, 1),
+                "status":               status,
+            }
+            results.append(entry)
+
+            print(
+                f"  [{status.upper()[:3]}] "
+                f"in={actual_input:>5} tok  out={actual_output:>4} tok  "
+                f"prefill={prefill_time:6.2f}s ({prefill_tps:>8,.1f} tok/s)  "
+                f"gen={gen_time:6.2f}s ({gen_tps:>7,.1f} tok/s)  "
+                f"total={total_time:6.2f}s"
+            )
+
+            if status != "ok":
+                break
+
+            if has_cuda:
+                torch.cuda.empty_cache()
+
+        return results
+
+    def benchmark_inference_speed(self) -> Dict[str, Any]:
+        """
+        Measures inference speed (tokens/second) on the current device.
+
+        Runs multiple probes at increasing input lengths, each generating a
+        controlled number of output tokens.  Reports prefill throughput
+        (time-to-first-token) and generation throughput (decode tokens/s).
+
+        Returns a dict with:
+          'device_info'  – device name, thread counts, VRAM (if GPU)
+          'probes'       – list of per-probe dicts
+          'summary'      – average prefill & generation tok/s
+        """
+        if not self.model:
+            raise RuntimeError("OmniDescriptor not initiated.")
+
+        has_cuda = self.device.type == 'cuda'
+
+        info: Dict[str, Any] = {
+            'device': str(self.device),
+            'torch_num_threads': torch.get_num_threads(),
+            'torch_num_interop_threads': torch.get_num_interop_threads(),
+        }
+        if has_cuda:
+            info['gpu_name'] = torch.cuda.get_device_name(0)
+            info['total_vram_mb'] = round(
+                torch.cuda.get_device_properties(0).total_memory / 1024**2, 1
+            )
+        else:
+            info['cpu_count'] = os.cpu_count()
+
+        device_label = info.get('gpu_name', str(self.device))
+        print(f"OmniDescriptor (Worker): Benchmarking inference speed on {device_label}...")
+
+        probes = self._run_speed_probes()
+
+        ok = [p for p in probes if p['status'] == 'ok']
+        return {
+            'device_info': info,
+            'probes': probes,
+            'summary': {
+                'avg_prefill_tok_per_s': round(
+                    sum(p['prefill_tok_per_s'] for p in ok) / len(ok), 1
+                ) if ok else 0,
+                'avg_generation_tok_per_s': round(
+                    sum(p['generation_tok_per_s'] for p in ok) / len(ok), 1
+                ) if ok else 0,
+                'num_successful_probes': len(ok),
+            },
+        }
+
+    def _with_cpu_model(self, fn):
+        """
+        Temporarily load a bfloat16 CPU copy of the model (with vision +
+        audio encoders so it matches the GPU configuration) and call
+        ``fn(self)`` while it is active.
+
+        * ``torch.set_num_threads`` is set to ``os.cpu_count()``.
+        * The GPU model is preserved and restored afterwards.
+        * Returns whatever ``fn`` returns.
+        """
+        if not self.model:
+            raise RuntimeError("OmniDescriptor not initiated.")
+
+        import gc
+
+        cpu_count = os.cpu_count() or 1
+        prev_threads = torch.get_num_threads()
+
+        # Maximize intra-op parallelism
+        torch.set_num_threads(cpu_count)
+        try:
+            torch.set_num_interop_threads(min(cpu_count, 4))
+        except RuntimeError:
+            pass
+
+        was_on_gpu = self.device.type == 'cuda'
+        original_model = self.model
+        original_device = self.device
+
+        try:
+            if was_on_gpu:
+                print(
+                    f"OmniDescriptor (Worker): Loading temporary CPU model "
+                    f"(bfloat16) from '{self._local_model_path}' for "
+                    f"benchmarking with {cpu_count} CPU threads..."
+                )
+
+                from transformers import AutoModel
+                import transformers as _hf
+
+                _prev_v = _hf.logging.get_verbosity()
+                _hf.logging.set_verbosity_error()
+                cpu_model = AutoModel.from_pretrained(
+                    self._local_model_path,
+                    trust_remote_code=True,
+                    attn_implementation="sdpa",
+                    init_vision=True,
+                    init_audio=True,
+                    init_tts=False,
+                    torch_dtype=torch.bfloat16,  # ~16 GB — fits in 32 GB RAM
+                    device_map='cpu',
+                )
+                _hf.logging.set_verbosity(_prev_v)
+                cpu_model.eval()
+
+                param_mb = sum(
+                    p.nelement() * p.element_size() for p in cpu_model.parameters()
+                ) / 1024**2
+                print(
+                    f"OmniDescriptor (Worker): CPU model loaded "
+                    f"(bfloat16, ~{param_mb:,.0f} MB). "
+                    f"Using {cpu_count} threads."
+                )
+
+                self.model = cpu_model
+                self.device = torch.device('cpu')
+            else:
+                print(
+                    f"OmniDescriptor (Worker): Model already on CPU. "
+                    f"Benchmarking with {cpu_count} threads..."
+                )
+
+            return fn(self)
+        finally:
+            if was_on_gpu:
+                del self.model
+                gc.collect()
+                self.model = original_model
+                self.device = original_device
+                print("OmniDescriptor (Worker): CPU model freed, GPU model restored.")
+            torch.set_num_threads(prev_threads)
+
+    def _cpu_device_info(self) -> Dict[str, Any]:
+        """Return a device_info dict for CPU benchmarks."""
+        return {
+            'device': 'cpu',
+            'cpu_count': os.cpu_count() or 1,
+            'torch_num_threads': torch.get_num_threads(),
+            'torch_num_interop_threads': torch.get_num_interop_threads(),
+            'dtype': 'bfloat16',
+        }
+
+    def benchmark_inference_speed_cpu(self) -> Dict[str, Any]:
+        """
+        Measures inference speed on CPU using all available cores.
+
+        * Sets ``torch.set_num_threads`` to ``os.cpu_count()`` so that
+          intra-op parallelism spans every available core.
+        * If the model currently lives on GPU (possibly 4-bit quantized),
+          a temporary **bfloat16** copy (with vision + audio) is loaded on
+          CPU for the duration of the benchmark.  The original GPU model
+          is not modified and is restored afterwards.
+        * Uses smaller probe sizes than the GPU benchmark because CPU
+          inference is significantly slower.
+
+        Returns the same dict shape as ``benchmark_inference_speed``.
+        """
+        def _run(impl):
+            info = impl._cpu_device_info()
+            cpu_probes = [(32, 16), (64, 32), (128, 64), (256, 64)]
+            probes = impl._run_speed_probes(probe_configs=cpu_probes)
+            ok = [p for p in probes if p['status'] == 'ok']
+            return {
+                'device_info': info,
+                'probes': probes,
+                'summary': {
+                    'avg_prefill_tok_per_s': round(
+                        sum(p['prefill_tok_per_s'] for p in ok) / len(ok), 1
+                    ) if ok else 0,
+                    'avg_generation_tok_per_s': round(
+                        sum(p['generation_tok_per_s'] for p in ok) / len(ok), 1
+                    ) if ok else 0,
+                    'num_successful_probes': len(ok),
+                },
+            }
+        return self._with_cpu_model(_run)
+
+    def benchmark_context_window_cpu(self) -> Dict[str, Any]:
+        """
+        Measures the practical context-window limits on CPU.
+
+        Same methodology as ``benchmark_context_window`` but runs on a
+        temporary bfloat16 CPU model copy.  Reports RAM usage instead of
+        VRAM and uses a timeout to skip probes that would take too long.
+
+        Returns a dict with:
+          'device_info'  – CPU info (cores, threads, dtype)
+          'probes'       – list of per-probe dicts
+          'recommendation' – suggested max_input_tokens / max_new_tokens
+        """
+        def _run(impl):
+            import math
+            import resource
+
+            info = impl._cpu_device_info()
+
+            try:
+                llm_cfg = impl.model.config.llm_config
+            except AttributeError:
+                llm_cfg = impl.model.config
+
+            num_layers   = getattr(llm_cfg, 'num_hidden_layers',  36)
+            num_kv_heads = getattr(llm_cfg, 'num_key_value_heads', 8)
+            head_dim     = getattr(llm_cfg, 'head_dim',           128)
+            model_max    = getattr(llm_cfg, 'max_position_embeddings', 40960)
+            try:
+                model_max = impl.model.config.max_position_embeddings or model_max
+            except AttributeError:
+                pass
+
+            kv_bytes_per_token = 2 * num_kv_heads * head_dim * num_layers * 2
+            kv_kb_per_token = kv_bytes_per_token / 1024
+
+            # RAM inventory
+            try:
+                import psutil
+                mem = psutil.virtual_memory()
+                total_ram_mb = mem.total / 1024**2
+                available_ram_mb = mem.available / 1024**2
+            except ImportError:
+                total_ram_mb = os.sysconf('SC_PAGE_SIZE') * os.sysconf('SC_PHYS_PAGES') / 1024**2
+                available_ram_mb = total_ram_mb * 0.5  # rough fallback
+
+            # Tokenizer filler setup
+            filler_sentence = (
+                "The quick brown fox jumps over the lazy dog. "
+                "History shows that empires rise and fall. "
+                "Mathematics is the language of the universe. "
+            )
+            filler_ids = impl.tokenizer.encode(filler_sentence, add_special_tokens=False)
+            tokens_per_sentence = len(filler_ids)
+
+            def make_prompt(target_tokens: int) -> tuple:
+                repeats = math.ceil(target_tokens / tokens_per_sentence)
+                ids = (filler_ids * repeats)[:target_tokens]
+                text = impl.tokenizer.decode(ids, skip_special_tokens=True)
+                full_prompt = f"Summarize in one sentence:\n\n{text}"
+                actual = len(impl.tokenizer.encode(full_prompt, add_special_tokens=True))
+                return full_prompt, actual
+
+            # CPU is slow — use smaller steps and a per-probe timeout
+            probe_targets = [128, 256, 512, 1024, 2048, 4096]
+            output_tokens_per_probe = 16  # minimal output — we test input capacity
+            per_probe_timeout_s = 300     # 5 min per probe
+
+            results = []
+            last_ok_input = 0
+            hit_limit = False
+
+            def _get_rss_mb():
+                """Current process RSS in MB."""
+                return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
+
+            for target in probe_targets:
+                rss_before = _get_rss_mb()
+
+                prompt, actual_input = make_prompt(target)
+                msgs = [{"role": "user", "content": [prompt]}]
+                status = "ok"
+                elapsed = 0.0
+                actual_output = 0
+
+                try:
+                    t0 = time.time()
+                    response = impl.model.chat(
+                        msgs=msgs,
+                        use_tts_template=False,
+                        enable_thinking=False,
+                        max_new_tokens=output_tokens_per_probe,
+                        do_sample=False,
+                        num_beams=1,
+                    )
+                    elapsed = time.time() - t0
+                    actual_output = len(
+                        impl.tokenizer.encode(response, add_special_tokens=False)
+                    )
+                    last_ok_input = actual_input
+                except MemoryError:
+                    status = "oom"
+                except Exception as exc:
+                    status = f"error: {type(exc).__name__}: {str(exc)[:80]}"
+
+                rss_after = _get_rss_mb()
+                rss_delta = rss_after - rss_before
+
+                entry = {
+                    "target_tokens":  target,
+                    "input_tokens":   actual_input,
+                    "output_tokens":  actual_output,
+                    "elapsed_s":      round(elapsed, 2),
+                    "rss_delta_mb":   round(rss_delta, 1),
+                    "status":         status,
+                }
+                results.append(entry)
+                print(
+                    f"  [{status.upper()[:3]}] "
+                    f"in={actual_input:>6} tok  "
+                    f"out={actual_output:>3} tok  "
+                    f"{elapsed:6.1f}s  "
+                    f"ΔRSS={rss_delta:+7.1f} MB"
+                )
+
+                if status != "ok":
+                    hit_limit = True
+                    break
+
+                # If this probe was already very slow, skip bigger ones
+                if elapsed > per_probe_timeout_s:
+                    print(f"  ⏱  Probe took >{per_probe_timeout_s}s — skipping larger sizes.")
+                    break
+            else:
+                hit_limit = False
+
+            # Recommendation
+            budget_mb = max(available_ram_mb, 0)
+            max_ctx_by_ram = int((budget_mb * 1024) / kv_kb_per_token) if kv_kb_per_token else 0
+            max_ctx_total = min(max_ctx_by_ram, model_max)
+
+            # Only clamp to last_ok_input when a probe actually failed — if all
+            # probes passed, trust the theoretical budget.
+            theoretical_input = int(max_ctx_total * 0.80)
+            if hit_limit and last_ok_input:
+                suggested_input = min(theoretical_input, last_ok_input)
+            else:
+                suggested_input = theoretical_input
+            suggested_output = int(max_ctx_total * 0.20)
+            suggested_input  = max(256, (suggested_input  // 256) * 256)
+            suggested_output = max(64,  (suggested_output // 64)  * 64)
+
+            reasoning = (
+                f"System has {total_ram_mb:.0f} MB total RAM, "
+                f"{available_ram_mb:.0f} MB available. "
+                f"KV-cache costs {kv_kb_per_token:.0f} KB/token "
+                f"({num_layers}L × {num_kv_heads}KV × {head_dim}d × 2×bf16). "
+                f"Budget supports ~{max_ctx_by_ram:,} tokens total context "
+                f"(model max: {model_max:,}). "
+                f"Largest successful probe: {last_ok_input:,} input tokens."
+            )
+
+            return {
+                'device_info': info,
+                'ram': {
+                    'total_ram_mb':     round(total_ram_mb, 1),
+                    'available_ram_mb': round(available_ram_mb, 1),
+                },
+                'model_max_position_embeddings': model_max,
+                'kv_cache_kb_per_token': round(kv_kb_per_token, 1),
+                'probes': results,
+                'recommendation': {
+                    'max_input_tokens':  suggested_input,
+                    'max_new_tokens':    suggested_output,
+                    'max_total_context': max_ctx_total,
+                    'reasoning':         reasoning,
+                },
+            }
+
+        return self._with_cpu_model(_run)
 
 
 # Set the process name for system tools (nvidia-smi, top, ps)
@@ -1419,6 +1921,9 @@ if __name__ == '__main__':
     # Test flags — set to False to skip individual tests
     # ---------------------------------------------------------------------------
     RUN_TEST_CONTEXT_WINDOW    = True
+    RUN_TEST_CONTEXT_WINDOW_CPU = True
+    RUN_TEST_SPEED_GPU         = True
+    RUN_TEST_SPEED_CPU         = True
     RUN_TEST_TEXT              = True
     RUN_TEST_IMAGE             = True
     RUN_TEST_IMAGE_CUSTOM      = True
@@ -1476,6 +1981,184 @@ if __name__ == '__main__':
             print()
             print(f"  Reasoning: {rec['reasoning']}")
             print(f"  {'─' * 54}")
+            print("  PASSED")
+        except Exception as e:
+            print(f"  FAILED: {e}")
+            traceback.print_exc()
+            all_passed = False
+        print()
+
+    # ---------------------------------------------------------------------------
+    # Test 1a: Context Window Benchmark (CPU, all cores)
+    # ---------------------------------------------------------------------------
+    print("=" * 60)
+    print("TEST 1a: Context Window Benchmark (CPU, all cores)")
+    print("=" * 60)
+    benchmark_cpu_report = None
+    if not RUN_TEST_CONTEXT_WINDOW_CPU:
+        print("  SKIPPED (disabled)\n")
+    else:
+        try:
+            print("  Probing input lengths (output capped at 16 tokens each):")
+            benchmark_cpu_report = descriptor._execute('benchmark_context_window_cpu')
+
+            info = benchmark_cpu_report['device_info']
+            ram = benchmark_cpu_report['ram']
+            rec = benchmark_cpu_report['recommendation']
+
+            print()
+            print(f"  {'─' * 54}")
+            print(f"  Device             : CPU")
+            print(f"  CPU cores          : {info['cpu_count']}")
+            print(f"  Torch threads      : {info['torch_num_threads']}")
+            print(f"  Dtype              : {info.get('dtype', 'float32')}")
+            print(f"  Total RAM          : {ram['total_ram_mb']:.0f} MB")
+            print(f"  Available RAM      : {ram['available_ram_mb']:.0f} MB")
+            print(f"  KV-cache cost      : {benchmark_cpu_report['kv_cache_kb_per_token']:.0f} KB / token")
+            print(f"  Model max context  : {benchmark_cpu_report['model_max_position_embeddings']:,} tokens")
+            print()
+            print(f"  {'Input tokens':>13}  {'Output tokens':>13}  {'Time':>6}  {'ΔRSS':>9}  Status")
+            print(f"  {'─'*13}  {'─'*13}  {'─'*6}  {'─'*9}  {'─'*12}")
+            for r in benchmark_cpu_report['probes']:
+                print(
+                    f"  {r['input_tokens']:>13,}  "
+                    f"{r['output_tokens']:>13,}  "
+                    f"{r['elapsed_s']:>5.1f}s  "
+                    f"{r['rss_delta_mb']:>+8.0f}M  "
+                    f"{r['status']}"
+                )
+            print()
+            print(f"  {'─' * 54}")
+            print(f"  RECOMMENDATION (CPU):")
+            print(f"  Max input tokens  : {rec['max_input_tokens']:>6,}")
+            print(f"  Max output tokens : {rec['max_new_tokens']:>6,}")
+            print(f"  Max total context : {rec['max_total_context']:>6,}")
+            print()
+            print(f"  Reasoning: {rec['reasoning']}")
+            print(f"  {'─' * 54}")
+            print("  PASSED")
+        except Exception as e:
+            print(f"  FAILED: {e}")
+            traceback.print_exc()
+            all_passed = False
+        print()
+
+    # ---------------------------------------------------------------------------
+    # Test 1b: Inference Speed Benchmark (GPU / current device)
+    # ---------------------------------------------------------------------------
+    print("=" * 60)
+    print("TEST 1b: Inference Speed Benchmark (GPU / current device)")
+    print("=" * 60)
+    speed_gpu_report = None
+    if not RUN_TEST_SPEED_GPU:
+        print("  SKIPPED (disabled)\n")
+    else:
+        try:
+            speed_gpu_report = descriptor._execute('benchmark_inference_speed')
+
+            info = speed_gpu_report['device_info']
+            summary = speed_gpu_report['summary']
+
+            print()
+            print(f"  {'─' * 70}")
+            print(f"  Device             : {info.get('gpu_name', info['device'])}")
+            if 'total_vram_mb' in info:
+                print(f"  Total VRAM         : {info['total_vram_mb']:.0f} MB")
+            print(f"  Torch threads      : {info['torch_num_threads']}")
+            print()
+            print(f"  {'Input':>7}  {'Output':>7}  {'Prefill':>9}  {'Prefill tok/s':>14}  "
+                  f"{'Gen':>9}  {'Gen tok/s':>10}  {'Total':>7}  Status")
+            print(f"  {'─'*7}  {'─'*7}  {'─'*9}  {'─'*14}  {'─'*9}  {'─'*10}  {'─'*7}  {'─'*8}")
+            for r in speed_gpu_report['probes']:
+                print(
+                    f"  {r['input_tokens']:>7,}  "
+                    f"{r['output_tokens']:>7,}  "
+                    f"{r['prefill_time_s']:>8.2f}s  "
+                    f"{r['prefill_tok_per_s']:>13,.1f}  "
+                    f"{r['generation_time_s']:>8.2f}s  "
+                    f"{r['generation_tok_per_s']:>9,.1f}  "
+                    f"{r['total_time_s']:>6.2f}s  "
+                    f"{r['status']}"
+                )
+            print()
+            print(f"  {'─' * 70}")
+            print(f"  Avg prefill throughput   : {summary['avg_prefill_tok_per_s']:,.1f} tok/s")
+            print(f"  Avg generation throughput: {summary['avg_generation_tok_per_s']:,.1f} tok/s")
+            print(f"  Successful probes        : {summary['num_successful_probes']}")
+            print(f"  {'─' * 70}")
+            print("  PASSED")
+        except Exception as e:
+            print(f"  FAILED: {e}")
+            traceback.print_exc()
+            all_passed = False
+        print()
+
+    # ---------------------------------------------------------------------------
+    # Test 1c: Inference Speed Benchmark (CPU, all cores)
+    # ---------------------------------------------------------------------------
+    print("=" * 60)
+    print("TEST 1c: Inference Speed Benchmark (CPU, all cores)")
+    print("=" * 60)
+    speed_cpu_report = None
+    if not RUN_TEST_SPEED_CPU:
+        print("  SKIPPED (disabled)\n")
+    else:
+        try:
+            speed_cpu_report = descriptor._execute('benchmark_inference_speed_cpu')
+
+            info = speed_cpu_report['device_info']
+            summary = speed_cpu_report['summary']
+
+            print()
+            print(f"  {'─' * 70}")
+            print(f"  Device             : CPU")
+            print(f"  CPU cores          : {info['cpu_count']}")
+            print(f"  Torch threads      : {info['torch_num_threads']}")
+            print(f"  Interop threads    : {info['torch_num_interop_threads']}")
+            print(f"  Dtype              : {info.get('dtype', 'float32')}")
+            print()
+            print(f"  {'Input':>7}  {'Output':>7}  {'Prefill':>9}  {'Prefill tok/s':>14}  "
+                  f"{'Gen':>9}  {'Gen tok/s':>10}  {'Total':>7}  Status")
+            print(f"  {'─'*7}  {'─'*7}  {'─'*9}  {'─'*14}  {'─'*9}  {'─'*10}  {'─'*7}  {'─'*8}")
+            for r in speed_cpu_report['probes']:
+                print(
+                    f"  {r['input_tokens']:>7,}  "
+                    f"{r['output_tokens']:>7,}  "
+                    f"{r['prefill_time_s']:>8.2f}s  "
+                    f"{r['prefill_tok_per_s']:>13,.1f}  "
+                    f"{r['generation_time_s']:>8.2f}s  "
+                    f"{r['generation_tok_per_s']:>9,.1f}  "
+                    f"{r['total_time_s']:>6.2f}s  "
+                    f"{r['status']}"
+                )
+            print()
+            print(f"  {'─' * 70}")
+            print(f"  Avg prefill throughput   : {summary['avg_prefill_tok_per_s']:,.1f} tok/s")
+            print(f"  Avg generation throughput: {summary['avg_generation_tok_per_s']:,.1f} tok/s")
+            print(f"  Successful probes        : {summary['num_successful_probes']}")
+            print(f"  {'─' * 70}")
+
+            # Side-by-side comparison if both benchmarks ran
+            if speed_gpu_report:
+                gpu_sum = speed_gpu_report['summary']
+                print()
+                print(f"  {'═' * 50}")
+                print(f"  GPU vs CPU COMPARISON:")
+                print(f"  {'─' * 50}")
+                gpu_gen = gpu_sum['avg_generation_tok_per_s']
+                cpu_gen = summary['avg_generation_tok_per_s']
+                speedup = gpu_gen / cpu_gen if cpu_gen > 0 else float('inf')
+                print(f"  GPU generation : {gpu_gen:>8,.1f} tok/s")
+                print(f"  CPU generation : {cpu_gen:>8,.1f} tok/s")
+                print(f"  GPU speedup    : {speedup:>8,.1f}×")
+                gpu_pre = gpu_sum['avg_prefill_tok_per_s']
+                cpu_pre = summary['avg_prefill_tok_per_s']
+                speedup_pre = gpu_pre / cpu_pre if cpu_pre > 0 else float('inf')
+                print(f"  GPU prefill    : {gpu_pre:>8,.1f} tok/s")
+                print(f"  CPU prefill    : {cpu_pre:>8,.1f} tok/s")
+                print(f"  GPU speedup    : {speedup_pre:>8,.1f}×")
+                print(f"  {'═' * 50}")
+
             print("  PASSED")
         except Exception as e:
             print(f"  FAILED: {e}")
@@ -1850,6 +2533,27 @@ if __name__ == '__main__':
         rec = benchmark_report['recommendation']
         print()
         print(f"  Context window recommendation:")
+        print(f"    max_input_tokens  = {rec['max_input_tokens']:,}")
+        print(f"    max_new_tokens    = {rec['max_new_tokens']:,}")
+
+    if speed_gpu_report:
+        s = speed_gpu_report['summary']
+        print()
+        print(f"  Inference speed (GPU / current device):")
+        print(f"    avg prefill      = {s['avg_prefill_tok_per_s']:,.1f} tok/s")
+        print(f"    avg generation   = {s['avg_generation_tok_per_s']:,.1f} tok/s")
+
+    if speed_cpu_report:
+        s = speed_cpu_report['summary']
+        print()
+        print(f"  Inference speed (CPU, {speed_cpu_report['device_info']['cpu_count']} cores):")
+        print(f"    avg prefill      = {s['avg_prefill_tok_per_s']:,.1f} tok/s")
+        print(f"    avg generation   = {s['avg_generation_tok_per_s']:,.1f} tok/s")
+
+    if benchmark_cpu_report:
+        rec = benchmark_cpu_report['recommendation']
+        print()
+        print(f"  Context window recommendation (CPU):")
         print(f"    max_input_tokens  = {rec['max_input_tokens']:,}")
         print(f"    max_new_tokens    = {rec['max_new_tokens']:,}")
 

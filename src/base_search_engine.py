@@ -44,6 +44,10 @@ class BaseSearchEngine(ABC):
 
         self._batch_processing_size = 1
 
+        # Read the configured target device from config (overrides auto-detection in subclasses)
+        _device_str = getattr(cfg.main, 'device', None)
+        self._target_device = torch.device(_device_str) if _device_str else None
+
         # Caching mechanisms
         # self.cached_metadata = None
 
@@ -138,6 +142,11 @@ class BaseSearchEngine(ABC):
         
         # Load the actual model and processor (this method should put model on CPU initially)
         self._load_model_and_processor(local_model_path)
+
+        # Apply the config-level device override (if specified) so ModelManager
+        # targets the correct device instead of the auto-detected one.
+        if self._target_device is not None:
+            self.device = self._target_device
         
         # Wrap the model with ModelManager for lazy GPU loading/unloading
         # Assuming _load_model_and_processor set self.model and self.device

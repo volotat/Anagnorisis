@@ -1,0 +1,247 @@
+<div class="block py-6" style="width:1200px; margin:0 auto; text-align: justify;">
+  <form class="box" action="#">
+    <div class="column is-full">
+      <button class="button is-primary is-fullwidth" id="startMusic">Train music evaluator</button>
+    </div>
+  </form>
+
+  <form class="box" action="#">
+    <div class="column is-full">
+      <button class="button is-primary is-fullwidth" id="startImages">Train image evaluator</button>
+    </div>
+  </form>
+
+  <form class="box" action="#">
+    <div class="column is-full">
+      <button class="button is-primary is-fullwidth" id="startUniversal">Train universal evaluator</button>
+    </div>
+  </form>
+
+  <div class="box">
+    <p class="mb-3" id="fine_tuning_status">Training status</p>
+    <progress id="fine_tuning_progress" class="progress" value="0" max="100">0%</progress>
+    <canvas id="chart_loss"></canvas>
+    <p class="mb-3">This graph shows (1 / (1 - <a href="https://en.wikipedia.org/wiki/Mean_absolute_percentage_error">MAPE</a>) * 100%) metric of how well the model predicts your preferences. Baseline line shows metric of mean value of all training scores calculated relative to test scores (with some additional resampling to normalize training data scores distribution). If the 'Test accuracy' not much greater then a baseline, it means there is not enough user rated datapoints yet or user rating values are too similar to each other, as well as there are very small amount of low-score examples in the database.</p>
+  </div>
+
+  
+  <script src="static/js/chart.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-annotation/1.0.2/chartjs-plugin-annotation.min.js"></script>
+  
+  <script type="text/javascript">
+    const CHART_COLORS = {
+      red: 'rgb(255, 99, 132)',
+      orange: 'rgb(255, 159, 64)',
+      yellow: 'rgb(255, 205, 86)',
+      green: 'rgb(75, 192, 192)',
+      blue: 'rgb(54, 162, 235)',
+      purple: 'rgb(153, 102, 255)',
+      grey: 'rgb(201, 203, 207)',
+      cayan: 'rgb(75, 192, 192)',
+    };
+
+    let chart_loss = (()=>{
+      const ctx = document.getElementById('chart_loss');
+
+      const labels = [1, 2, 3, 4, 5, 6, 7];
+      const data = {
+        //labels: labels,
+        datasets: [{
+          label: 'Train accuracy',
+          data: [65, 59, 80, 81, 56, 55, 40],
+          fill: false,
+          borderColor: CHART_COLORS.red,
+          //tension: 0.1
+          yAxisID: 'y',
+          indexAxis: 'x' // Set indexAxis here
+        },
+        {
+          label: 'Test accuracy',
+          data: [65, 59, 80, 81, 56, 55, 40],
+          fill: false,
+          borderColor: CHART_COLORS.blue,
+          //tension: 0.1
+          yAxisID: 'y',
+          indexAxis: 'x' // Set indexAxis here
+        }]
+      };
+    
+      const config = {
+        type: 'line',
+        data: data,
+        options: {
+          responsive: true,
+          interaction: {
+            mode: 'index',
+            intersect: false,
+          },
+          stacked: false,
+          animation: false, // disable animations
+          plugins: {
+            title: {
+              display: true,
+              text: 'Train and Test Accuracy'
+            },
+            annotation: {
+              annotations: [{
+                type: 'line',
+                mode: 'horizontal',
+                scaleID: 'y',
+                value: 10,
+                borderColor: CHART_COLORS.cayan,
+                borderWidth: 4,
+                borderDash: [5, 5], 
+                label: {
+                  enabled: true,
+                  content: 'Baseline'
+                }
+              }]
+            }/*,
+            decimation: {
+              enabled: true,
+              algorithm: 'lttb', // Choose your decimation algorithm
+              samples: 10, // Number of data points to keep
+              threshold: 10 // Minimum data points to consider decimation
+            }*/
+          },
+          scales: {
+            y: {
+              type: 'linear',
+              display: true,
+              position: 'left',
+            }
+          }
+        }
+      };
+
+      return new Chart(ctx, config);
+    })();
+
+    function largestTriangleThreeBuckets(data, threshold) {
+      const dataLength = data.length;
+      if (threshold >= dataLength || threshold === 0) {
+        return data; // Nothing to do
+      }
+
+      const sampled = [];
+      let sampledIndex = 0;
+
+      // Bucket size. Leave room for start and end data points
+      const every = (dataLength - 2) / (threshold - 2);
+
+      let a = 0;  // Initially a is the first point in the triangle
+      let maxAreaPoint;
+      let maxArea;
+      let area;
+      let nextA;
+
+      sampled[sampledIndex++] = data[a]; // Always add the first point
+
+      for (let i = 0; i < threshold - 2; i++) {
+        // Calculate point average for next bucket (containing c)
+        let avgX = 0;
+        let avgY = 0;
+        let avgRangeStart = Math.floor((i + 1) * every) + 1;
+        let avgRangeEnd = Math.floor((i + 2) * every) + 1;
+        avgRangeEnd = avgRangeEnd < dataLength ? avgRangeEnd : dataLength;
+
+        const avgRangeLength = avgRangeEnd - avgRangeStart;
+
+        for (let j = avgRangeStart; j < avgRangeEnd; j++) {
+          avgX += data[j].x;
+          avgY += data[j].y;
+        }
+        avgX /= avgRangeLength;
+        avgY /= avgRangeLength;
+
+        // Get the range for this bucket
+        const rangeOffs = Math.floor((i + 0) * every) + 1;
+        const rangeTo = Math.floor((i + 1) * every) + 1;
+
+        // Point a
+        const pointAX = data[a].x;
+        const pointAY = data[a].y;
+
+        maxArea = area = -1;
+
+        for (let j = rangeOffs; j < rangeTo; j++) {
+          // Calculate triangle area over three buckets
+          area = Math.abs((pointAX - avgX) * (data[j].y - pointAY) - (pointAX - data[j].x) * (avgY - pointAY)) * 0.5;
+          if (area > maxArea) {
+            maxArea = area;
+            maxAreaPoint = data[j];
+            nextA = j; // Next a is this b
+          }
+        }
+
+        sampled[sampledIndex++] = maxAreaPoint; // Pick this point from the bucket
+        a = nextA; // This a is the next a (chosen b)
+      }
+
+      sampled[sampledIndex++] = data[dataLength - 1]; // Always add last
+
+      return sampled;
+    }
+
+    function update_chart(data) {
+      const train_accuracy_hist = data['train_accuracy_hist'];
+      const test_accuracy_hist = data['test_accuracy_hist'];
+      const percent = data['percent'];
+      const status = data['status'];
+      const baseline_accuracy = data['baseline_accuracy'];
+
+      // Decimate data to a maximum of 10 points
+      const decimated_train_accuracy = largestTriangleThreeBuckets(train_accuracy_hist.map((value, index) => ({x: index, y: value})), 400);
+      const decimated_test_accuracy = largestTriangleThreeBuckets(test_accuracy_hist.map((value, index) => ({x: index, y: value})), 400);
+
+      chart_loss.data.labels = decimated_train_accuracy.map(point => point.x);
+      chart_loss.data.datasets[0].data = decimated_train_accuracy;
+      chart_loss.data.datasets[1].data = decimated_test_accuracy;
+      chart_loss.options.plugins.annotation.annotations[0].value = baseline_accuracy;
+
+      chart_loss.update();
+
+      $("#fine_tuning_progress").val(percent);
+      $("#fine_tuning_status").text(status);
+    }
+
+    
+    //update_chart(''[1,2,3,4,5], [5,5,4,4,3]) 
+
+    function setTrainingActive(active) {
+      document.getElementById('startMusic').disabled = !!active;
+      document.getElementById('startImages').disabled = !!active;
+      document.getElementById('startUniversal').disabled = !!active;
+    }
+
+    $("document").ready(function(){
+      socket.on('connect', function(){
+        socket.emit('emit_train_page_get_training_status');
+      });
+
+      socket.on('emit_train_page_status', function(data){
+        setTrainingActive(data && data.active);
+      });
+
+      socket.on('emit_train_page_display_train_data', function(data){
+        update_chart(data)
+      });
+
+      socket.on('emit_show_search_status', (status) => {
+        console.log("Status:", status);
+      });
+      
+      $('#startMusic').on('click', function(){
+        socket.emit("emit_train_page_start_music_evaluator_training")
+      });
+
+      $('#startImages').on('click', function(){
+        socket.emit("emit_train_page_start_image_evaluator_training")
+      });
+
+      $('#startUniversal').on('click', function(){
+        socket.emit("emit_train_page_start_universal_evaluator_training")
+      });
+    });
+  </script>    
+</div>

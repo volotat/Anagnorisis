@@ -1,0 +1,176 @@
+<script type="module" type="text/javascript" src="modules/images/js/main.js"></script>
+
+<link rel="stylesheet" href="/static/photoswipe/photoswipe.css">
+<script type="module">
+  // Include Lightbox 
+  import PhotoSwipeLightbox from '/static/photoswipe/photoswipe-lightbox.esm.js';
+
+  const photoGalleryLightbox = new PhotoSwipeLightbox({
+    // may select multiple "galleries"
+    gallery: '#file_grid_inner_container',
+
+    // Elements within gallery (slides)
+    children: '.pswp-gallery__item',
+
+    // setup PhotoSwipe Core dynamic import
+    pswpModule: () => import('/static/photoswipe/photoswipe.esm.js')
+  });
+  window.photoGalleryLightbox = photoGalleryLightbox;
+  //photoGalleryLightbox.init();
+</script>
+<style>
+  .pswp__custom-caption {
+    background: rgba(28, 27, 31, 0.75);
+    font-size: 16px;
+    color: #fff;
+    width: calc(100% - 32px);
+    max-width: 400px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    position: absolute;
+    left: 50%;
+    bottom: 16px;
+    transform: translateX(-50%);
+  }
+  .pswp__custom-caption a {
+    color: #fff;
+    text-decoration: underline;
+  }
+  .hidden-caption-content {
+    display: none;
+  }
+</style>
+
+<!-- PAGE MAIN CONTENT -->
+<div class="container is-fluid columns is-centered py-6">
+  <aside class="column is-2 menu">
+    <p class="menu-label is-hidden">Path to local image library</p>
+    <div class="field has-addons is-hidden">
+      <div class="control is-expanded">
+        <input class="input is-fullwidth" id="path_to_media_folder" type="text" placeholder="Write folder path here">
+      </div>
+      <div class="control">
+        <button class="button is-info" id="update_path_to_media_folder">Save</button>
+      </div>
+    </div>
+  </aside>
+
+  <div class="column">
+    <!-- Search bar component mount point -->
+    <div id="search_bar_container" class="mb-4"></div>
+
+    <!-- Pagination and status on top-->
+    <nav class="level mt-6">
+      <nav class="pagination is-rounded level-left mb-0" role="navigation" aria-label="pagination">    
+        <ul class="pagination-list">
+          <li>
+            <span class="pagination-ellipsis">&hellip;</span>
+          </li>
+        </ul>
+      </nav>
+      <div class="level-right">
+        <p class="image-search-status">...</p>
+      </div>
+    </nav>
+
+    <!-- Grid with previews of images -->
+    <div id="images_grid_container">
+    </div>
+
+    <!-- Pagination and status on bottom-->
+    <nav class="pagination is-rounded mt-6" role="navigation" aria-label="pagination">
+      <nav class="pagination is-rounded level-left mb-0" role="navigation" aria-label="pagination">    
+        <ul class="pagination-list">
+          <li>
+            <span class="pagination-ellipsis">&hellip;</span>
+          </li>
+        </ul>
+      </nav>
+      <div class="level-right">
+        <p class="image-search-status">...</p>
+      </div>
+    </nav>
+  </div>
+
+  <!-- Small window in the left bottom side of the screen with actions that could be performed on the selected files -->
+  <div class="box block mb-0" id="files_actions" style="position: fixed; bottom: 1rem; left: 1rem; display: none;">
+    <!-- Show how much files are selected-->
+    <div class="field">
+      <div class="control">
+        <p class=" has-text-centered" id="selected_files_counter">0 files selected</p>
+      </div>
+    </div>
+    <!-- Move all selected files into another folder button -->
+    <div class="field">
+      <div class="control">
+        <button class="button is-info is-fullwidth" id="move_selected_files">Move</button>
+      </div>
+    </div>
+    <!-- Delete all selected files button -->
+    <div class="field">
+      <div class="control">
+        <button class="button is-danger is-fullwidth" id="delete_selected_files">Delete</button>
+      </div>
+    </div>
+    <!-- Undo all selections-->
+    <div class="field">
+      <div class="control">
+        <button class="button is-light is-fullwidth" id="unselect_all_files">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal for moving files to a folder -->
+  <div class="modal" id="move_files_modal">
+    <div class="modal-background modal-close-action"></div>
+    <div class="modal-card">
+      <header class="modal-card-head">
+        <p class="modal-card-title">Move files</p>
+        <button class="delete modal-close is-large modal-close-action" aria-label="close"></button>
+      </header>
+      <section class="modal-card-body">
+        <div class="field">
+          <label class="label">Path to the folder</label>
+          <div class="control">
+            <input class="input" type="text" placeholder="Write folder path here">
+          </div>
+        </div>
+        <!-- Added note -->
+        <p class="has-text-info mt-4">
+          If there already exists a file with the same name in the destination folder, copied file will be given a new name.
+        </p>
+      </section>
+      <footer class="modal-card-foot">
+        <button class="button is-info mr-2 modal-confirm-action">Move</button>
+        <button class="button modal-close-action">Cancel</button>
+      </footer>
+    </div>
+  </div>
+
+  <!-- Modal for Metadata Editor -->
+  <div class="modal" id="metadata_editor_modal">
+    <div class="modal-background modal-close-action"></div>
+    <div class="modal-card" style="width: 80%; max-width: 960px; height: 90vh; display: flex; flex-direction: column;">
+      <header class="modal-card-head">
+        <p class="modal-card-title" id="metadata_modal_title">Edit Image Metadata</p>
+        <button class="delete modal-close is-large modal-close-action" aria-label="close"></button>
+      </header>
+      <section class="modal-card-body" style="flex: 1; display: flex; flex-direction: column; padding-bottom: 0;">
+        <textarea class="textarea" id="metadata_content_textarea" placeholder="Metadata content..." 
+          style="flex-grow: 1;
+                 min-height: 0;
+                 font-family: 'Courier New', monospace;
+                 resize: none;
+                 max-height: -webkit-fill-available;
+                 background: rgba(255, 255, 255, 0.7); /* Transparent background */
+                 backdrop-filter: blur(5px); /* Optional: blur background content */
+                 border: 1px solid rgba(0, 0, 0, 0.1);
+                 padding: 1rem;"></textarea>
+      </section>
+      <footer class="modal-card-foot">
+        <button class="button is-success modal-save-action">Save changes</button>
+        <button class="button modal-close-action">Cancel</button>
+      </footer>
+    </div>
+  </div>
+<div>

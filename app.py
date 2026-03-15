@@ -70,11 +70,11 @@ print(f"Using data folder: {data_folder}")
 config_path = os.path.join(script_folder, 'config.yaml')
 cfg = OmegaConf.load(config_path)
 
-# Auto-merge module config defaults (pages/<module>/config.defaults.yaml).
+# Auto-merge module config defaults (modules/<module>/config.defaults.yaml).
 # Module defaults are loaded first, then the root config is applied on top,
 # so root config.yaml always wins as an override.
 import glob as _glob
-for _mod_cfg_path in sorted(_glob.glob(os.path.join(script_folder, 'pages', '*', 'config.defaults.yaml'))):
+for _mod_cfg_path in sorted(_glob.glob(os.path.join(script_folder, 'modules', '*', 'config.defaults.yaml'))):
     _mod_cfg = OmegaConf.load(_mod_cfg_path)
     cfg = OmegaConf.merge(_mod_cfg, cfg)
     print(f"Merged module config defaults: {_mod_cfg_path}")
@@ -107,6 +107,15 @@ cfg.main.embedding_models_path = embedding_models_path
 cfg.main.personal_models_path = personal_models_path
 cfg.main.cache_path = cache_path
 
+# Propagate the configured device to all in-process ML components so that no
+# CUDA context is ever initialised in the main Flask process when device='cpu'.
+_configured_device: str = cfg.main.get('device', 'cpu')
+import src.scoring_models as _scoring_models_module
+import src.common_filters as _common_filters_module
+_scoring_models_module.configure_device(_configured_device)
+_common_filters_module.configure_device(_configured_device)
+print(f"ML device for main process: {_configured_device}")
+
 # Ensure database path is properly set up
 # If the database path is relative, make it absolute within the data folder
 #if not os.path.isabs(cfg.main.database_path):
@@ -123,9 +132,22 @@ if db_dir and not os.path.exists(db_dir):
     os.makedirs(db_dir, exist_ok=True)
 
 # Now initialize the Flask app with the properly configured database path
-app = Flask(__name__, template_folder='pages', static_folder='static')
+app = Flask(__name__, template_folder='modules', static_folder='static')
 app.config['SECRET_KEY'] = cfg.main.flask_secret_key
 app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{database_path}"
+
+@app.template_filter('module_title')
+def module_title_filter(name: str) -> str:
+    """Convert a module name like 'web_search' to 'WebSearch'.
+    Names without underscores (e.g. 'WebSearch') are returned as-is."""
+    if '_' not in name:
+        return name[0].upper() + name[1:]
+    return ''.join(word.capitalize() for word in name.split('_'))
+
+@app.context_processor
+def inject_nav_pages():
+    """Make core_pages and extra_pages available in every template."""
+    return dict(core_pages=core_pages, extra_pages=extra_pages)
 
 # Initialize Flask-HTTPAuth
 auth = HTTPBasicAuth()
@@ -177,17 +199,22 @@ socketio = SocketIO(app, cors_allowed_origins="*", path="/socket.io")
 # init_share_api(app, cfg)
 
 # List all folders in the extensions directory
-extension_names = [entry.name for entry in os.scandir('pages') if entry.is_dir()]
+extension_names = [entry.name for entry in os.scandir('modules') if entry.is_dir()]
 extension_names = [entry for entry in extension_names if not entry.startswith('_')]
+
+# Core pages shown first in a fixed order; auto-discovered extras go after a divider
+CORE_PAGE_ORDER = ['images', 'music', 'text', 'videos', 'train']
+core_pages = [p for p in CORE_PAGE_ORDER if p in extension_names]
+extra_pages = [p for p in extension_names if p not in CORE_PAGE_ORDER]
 
 # Import models from each extension
 for extension_name in extension_names:
     # Check if the extension has a db_models.py file
-    if not os.path.exists(f'pages/{extension_name}/db_models.py'):
+    if not os.path.exists(f'modules/{extension_name}/db_models.py'):
         continue
 
     # Import the module
-    module = import_module(f'pages.{extension_name}.db_models')
+    module = import_module(f'modules.{extension_name}.db_models')
 
     # Get the attributes of the module
     for attr_name in dir(module):
@@ -236,15 +263,15 @@ def page_wiki(page_name):
 
 
 #### SERVING FILES FROM PAGES FOLDER, TO MAKE EXTENSIONS FILES ACCESSIBLE
-@app.route('/pages/<path:filename>')
+@app.route('/modules/<path:filename>')
 @auth_decorator
 def custom_static(filename):
-    return send_from_directory('pages', filename)
+    return send_from_directory('modules', filename)
 
 #### EXTENSIONS PAGES FUNCTIONALITY
 def create_route(ext_name):
   def extension_route():
-    with open(f'pages/{ext_name}/page.html', 'r') as f:
+    with open(f'modules/{ext_name}/page.html', 'r') as f:
       page_content = f.read()
     page_template = """
     {% extends "base.html"%}
@@ -257,10 +284,10 @@ def create_route(ext_name):
 
 # # Initialize the socket events for each extension
 # for extension_name in extension_names:
-#     if not os.path.exists(f'pages/{extension_name}/serve.py'):
+#     if not os.path.exists(f'modules/{extension_name}/serve.py'):
 #         continue
 
-#     serve_module_path = f'pages.{extension_name}.serve'
+#     serve_module_path = f'modules.{extension_name}.serve'
 #     try:
 #         module = import_module(serve_module_path)
 #         if hasattr(module, 'init_socket_events') and callable(module.init_socket_events):
@@ -284,10 +311,10 @@ def create_route(ext_name):
 #     """
 #     # Initialize the socket events for each extension
 #     for extension_name in extension_names:
-#         if not os.path.exists(f'pages/{extension_name}/serve.py'):
+#         if not os.path.exists(f'modules/{extension_name}/serve.py'):
 #             continue
 
-#         serve_module_path = f'pages.{extension_name}.serve'
+#         serve_module_path = f'modules.{extension_name}.serve'
 #         try:
 #             module = import_module(serve_module_path)
 #             if hasattr(module, 'init_socket_events') and callable(module.init_socket_events):
@@ -332,7 +359,7 @@ def allow_route_modifications(app):
 def create_real_route(ext_name):
     """Returns the actual extension route function."""
     def extension_route():
-        with open(f'pages/{ext_name}/page.html', 'r') as f:
+        with open(f'modules/{ext_name}/page.html', 'r') as f:
             page_content = f.read()
         page_template = """
         {% extends "base.html"%}
@@ -353,7 +380,7 @@ def background_init_extension(app, socketio, cfg, data_folder, ext_name):
         'status': 'Starting initialization...'
     })
     
-    serve_module_path = f'pages.{ext_name}.serve'
+    serve_module_path = f'modules.{ext_name}.serve'
     try:
         # Use app_context for the import as well
         with app.app_context():
@@ -397,7 +424,7 @@ def register_extensions_async(app, socketio, cfg, data_folder):
     # Filter valid extensions first
     valid_extensions = []
     for extension_name in extension_names:
-        if os.path.exists(f'pages/{extension_name}/serve.py'):
+        if os.path.exists(f'modules/{extension_name}/serve.py'):
             valid_extensions.append(extension_name)
 
     # 1. Register wrappers for all valid extensions

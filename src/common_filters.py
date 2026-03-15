@@ -9,19 +9,34 @@ import rapidfuzz
 import unicodedata
 import re
 
+# Module-level device setting. Defaults to 'cpu'. Call configure_device() at app startup.
+_inference_device: str = 'cpu'
+
+def configure_device(device_str: str) -> None:
+    """Set the device used by compute_distances_batched and other GPU helpers."""
+    global _inference_device
+    _inference_device = device_str
+
+
+def _maybe_empty_cache() -> None:
+    """Clear the CUDA cache only when actually using CUDA."""
+    if torch.device(_inference_device).type == 'cuda':
+        torch.cuda.empty_cache()
+
+
 def compute_distances_batched(embeds_media, batch_size=1024 * 24):
-    """Computes pairwise distances in batches to conserve GPU memory."""
+    """Computes pairwise distances in batches to conserve GPU/CPU memory."""
     embeds_media = torch.tensor(embeds_media, dtype=torch.float32)
     num_items = embeds_media.shape[0]
     distances = torch.zeros((num_items, num_items), dtype=torch.float32)
     
     for start_row in range(0, num_items, batch_size):
         end_row = min(start_row + batch_size, num_items)
-        batch = embeds_media[start_row:end_row].cuda()
+        batch = embeds_media[start_row:end_row].to(_inference_device)
         
         for start_col in range(0, num_items, batch_size):
             end_col = min(start_col + batch_size, num_items)
-            compare_batch = embeds_media[start_col:end_col].cuda()
+            compare_batch = embeds_media[start_col:end_col].to(_inference_device)
             dists_batch = torch.cdist(batch, compare_batch, p=2).cpu()
             
             distances[start_row:end_row, start_col:end_col] = dists_batch
@@ -29,14 +44,14 @@ def compute_distances_batched(embeds_media, batch_size=1024 * 24):
                 distances[start_col:end_col, start_row:end_row] = dists_batch.T
                 
             del compare_batch, dists_batch
-            torch.cuda.empty_cache()
+            _maybe_empty_cache()
         
         del batch
-        torch.cuda.empty_cache()
+        _maybe_empty_cache()
     
     distances.fill_diagonal_(float('inf'))
     gc.collect()
-    torch.cuda.empty_cache()
+    _maybe_empty_cache()
     return distances.numpy()
 
 def _normalize_text(s: str) -> str:

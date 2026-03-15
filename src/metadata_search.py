@@ -80,7 +80,7 @@ class MetadataSearch:
         avg = elapsed / processed if processed > 0 else 0
 
         if max_elapsed is not None and max_elapsed > 0 and processed > 0:
-            remaining = (avg*0.2 + max_elapsed*0.8) * (total - processed)
+            remaining = (avg*0.1 + max_elapsed*0.9) * (total - processed)
         else:
             remaining = avg * (total - processed)
         return percent, remaining

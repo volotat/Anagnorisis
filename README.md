@@ -143,6 +143,38 @@ If you have a lot of data in your data folder, for the first time hash cache and
 
 The project requires GPU to run properly. When running the project inside the Docker container, make sure that `NVIDIA Container Toolkit` is installed for Linux and `WSL2` for Windows.
 
+
+## Modules
+
+The application is built around a module system. Each module is a self-contained folder inside `modules/` that adds support for a new data type or functionality. Modules are **auto-discovered at startup** — dropping a module folder in and restarting is all that is needed to activate it.
+
+Built-in modules: **Images**, **Music**, **Text**, **Videos**, **Train** (evaluator training UI).
+
+### Installing an external module
+
+External modules can be installed by cloning their repository directly into the `modules/` folder:
+
+```bash
+cd modules
+git clone <module-repo-url>
+```
+
+Then rebuild and restart the container:
+
+```bash
+docker compose up -d --build
+```
+
+### Available external modules
+
+| Module | Description |
+|--------|-------------|
+| [WebSearch](https://github.com/volotat/WebSearch) | Crawls and indexes websites, enabling semantic search and preference-based ranking over web content. |
+
+### Building your own module
+
+See [`modules/_module_template/`](modules/_module_template/) for a fully documented reference implementation.
+
 ## Security notes
 The project is meant to be run on the localhost only for now. The default configuration ip address is set to `127.0.0.1` inside `docker-compose.override.yaml` file. This means that the application will only be accessible from the machine it is running on. If you want to access it from other devices on your local network, you can change the port binding in your `docker-compose.override.yaml` to `0.0.0.0:5001:5001`. You can even tunnel it to the internet using services like [ngrok](https://ngrok.com/) or [cloudflare tunnel](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/). However, I would strongly recommend against exposing the service to the internet (unless you are 100% know what you are doing) as there is no proper security work has been done yet. 
 

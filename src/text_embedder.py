@@ -39,9 +39,9 @@ class _TextEmbedderImpl:
         if self.model is not None:
             return
 
-        model_name = self.cfg.text.embedding_model
+        model_name = self.cfg.text_embedder.model_name
         if not model_name:
-            raise ValueError("cfg.text.embedding_model is not specified.")
+            raise ValueError("cfg.text_embedder.model_name is not specified.")
 
         model_folder_name = model_name.replace('/', '__')
         local_model_path = os.path.join(models_folder, model_folder_name)
@@ -151,7 +151,7 @@ class _TextEmbedderImpl:
                 tokenizer_kwargs={"fix_mistral_regex": True}
             )
             self.tokenizer = raw_model.tokenizer
-            self.embedding_dim = self.cfg.text.embedding_dimension or raw_model.get_sentence_embedding_dimension()
+            self.embedding_dim = self.cfg.text_embedder.embedding_dimension or raw_model.get_sentence_embedding_dimension()
             
             # Move to device immediately
             self.model = raw_model.to(self.device)
@@ -166,7 +166,7 @@ class _TextEmbedderImpl:
             embedding = self.model.encode(
                 query_text,
                 task="retrieval.query",
-                truncate_dim=self.cfg.text.embedding_dimension,
+                truncate_dim=self.cfg.text_embedder.embedding_dimension,
                 convert_to_tensor=False,
                 device=self.device
             )
@@ -188,8 +188,8 @@ class _TextEmbedderImpl:
             tokens = encoding["input_ids"]
             offsets = encoding["offset_mapping"]
             
-            chunk_size = self.cfg.text.chunk_size
-            chunk_overlap = self.cfg.text.chunk_overlap
+            chunk_size = self.cfg.text_embedder.chunk_size
+            chunk_overlap = self.cfg.text_embedder.chunk_overlap
             
             chunk_texts = []
             start_token_idx = 0
@@ -214,7 +214,7 @@ class _TextEmbedderImpl:
             embeddings = self.model.encode(
                 chunk_texts,
                 task="retrieval.passage",
-                truncate_dim=self.cfg.text.embedding_dimension,
+                truncate_dim=self.cfg.text_embedder.embedding_dimension,
                 convert_to_tensor=False,
                 device=self.device
             )
@@ -258,8 +258,8 @@ class _TextEmbedderImpl:
         tokens = encoding["input_ids"]
         offsets = encoding["offset_mapping"]
         
-        chunk_size = self.cfg.text.chunk_size
-        chunk_overlap = self.cfg.text.chunk_overlap
+        chunk_size = self.cfg.text_embedder.chunk_size
+        chunk_overlap = self.cfg.text_embedder.chunk_overlap
         
         chunks_info = []
         start_token_idx = 0
@@ -539,7 +539,7 @@ if __name__ == '__main__':
 
     # 1. Setup mock configuration
     mock_cfg = OmegaConf.create({
-        'text': {
+        'text_embedder': {
             'embedding_model': 'jinaai__jina-embeddings-v3', #jinaai__jina-embeddings-v3
             'embedding_dimension': 512,
             'chunk_size': 192,
@@ -589,7 +589,7 @@ if __name__ == '__main__':
     # Test embed_query
     test_query_embedding = embedder.embed_query(query)
     assert isinstance(test_query_embedding, np.ndarray), f"embed_query should return np.ndarray, but got {type(test_query_embedding)}"
-    assert test_query_embedding.shape == (mock_cfg.text.embedding_dimension,), f"embed_query returned wrong shape: {test_query_embedding.shape}"
+    assert test_query_embedding.shape == (mock_cfg.text_embedder.embedding_dimension,), f"embed_query returned wrong shape: {test_query_embedding.shape}"
     print("✅ embed_query returns correct type and shape.")
 
     # Test embed_text
@@ -598,7 +598,7 @@ if __name__ == '__main__':
     # The result can be a single ndarray (for one chunk) or a list of them.
     if isinstance(test_text_embeddings, np.ndarray):
         # This case handles single-chunk inputs
-        assert test_text_embeddings[0].shape == (mock_cfg.text.embedding_dimension,), f"embed_text (single chunk) returned wrong shape: {test_text_embeddings[0].shape}"
+        assert test_text_embeddings[0].shape == (mock_cfg.text_embedder.embedding_dimension,), f"embed_text (single chunk) returned wrong shape: {test_text_embeddings[0].shape}"
     else:
         raise AssertionError(f"embed_text returned an unexpected type: {type(test_text_embeddings)}")
     print("✅ embed_text returns correct type and shape.")

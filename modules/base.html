@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Anagnorisis - the model of you</title>
+    <link rel="icon" type="image/svg+xml" href="/static/ana_icon.svg">
+    <script src="/static/js/jquery.min.js"></script>
+    <script src="/static/js/socket.io.js"></script>
+    <!--<link rel="stylesheet" href="/static/css/bulma.min.css">-->
+    <link rel="stylesheet" href="/static/css/bulma_1.0.0.min.css">
+    <!-- Bulma Checkbox -->
+    <link rel="stylesheet" href="/static/css/bulma_checkbox_1.2.1.min.css">
+    <!-- Icons -->
+    <link rel="stylesheet" href="/static/css/font-awesome-6.4.2-css-all.min.css"/>
+    <!-- Include MathJax -->
+    <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+    <!-- Include Leaflet -->
+    <!--<link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.css"/>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.Default.css"/>
+    <script src="https://unpkg.com/leaflet.markercluster@1.4.1/dist/leaflet.markercluster.js"></script>--> 
+
+    <style>
+      /* Custom scrollbar for the log container */
+      #log-container::-webkit-scrollbar {
+        width: 10px; /* Width of the scrollbar */
+      }
+
+      #log-container::-webkit-scrollbar-track {
+        background: #1e1e1e; /* Match the modal background */
+      }
+
+      #log-container::-webkit-scrollbar-thumb {
+        background-color: #555; /* A medium-dark grey for the handle */
+        border-radius: 5px; /* Rounded corners */
+        border: 2px solid #1e1e1e; /* Padding effect */
+      }
+
+      #log-container::-webkit-scrollbar-thumb:hover {
+        background-color: #777; /* Lighter handle on hover */
+      }
+    </style>
+</head>
+
+<body>
+  <script type="text/javascript">
+    let socket = io.connect(window.location.origin, {
+      path: '/socket.io'
+    });
+
+    $("document").ready(function(){
+      socket.on('emit_llm_engine_start_processing', function(){
+        $('#llm_processing_progress_bar').removeClass("is-warning")
+        $('#llm_processing_progress_bar').addClass("is-success")
+        $('#llm_processing_progress_bar').removeAttr("value");
+      });
+
+      socket.on('emit_llm_engine_end_processing', function(){
+        $('#llm_processing_progress_bar').attr("value", 0);
+      });
+
+      socket.on('emit_llm_engine_start_loading', function(){
+        $('#llm_processing_progress_bar').removeClass("is-success")
+        $('#llm_processing_progress_bar').addClass("is-warning")
+        $('#llm_processing_progress_bar').removeAttr("value");
+      });
+
+      socket.on('emit_llm_engine_end_loading', function(){
+        $('#llm_processing_progress_bar').attr("value", 0);
+      });
+
+      document.getElementById('import_csv_trigger').addEventListener('click', () => {
+        document.getElementById('import_database_csv').click();
+      });
+
+      $('#import_database_csv').on('change', function(event) {
+        const file = event.target.files[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const csvData = e.target.result;
+                socket.emit('emit_import_database_csv', csvData);
+              
+                // Clear the input field to allow uploading of the same file again
+                $('#import_database_csv').val('');
+            };
+            reader.readAsText(file);
+        }
+      });
+
+      // --- Real-time Log Streaming Logic ---
+      // 1. Handle the full log history sent on connection
+      socket.on('log_history', function(msg) {
+          window.logs = msg.data; // Overwrite with the full history
+          const logContainer = document.getElementById('log-container');
+          if (logContainer && logContainer.closest('.modal.is-active')) {
+              logContainer.textContent = window.logs;
+              logContainer.scrollTop = logContainer.scrollHeight;
+          }
+      });
+
+      // 2. Handle live updates
+      socket.on('log_update', function(msg) {
+          const newLogData = msg.data;
+          
+          // Append new data to the stored logs
+          window.logs = (window.logs || "") + newLogData;
+
+          // If the modal is open, append new logs and scroll to bottom
+          const logContainer = document.getElementById('log-container');
+          if (logContainer && logContainer.closest('.modal.is-active')) {
+              logContainer.textContent += newLogData;
+              logContainer.scrollTop = logContainer.scrollHeight;
+          }
+      });
+
+      // --- Logs Modal Logic ---
+      const logsModal = document.getElementById('logs-modal');
+      const logsButton = document.getElementById('logs_button');
+      const logContainer = document.getElementById('log-container');
+      const closeButtons = logsModal.querySelectorAll('.delete, .modal-background');
+
+      // Function to open the modal
+      logsButton.addEventListener('click', () => {
+        logContainer.textContent = window.logs; // Populate with existing logs
+        logsModal.classList.add('is-active');
+        // Add 'is-clipped' to the <html> tag to prevent background scrolling
+        document.documentElement.classList.add('is-clipped');
+        // Scroll to the bottom on open
+        logContainer.scrollTop = logContainer.scrollHeight;
+      });
+
+      // Function to close the modal
+      const closeModal = () => {
+        logsModal.classList.remove('is-active');
+        // Remove 'is-clipped' to restore background scrolling
+        document.documentElement.classList.remove('is-clipped');
+      };
+
+      closeButtons.forEach((button) => {
+        button.addEventListener('click', closeModal);
+      });
+    });
+
+  </script>
+
+  <nav class="navbar is-light" role="navigation" aria-label="main navigation">
+    <div class="navbar-menu">
+      <div class="navbar-brand">
+        <a class="navbar-item" href="/">
+          <img src="/static/ana_icon.svg" width="80" height="100%">
+        </a>
+    
+        <a role="button" class="navbar-burger" aria-label="menu" aria-expanded="false" data-target="navbarBasicExample">
+          <span aria-hidden="true"></span>
+          <span aria-hidden="true"></span>
+          <span aria-hidden="true"></span>
+        </a>
+      </div>
+
+      <div class="navbar-start">
+        {% for name in core_pages %}
+          <a class="navbar-item {% if name == current_page %}is-active{% endif %}" href="/{{ name }}">
+              {{ name|module_title }}
+          </a>
+        {% endfor %}
+        {% if extra_pages %}
+          <span class="navbar-item" style="border-left: 1px solid #dbdbdb; padding: 0; margin: 0.5rem 0.25rem;"></span>
+          {% for name in extra_pages %}
+            <a class="navbar-item {% if name == current_page %}is-active{% endif %}" href="/{{ name }}">
+                {{ name|module_title }}
+            </a>
+          {% endfor %}
+        {% endif %}
+      </div>
+
+      <div class="navbar-end">
+        <!-- Add the Logs button -->
+        <a class="navbar-item" id="logs_button" title="View application logs">
+          <span class="icon"><i class="fas fa-terminal"></i></span>
+        </a>
+        <!-- Add the download .csv with full DB button in the navbar -->
+        <a class="navbar-item" href="/export_database_csv" title="export database in csv file" target=”_blank”>
+          <span class="icon"><i class="fas fa-download"></i></span>
+        </a>
+        <!-- Add the upload .csv with full DB button in the navbar -->
+        <a class="navbar-item" id="import_csv_trigger" title="import database from csv file">
+          <span class="icon"><i class="fas fa-upload"></i></span>
+          <input type="file" id="import_database_csv" style="display: none;" accept=".csv">
+        </a>
+      </div>
+    </div>
+  </nav>
+  <progress id="llm_processing_progress_bar" class="progress is-small is-primary is-expanded mb-0" max="100" style="height:.20rem" value="0"></progress>
+
+  <!-- Context menu for folder and files actions -->
+  <div id="folder-context-menu" class="dropdown is-hidden" style="position: absolute; z-index: 1000;">
+    <div class="dropdown-content">
+      <a href="#" class="dropdown-item" id="create-folder">
+        <span class="icon"><i class="fas fa-folder-plus"></i></span>
+        <span>New Folder</span>
+      </a>
+      <a href="#" class="dropdown-item" id="create-file">
+        <span class="icon"><i class="fas fa-file-plus"></i></span>
+        <span>New File</span>
+      </a>
+      <hr class="dropdown-divider">
+      <a href="#" class="dropdown-item" id="rename-folder">
+        <span class="icon"><i class="fas fa-edit"></i></span>
+        <span>Rename</span>
+      </a>
+      <a href="#" class="dropdown-item" id="delete-folder">
+        <span class="icon"><i class="fas fa-trash"></i></span>
+        <span>Delete</span>
+      </a>
+    </div>
+  </div>
+
+  <!-- Logs Modal -->
+  <div id="logs-modal" class="modal">
+    <div class="modal-background"></div>
+    <div class="modal-card" style="width: 80%; max-width: 1200px; height: 100vh;">
+      <section class="modal-card-body is-size-5 py-2" style="background-color: #1e1e1e; display: flex; flex-direction: column;">
+        <pre id="log-container" style="background-color: inherit; color: #d4d4d4; padding: 1em; white-space: pre-wrap; word-wrap: break-word; flex-grow: 1; overflow-y: auto;"></pre>
+      </section>
+    </div>
+  </div>
+
+  {% block content %}{% endblock %}
+</body>
+</html>

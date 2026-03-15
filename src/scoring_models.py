@@ -15,6 +15,16 @@ import torch.nn.functional as F
 from src.model_manager import ModelManager
 
 
+# Module-level device setting. Defaults to 'cpu' to avoid allocating a CUDA context
+# in the main process. Call configure_device() at app startup to override.
+_default_device: str = 'cpu'
+
+def configure_device(device_str: str) -> None:
+    """Set the device used by all Evaluator/TransformerEvaluator instances."""
+    global _default_device
+    _default_device = device_str
+
+
 # Create scoring model class
 class Evaluator():
   def __init__(self, embedding_dim=128, rate_classes=11, name="Evaluator"):
@@ -24,8 +34,8 @@ class Evaluator():
     self.mape_bias = 2
     self.name = name
 
-    # Set the device
-    self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # Set the device from the module-level configuration (avoids touching CUDA driver).
+    self.device = torch.device(_default_device)
 
 
     # Define the network
@@ -157,7 +167,7 @@ class Evaluator():
   def load(self, model_path):
     # load the model from folder
     if os.path.exists(model_path):
-      self.model.load_state_dict(torch.load(model_path, weights_only=True)) #, map_location='cpu'
+      self.model.load_state_dict(torch.load(model_path, weights_only=True, map_location=_default_device))
     else:
       self.save(model_path)
 
@@ -244,7 +254,31 @@ class TransformerEvaluator:
     self.mape_bias = 2
     self.name = name
 
-    self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # Set the device from the module-level configuration (avoids touching CUDA driver).
+    self.device = torch.device(_default_device)
+
+    # ---- inner network ----
+    self._model = self._build_transformer_net()
+    setattr(self._model, "_name", self.name)
+
+    self.model = ModelManager(self._model, device=self.device)
+    _fused = torch.cuda.is_available()
+    self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=1e-4, weight_decay=1e-2, fused=_fused)
+    self.scheduler = None
+
+    # Force unload after wrapping
+    self.model.unload_model()
+
+  def _build_transformer_net(self):
+    """Construct and return a freshly initialised TransformerNet instance."""
+    embedding_dim   = self.embedding_dim
+    d_model         = self.d_model
+    nhead           = 4
+    num_layers      = 2
+    dim_feedforward = 512
+    max_seq_len     = self.max_seq_len
+    dropout         = 0.1
+    rate_classes    = self.rate_classes
 
     # ---- inner network ----
     class TransformerNet(nn.Module):
@@ -319,14 +353,9 @@ class TransformerEvaluator:
         cls_out = x[:, 0, :]  # [B, d_model]
         return inner_self.head(cls_out)
 
-    self._model = TransformerNet().cpu()
-    setattr(self._model, "_name", self.name)
-
-    self.model = ModelManager(self._model, device=self.device)
-    self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=1e-4, weight_decay=1e-2)
-
-    # Force unload after wrapping
-    self.model.unload_model()
+    net = TransformerNet().cpu()
+    setattr(net, "_name", self.name)
+    return net
 
   # --------------- helpers for variable-length batching ---------------
 
@@ -380,7 +409,29 @@ class TransformerEvaluator:
     self.name = name
     setattr(self._model, "_name", name)
 
-  def _run_epoch(self, X, y, batch_size, train_mode=True):
+  def setup_scheduler(self, total_steps: int, max_lr: float = 1.5e-4, pct_start: float = 0.05):
+    """
+    Create a OneCycleLR cosine scheduler with linear warm-up.
+    Call AFTER reinitialize() and BEFORE the training loop.
+
+    Parameters
+    ----------
+    total_steps : total optimizer steps across all epochs (total_epochs * steps_per_epoch)
+    max_lr      : peak learning rate (default 3e-4)
+    pct_start   : fraction of steps used for warm-up (default 5%)
+    """
+    self.scheduler = torch.optim.lr_scheduler.OneCycleLR(
+        self.optimizer,
+        max_lr=max_lr,
+        total_steps=total_steps,
+        pct_start=pct_start,
+        anneal_strategy='cos',
+        final_div_factor=100,  # end LR = max_lr / (div_factor * final_div_factor) ≈ 3e-6
+    )
+    print(f"[{self.name}] Scheduler: OneCycleLR — peak lr={max_lr}, "
+          f"warm-up={pct_start*100:.0f}% of {total_steps} steps.")
+
+  def _run_epoch(self, X, y, batch_size, train_mode=True, sample_weights=None):
     """Run one pass over data, return list of (predicted, label) pairs."""
     indices = list(range(len(X)))
     if train_mode:
@@ -395,30 +446,52 @@ class TransformerEvaluator:
     else:
       self.model.eval()
 
-    for start in range(0, len(indices), batch_size):
-      batch_idx = indices[start:start + batch_size]
-      batch_emb = [X[i] for i in batch_idx]
-      batch_lbl = [y[i] for i in batch_idx]
+    # Pin the model in memory for the entire epoch so the ModelManager idle-
+    # timeout thread cannot unload it between batches (which would move params
+    # to CPU mid-epoch and corrupt the computation graph).
+    self.model._busy = True
+    try:
+      for start in range(0, len(indices), batch_size):
+        batch_idx = indices[start:start + batch_size]
+        batch_emb = [X[i] for i in batch_idx]
+        batch_lbl = [y[i] for i in batch_idx]
 
-      padded, mask, labels = self._collate_variable_length(batch_emb, batch_lbl, self.max_seq_len)
-      padded = padded.to(self.device)
-      mask = mask.to(self.device)
-      labels = labels.to(self.device)
+        padded, mask, labels = self._collate_variable_length(batch_emb, batch_lbl, self.max_seq_len)
+        padded = padded.to(self.device)
+        mask = mask.to(self.device)
+        labels = labels.to(self.device)
 
-      if train_mode:
-        self.optimizer.zero_grad()
-        logits = self.model(padded, padding_mask=mask)
-        predicted = (torch.softmax(logits, dim=-1) * torch.arange(self.rate_classes, device=self.device)).sum(dim=-1)
-        loss = F.mse_loss(predicted, labels)
-        loss.backward()
-        self.optimizer.step()
-      else:
-        with torch.no_grad():
+        if train_mode:
+          self.optimizer.zero_grad()
           logits = self.model(padded, padding_mask=mask)
           predicted = (torch.softmax(logits, dim=-1) * torch.arange(self.rate_classes, device=self.device)).sum(dim=-1)
+          # Per-sample MSE with optional weighting
+          per_sample_loss = (predicted - labels) ** 2
+          if sample_weights is not None:
+            batch_weights = torch.tensor(
+                [sample_weights[i] for i in batch_idx],
+                dtype=torch.float32, device=self.device,
+            )
+            loss = (per_sample_loss * batch_weights).mean()
+          else:
+            loss = per_sample_loss.mean()
+          loss.backward()
+          # Gradient clipping is essential for transformer stability, especially
+          # with a cosine LR schedule where the peak LR is higher than baseline.
+          torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+          self.optimizer.step()
+          if self.scheduler is not None:
+            self.scheduler.step()
+        else:
+          with torch.no_grad():
+            logits = self.model(padded, padding_mask=mask)
+            predicted = (torch.softmax(logits, dim=-1) * torch.arange(self.rate_classes, device=self.device)).sum(dim=-1)
 
-      all_preds.extend(predicted.detach().cpu().tolist())
-      all_labels.extend(labels.detach().cpu().tolist())
+        all_preds.extend(predicted.detach().cpu().tolist())
+        all_labels.extend(labels.detach().cpu().tolist())
+    finally:
+      self.model._busy = False
+      
 
     return all_preds, all_labels
 
@@ -428,7 +501,7 @@ class TransformerEvaluator:
     mape = np.mean(np.abs(preds - labels) / (labels + 1.0))
     return 1.0 / (1.0 + mape)
 
-  def train(self, X_train, y_train, X_test, y_test, batch_size=16):
+  def train(self, X_train, y_train, X_test, y_test, batch_size=16, sample_weights=None):
     """
     One epoch of training + evaluation.
 
@@ -439,13 +512,18 @@ class TransformerEvaluator:
     X_test  : list of np.ndarray
     y_test  : list of int/float ratings
     batch_size : int
+    sample_weights : np.ndarray or None
+        Per-sample weights for X_train (same length). Passed to loss during
+        training only.  ``None`` disables weighting.
 
     Returns
     -------
     (train_accuracy, test_accuracy)
     """
     # Training pass
-    train_preds, train_labels = self._run_epoch(X_train, y_train, batch_size, train_mode=True)
+    train_preds, train_labels = self._run_epoch(
+        X_train, y_train, batch_size, train_mode=True, sample_weights=sample_weights,
+    )
     train_acc = self._accuracy_from_preds(train_preds, train_labels)
 
     # Eval pass
@@ -509,11 +587,25 @@ class TransformerEvaluator:
     torch.save(self.model.state_dict(), model_path)
 
   def reinitialize(self):
-    for m in self.model.modules():
-      if isinstance(m, (nn.Linear, nn.LayerNorm)):
-        if hasattr(m, 'reset_parameters'):
-          m.reset_parameters()
-    # Re-init [CLS] token
-    if hasattr(self._model, 'cls_token'):
-      nn.init.normal_(self._model.cls_token, std=0.02)
-    self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=1e-4, weight_decay=1e-2)
+    """
+    Fully reset the model to random weights by rebuilding TransformerNet from
+    scratch.  Simply iterating modules() and calling reset_parameters() is
+    insufficient because nn.MultiheadAttention stores Q/K/V projections as raw
+    nn.Parameter tensors (in_proj_weight / in_proj_bias), not as nn.Linear
+    submodules, so they would survive a parameter-loop reset.
+    """
+    # Tear down the old ModelManager so the cleanup thread stops tracking it
+    old_model_id = self.model._model_id
+    with ModelManager._lock:
+      ModelManager._models.pop(old_model_id, None)
+    self.model.unload_model()
+
+    # Rebuild a completely fresh TransformerNet with the same hyperparameters
+    self._model = self._build_transformer_net()
+    self.model = ModelManager(self._model, device=self.device)
+    _fused = torch.cuda.is_available()
+    self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=1e-4, weight_decay=1e-2, fused=_fused)
+    self.scheduler = None
+
+    # Start unloaded — ModelManager will load lazily on first forward pass
+    self.model.unload_model()

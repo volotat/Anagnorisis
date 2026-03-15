@@ -38,13 +38,15 @@ class ModelManager:
         self._model = model
         self._model_id = id(model)
 
-        # Choose a sensible default device
+        # Choose a sensible default device. Fall back to 'cpu' rather than
+        # auto-detecting CUDA to avoid initialising the CUDA context in the
+        # main process when no explicit device is requested.
         if device is not None:
             self._device = device
         elif hasattr(model, 'device'):
             self._device = model.device
         else:
-            self._device = 'cuda' if torch.cuda.is_available() else 'cpu'
+            self._device = 'cpu'
        
         self._loaded = False
         self._last_used = time.time()
