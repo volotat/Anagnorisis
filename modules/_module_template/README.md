@@ -1,8 +1,8 @@
 # Creating an Anagnorisis Module
 
-A **module** is a self-contained folder inside `pages/` that adds a new media type or functionality to the application. Modules are auto-discovered at startup — no changes to the core app needed.
+A **module** is a self-contained folder inside `modules/` that adds a new media type or functionality to the application. Modules are auto-discovered at startup — no changes to the core app needed.
 
-> **Install by cloning:** Modules will be installable by running `git clone <repo-url>` inside `pages/` and restarting. Keep **all** module files inside your folder.
+> **Install by cloning:** Modules will be installable by running `git clone <repo-url>` inside `modules/` and restarting. Keep **all** module files inside your folder.
 
 **See also:**
 - [ARCHITECTURE.md](ARCHITECTURE.md) — How auto-discovery works, file responsibilities, shared utilities reference
@@ -14,7 +14,7 @@ A **module** is a self-contained folder inside `pages/` that adds a new media ty
 
 ```bash
 # 1. Copy the template
-cp -r pages/_module_template pages/my_module
+cp -r modules/_module_template modules/my_module
 
 # 2. Rename all occurrences of "example" / "Example" to your module name
 #    (in serve.py, db_models.py, engine.py, page.html, js/main.js)
@@ -28,7 +28,7 @@ cp -r pages/_module_template pages/my_module
 ## Module structure
 
 ```
-pages/my_module/
+modules/my_module/
 ├── serve.py          # REQUIRED — entry point, socket events, Flask routes
 ├── engine.py         # REQUIRED for media modules — search / embedding engine
 ├── page.html         # REQUIRED — frontend HTML (injected into base.html)
@@ -110,15 +110,15 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
 ### 4. Build the frontend (`page.html` + `js/main.js`)
 
 - `page.html` is an HTML fragment — no `<html>`/`<head>`/`<body>` tags needed.
-- Load your JS as `<script type="module" src="pages/my_module/js/main.js"></script>`.
+- Load your JS as `<script type="module" src="modules/my_module/js/main.js"></script>`.
 - The global `socket` variable is already available from `base.html`.
 - Import shared components:
 
 ```javascript
-import SearchBarComponent  from '/pages/SearchBarComponent.js';
-import FileGridComponent   from '/pages/FileGridComponent.js';
-import PaginationComponent from '/pages/PaginationComponent.js';
-import StarRatingComponent from '/pages/StarRating.js';
+import SearchBarComponent  from '/modules/SearchBarComponent.js';
+import FileGridComponent   from '/modules/FileGridComponent.js';
+import PaginationComponent from '/modules/PaginationComponent.js';
+import StarRatingComponent from '/modules/StarRating.js';
 ```
 
 ### 5. Add configuration (`config.yaml`)
@@ -153,7 +153,7 @@ def get_rated_items(cfg):
 
     The universal evaluator embeds the text and trains on (embedding, rating) pairs.
     """
-    import pages.my_module.db_models as db_models
+    import modules.my_module.db_models as db_models
 
     entries = db_models.MyModuleLibrary.query.filter(
         db_models.MyModuleLibrary.user_rating.isnot(None)

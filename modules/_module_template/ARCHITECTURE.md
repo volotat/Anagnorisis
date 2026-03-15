@@ -11,7 +11,7 @@ When `app.py` starts, the following happens in order:
 ### Phase 1 — Scanning (synchronous, at import time)
 
 ```
-pages/
+modules/
 ├── _module_template/  ← SKIPPED (starts with _)
 ├── images/            ← discovered
 ├── music/             ← discovered
@@ -20,9 +20,9 @@ pages/
 └── videos/            ← discovered
 ```
 
-1. `app.py` lists all directories in `pages/` whose name does **not** start with `_`.
+1. `app.py` lists all directories in `modules/` whose name does **not** start with `_`.
 2. For each directory, if `db_models.py` exists, it is imported and its SQLAlchemy model classes are registered with Flask-Migrate. This ensures database tables are created/migrated before any module code runs.
-3. A URL route `/<module_name>` is registered immediately — but it initially returns the **loading screen** (`pages/loading.html`).
+3. A URL route `/<module_name>` is registered immediately — but it initially returns the **loading screen** (`modules/loading.html`).
 
 ### Phase 2 — Initialization (background thread, sequential)
 
@@ -107,7 +107,7 @@ You do **not** write `<html>`, `<head>`, or `<body>` tags. The global `socket` v
 
 ES module loaded via `<script type="module">`. Has access to:
 - `socket` — the Socket.IO client (global from `base.html`)
-- Shared components importable from `/pages/`
+- Shared components importable from `/modules/`
 
 ---
 
@@ -130,13 +130,13 @@ ES module loaded via `<script type="module">`. Has access to:
 
 | Component | Import path | Purpose |
 |-----------|-------------|---------|
-| `SearchBarComponent` | `/pages/SearchBarComponent.js` | Text search input + sort dropdown |
-| `FileGridComponent` | `/pages/FileGridComponent.js` | Responsive card grid for file previews |
-| `PaginationComponent` | `/pages/PaginationComponent.js` | Page navigation controls |
-| `FolderViewComponent` | `/pages/FolderViewComponent.js` | Collapsible folder tree sidebar |
-| `StarRatingComponent` | `/pages/StarRating.js` | Clickable 1–10 star rating widget |
-| `ContextMenuComponent` | `/pages/ContextMenuComponent.js` | Right-click context menu |
-| `MetaEditor` | `/pages/MetaEditor.js` | File metadata editor modal |
+| `SearchBarComponent` | `/modules/SearchBarComponent.js` | Text search input + sort dropdown |
+| `FileGridComponent` | `/modules/FileGridComponent.js` | Responsive card grid for file previews |
+| `PaginationComponent` | `/modules/PaginationComponent.js` | Page navigation controls |
+| `FolderViewComponent` | `/modules/FolderViewComponent.js` | Collapsible folder tree sidebar |
+| `StarRatingComponent` | `/modules/StarRating.js` | Clickable 1–10 star rating widget |
+| `ContextMenuComponent` | `/modules/ContextMenuComponent.js` | Right-click context menu |
+| `MetaEditor` | `/modules/MetaEditor.js` | File metadata editor modal |
 
 ---
 
@@ -178,7 +178,7 @@ Anagnorisis uses a **single universal evaluator** instead of per-module scoring 
 
 ### How modules participate
 
-The training pipeline (`pages/train/universal_train.py`) has a `_MODULE_DEFS` registry that lists all modules to gather rated files from. Each entry specifies:
+The training pipeline (`modules/train/universal_train.py`) has a `_MODULE_DEFS` registry that lists all modules to gather rated files from. Each entry specifies:
 
 - `db_import` / `db_class` — where to find rated entries
 - `engine_import` / `engine_class` — the search engine (needed for file hashing and metadata)
@@ -187,15 +187,15 @@ The training pipeline (`pages/train/universal_train.py`) has a `_MODULE_DEFS` re
 To add your module to the universal evaluator:
 
 1. **Ensure your `db_models.py`** has `user_rating` and `file_path` columns.
-2. **Add an entry to `_MODULE_DEFS`** in `pages/train/universal_train.py`:
+2. **Add an entry to `_MODULE_DEFS`** in `modules/train/universal_train.py`:
 
 ```python
 {
     "name": "my_module",
     "config_attr": "my_module",
-    "db_import": "pages.my_module.db_models",
+    "db_import": "modules.my_module.db_models",
     "db_class": "MyModuleLibrary",
-    "engine_import": "pages.my_module.engine",
+    "engine_import": "modules.my_module.engine",
     "engine_class": "MyModuleSearch",
     "embedding_method": "metadata",  # or "full_text" for text-like content
 },

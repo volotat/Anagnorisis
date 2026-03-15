@@ -10,7 +10,7 @@ Consistent naming is what makes auto-discovery and cross-module compatibility wo
 
 | What | Convention | Example |
 |------|-----------|---------|
-| Folder name | `snake_case`, **no** `_` prefix | `pages/my_module/` |
+| Folder name | `snake_case`, **no** `_` prefix | `modules/my_module/` |
 | Config section | Same as folder name | `my_module:` in `config.yaml` |
 | Socket events | `emit_{module}_page_{action}` | `emit_my_module_page_get_files` |
 | DB model class | `PascalCase` + `Library` | `MyModuleLibrary` |
@@ -151,16 +151,16 @@ let path = decodeURIComponent(urlParams.get('path') || '');
 
 ### Use shared components instead of re-implementing
 
-The `pages/` directory contains battle-tested UI components. Don't rebuild search bars, pagination, file grids, or star ratings — import and configure the existing ones.
+The `modules/` directory contains battle-tested UI components. Don't rebuild search bars, pagination, file grids, or star ratings — import and configure the existing ones.
 
 ### Load JS as ES modules
 
 ```html
 <!-- Good -->
-<script type="module" src="pages/my_module/js/main.js"></script>
+<script type="module" src="modules/my_module/js/main.js"></script>
 
 <!-- Bad — pollutes global scope, no import support -->
-<script src="pages/my_module/js/main.js"></script>
+<script src="modules/my_module/js/main.js"></script>
 ```
 
 ### Keep CSS in `page.html`
