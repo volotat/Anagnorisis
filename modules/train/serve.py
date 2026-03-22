@@ -121,7 +121,7 @@ def init_socket_events(socketio, cfg=None, app=None, data_folder='./project_data
             socketio.emit("emit_train_page_status", {"active": False})
 
     @socketio.on("emit_train_page_start_universal_evaluator_training")
-    def handle_emit_start_universal_evaluator_training():
+    def handle_emit_start_universal_evaluator_training(data=None):
         global TRAINING_ACTIVE
         nonlocal train_accuracy_hist, test_accuracy_hist
         train_accuracy_hist = []
@@ -131,10 +131,20 @@ def init_socket_events(socketio, cfg=None, app=None, data_folder='./project_data
             socketio.emit("emit_train_page_status", {"active": True}, room=request.sid)
             return
 
+        max_steps = None
+        time_budget_seconds = None
+        if data:
+            max_steps = data.get('max_steps', None)
+            time_budget_seconds = data.get('time_budget_seconds', None)
+
         TRAINING_ACTIVE = True
         socketio.emit("emit_train_page_status", {"active": True})
         try:
-            modules.train.universal_train.train_universal_evaluator(cfg, callback)
+            modules.train.universal_train.train_universal_evaluator(
+                cfg, callback,
+                max_steps=max_steps,
+                time_budget_seconds=time_budget_seconds,
+            )
         finally:
             TRAINING_ACTIVE = False
             socketio.emit("emit_train_page_status", {"active": False})

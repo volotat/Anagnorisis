@@ -16,10 +16,8 @@ Expose exactly one function:
 
 The orchestrator will:
   1. Scan modules/*/train.py for all installed modules
-  2. Skip modules already handled by the legacy _MODULE_DEFS registry
-     (music, images, videos, text)
-  3. Call get_training_pairs(cfg, text_embedder, status_callback) on each
-  4. Collect all yielded pairs and train a single shared evaluator on them
+  2. Call get_training_pairs(cfg, text_embedder, status_callback) on each
+  3. Collect all yielded pairs and train a single shared evaluator on them
 """
 
 import os
@@ -115,5 +113,4 @@ def get_training_pairs(cfg, text_embedder, status_callback=None):
 
         yield (np.array(chunk_embeddings, dtype=np.float32), float(entry.user_rating))
 
-        if status_callback and (i + 1) % 10 == 0:
-            status_callback(f"my_module: embedded {i + 1}/{total} items...")
+        status_callback(f"my_module: embedded {i + 1}/{total} items...")

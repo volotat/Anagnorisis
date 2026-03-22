@@ -262,8 +262,7 @@ class TransformerEvaluator:
     setattr(self._model, "_name", self.name)
 
     self.model = ModelManager(self._model, device=self.device)
-    _fused = torch.cuda.is_available()
-    self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=1e-4, weight_decay=1e-2, fused=_fused)
+    self.reinitialize_optimizer()
     self.scheduler = None
 
     # Force unload after wrapping
@@ -409,28 +408,6 @@ class TransformerEvaluator:
     self.name = name
     setattr(self._model, "_name", name)
 
-  def setup_scheduler(self, total_steps: int, max_lr: float = 1.5e-4, pct_start: float = 0.05):
-    """
-    Create a OneCycleLR cosine scheduler with linear warm-up.
-    Call AFTER reinitialize() and BEFORE the training loop.
-
-    Parameters
-    ----------
-    total_steps : total optimizer steps across all epochs (total_epochs * steps_per_epoch)
-    max_lr      : peak learning rate (default 3e-4)
-    pct_start   : fraction of steps used for warm-up (default 5%)
-    """
-    self.scheduler = torch.optim.lr_scheduler.OneCycleLR(
-        self.optimizer,
-        max_lr=max_lr,
-        total_steps=total_steps,
-        pct_start=pct_start,
-        anneal_strategy='cos',
-        final_div_factor=100,  # end LR = max_lr / (div_factor * final_div_factor) ≈ 3e-6
-    )
-    print(f"[{self.name}] Scheduler: OneCycleLR — peak lr={max_lr}, "
-          f"warm-up={pct_start*100:.0f}% of {total_steps} steps.")
-
   def _run_epoch(self, X, y, batch_size, train_mode=True, sample_weights=None):
     """Run one pass over data, return list of (predicted, label) pairs."""
     indices = list(range(len(X)))
@@ -476,12 +453,12 @@ class TransformerEvaluator:
           else:
             loss = per_sample_loss.mean()
           loss.backward()
+
           # Gradient clipping is essential for transformer stability, especially
           # with a cosine LR schedule where the peak LR is higher than baseline.
-          torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+          torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=0.8)
+
           self.optimizer.step()
-          if self.scheduler is not None:
-            self.scheduler.step()
         else:
           with torch.no_grad():
             logits = self.model(padded, padding_mask=mask)
@@ -530,6 +507,17 @@ class TransformerEvaluator:
     test_preds, test_labels = self._run_epoch(X_test, y_test, batch_size, train_mode=False)
     test_acc = self._accuracy_from_preds(test_preds, test_labels)
 
+    return train_acc, test_acc
+
+  def evaluate(self, X_train, y_train, X_test, y_test, batch_size=16):
+    """
+    Evaluate accuracy on both splits WITHOUT updating any weights.
+    Useful for reporting the pre-training (epoch-0) baseline.
+    """
+    train_preds, train_labels = self._run_epoch(X_train, y_train, batch_size, train_mode=False)
+    train_acc = self._accuracy_from_preds(train_preds, train_labels)
+    test_preds, test_labels = self._run_epoch(X_test, y_test, batch_size, train_mode=False)
+    test_acc = self._accuracy_from_preds(test_preds, test_labels)
     return train_acc, test_acc
 
   def predict(self, X):
@@ -603,9 +591,13 @@ class TransformerEvaluator:
     # Rebuild a completely fresh TransformerNet with the same hyperparameters
     self._model = self._build_transformer_net()
     self.model = ModelManager(self._model, device=self.device)
-    _fused = torch.cuda.is_available()
-    self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=1e-4, weight_decay=1e-2, fused=_fused)
+    self.reinitialize_optimizer()
     self.scheduler = None
 
     # Start unloaded — ModelManager will load lazily on first forward pass
     self.model.unload_model()
+
+  def reinitialize_optimizer(self):
+    _fused = torch.cuda.is_available()
+    #self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=1e-4, weight_decay=1e-2, fused=_fused)
+    self.optimizer = torch.optim.Adam(self.model.parameters(), lr=1e-4, fused=_fused)

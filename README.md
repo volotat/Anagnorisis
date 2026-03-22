@@ -1,7 +1,7 @@
 <!--[![Join on Reddit](https://img.shields.io/reddit/subreddit-subscribers/Anagnorisis?style=social)](https://www.reddit.com/r/Anagnorisis)-->
 
 # Anagnorisis
-Anagnorisis - is a local recommendation system that allows you to fine-tune models on your data to predict your data preferences. You can feed it as much of your personal data as you like and not be afraid of it leaking as all of it is stored and processed locally on your own computer. 
+Anagnorisis - is a local recommendation system that allows you to fine-tune models on your data to predict your data preferences. You can feed it as much of your personal data as you like and not be afraid of it leaking as all of it is stored and processed locally on your own computer. All you need  to run it is 8GB VRAM GPU or 16GB of RAM in CPU-only mode. 
 
 
 The project uses [Flask](https://flask.palletsprojects.com/) libraries for backend and [Bulma](https://bulma.io/) as frontend CSS framework. For all ML-related stuff [Transformers](https://github.com/huggingface/transformers) and [PyTorch](https://pytorch.org/) are used. This is the main technological stack, however there are more libraries used for specific purposes.
@@ -135,7 +135,7 @@ You have to create the folder specified as your project config mount target (the
 ## Additional notes for installation
 The Docker container includes Ubuntu 22.04, CUDA drives and several large machine learning models and dependencies, which results in a significant storage footprint. After the container is built it will take about 45GB of storage on your disk. 
 
-For best user experience I would recommend running the project with relatively modern Nvidia GPU with at least 8Gb of VRAM and 32Gb of RAM . At least this is the configuration I am using myself. However, the project should be able to run on lower configurations, but performance might be poor especially without CUDA-friendly GPU. It is usually take less then 4GB of VRAM to run the project, however when training recommendation models it usually spikes up to 5-7Gb of VRAM usage.
+For best user experience I would recommend running the project with relatively modern Nvidia GPU with at least 8Gb of VRAM and 32Gb of RAM. At least this is the configuration I am using myself. However, the project should be able to run on lower configurations, but performance might be poor especially without CUDA-friendly GPU. Note that CPU-only mode might be significantly slower.
 
 After initializing the project, you will find new `database` folder inside of the project config folder you specified. In this folder project's database, migrations, models and configuration file will be stored. After running the project for the first time, the `database/project.db` file will be created. That DB will store your preferences, that will be used later to fine-tune evaluation models. Try to make backups of this file from time to time, as it contains all of your preferences, and some additional data, such as playback history.
 

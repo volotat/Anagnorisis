@@ -53,6 +53,16 @@ Add new downloadable module for 'Deep Research'-like functionality that uses use
 
 ## Versions History
 
+### Version 0.3.8 (21.03.2026)
+*   **Universal Evaluator Training**
+    *   Added modal window that controls how much time you want to spend on training the model. You can either set a number minutes to train the model or number of optimization steps to take.
+    *   Migrated all built-in modules (music, images, videos, text) to the same self-contained training data interface. Each module now owns a `train.py` with a `get_training_pairs(cfg, text_embedder, status_callback)` generator that handles its own DB queries, file reading, and embedding — no central registry needed.
+    *   Added `get_training_pairs()` to `modules/music/train.py` and `modules/images/train.py` (metadata strategy: generate a text description via `MetadataSearch` and embed with `text_embedder`).
+    *   Created `modules/videos/train.py` with the same metadata strategy.
+    *   Created `modules/text/train.py` supporting two strategies switchable via `cfg.evaluator.text_embedding_method`: `"full_text"` (default) embeds the raw file content directly; `"metadata"` generates a short description via `MetadataSearch` instead, useful if you want the evaluator to reason about summaries rather than raw content. Switching strategies requires no code changes, just a config update.
+    *   Removed the legacy `_MODULE_DEFS` registry, `_LEGACY_MODULE_NAMES` exclusion list, `_import_attr` helper, `_gather_rated_files()`, and the two-phase embedding pipeline (Phase A full-text pre-computation + Phase B per-file metadata loop) from `universal_train.py`. All of that complexity now lives inside each module's own `train.py`.
+    *   `_gather_from_module_train_files()` now covers all modules without any exclusions. Adding a new module to universal evaluator training is as simple as dropping a `train.py` with `get_training_pairs()` into its folder — no changes to core training code ever required.
+    *   Updated `modules/_module_template/train.py` documentation to reflect the removal of the legacy exclusion list.
 
 ### Version 0.3.7 (15.03.2026)
 *   **Universal Evaluator - Training Improvements:**
