@@ -79,7 +79,7 @@ If you open this for the first time, the omni-descriptor model will try to gener
     this.$textarea.classList.toggle('has-text-grey', this.readOnly);
     // Optional subtle style for read-only
     if (this.readOnly) {
-      this.$textarea.style.backgroundColor = 'var(--bulma-scheme-main-bis, #f5f5f5)';
+      this.$textarea.style.backgroundColor = 'var(--bulma-scheme-main-bis)';
     } else {
       this.$textarea.style.backgroundColor = '';
     }

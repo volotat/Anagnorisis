@@ -1,6 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <!-- Anti-flash: apply saved theme before first paint (must be synchronous + first in <head>) -->
+    <script>
+      (function() {
+        var t = localStorage.getItem('anagnorisis-theme') || 'light';
+        document.documentElement.setAttribute('data-theme', t);
+      })();
+    </script>
     <meta charset="UTF-8">
     <title>Anagnorisis - the model of you</title>
     <link rel="icon" type="image/svg+xml" href="/static/ana_icon.svg">
@@ -10,6 +17,8 @@
     <link rel="stylesheet" href="/static/css/bulma_1.0.0.min.css">
     <!-- Bulma Checkbox -->
     <link rel="stylesheet" href="/static/css/bulma_checkbox_1.2.1.min.css">
+    <!-- Color themes (Solarized Light + scrollbar CSS vars + Prism dark overrides) -->
+    <link rel="stylesheet" href="/static/css/themes.css">
     <!-- Icons -->
     <link rel="stylesheet" href="/static/css/font-awesome-6.4.2-css-all.min.css"/>
     <!-- Include MathJax -->
@@ -22,26 +31,6 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.Default.css"/>
     <script src="https://unpkg.com/leaflet.markercluster@1.4.1/dist/leaflet.markercluster.js"></script>--> 
 
-    <style>
-      /* Custom scrollbar for the log container */
-      #log-container::-webkit-scrollbar {
-        width: 10px; /* Width of the scrollbar */
-      }
-
-      #log-container::-webkit-scrollbar-track {
-        background: #1e1e1e; /* Match the modal background */
-      }
-
-      #log-container::-webkit-scrollbar-thumb {
-        background-color: #555; /* A medium-dark grey for the handle */
-        border-radius: 5px; /* Rounded corners */
-        border: 2px solid #1e1e1e; /* Padding effect */
-      }
-
-      #log-container::-webkit-scrollbar-thumb:hover {
-        background-color: #777; /* Lighter handle on hover */
-      }
-    </style>
 </head>
 
 <body>
@@ -142,6 +131,40 @@
       closeButtons.forEach((button) => {
         button.addEventListener('click', closeModal);
       });
+
+      // --- Theme Switcher Logic ---
+      const themeSwitcher = document.getElementById('theme-switcher');
+      const themeItems = document.querySelectorAll('[data-set-theme]');
+
+      // Mark active item on load
+      const currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
+      themeItems.forEach(el => {
+        el.classList.toggle('is-active', el.dataset.setTheme === currentTheme);
+      });
+
+      // Switch theme on click
+      themeItems.forEach(el => {
+        el.addEventListener('click', (e) => {
+          e.preventDefault();
+          const t = el.dataset.setTheme;
+          document.documentElement.setAttribute('data-theme', t);
+          localStorage.setItem('anagnorisis-theme', t);
+          themeItems.forEach(item => item.classList.toggle('is-active', item.dataset.setTheme === t));
+          themeSwitcher.classList.remove('is-active');
+        });
+      });
+
+      // Toggle dropdown on click for touch/mobile (Pitfall C)
+      const themeSwitcherLink = themeSwitcher.querySelector('.navbar-link');
+      themeSwitcherLink.addEventListener('click', (e) => {
+        e.preventDefault();
+        themeSwitcher.classList.toggle('is-active');
+      });
+      document.addEventListener('click', (e) => {
+        if (!themeSwitcher.contains(e.target)) {
+          themeSwitcher.classList.remove('is-active');
+        }
+      });
     });
 
   </script>
@@ -167,7 +190,7 @@
           </a>
         {% endfor %}
         {% if extra_pages %}
-          <span class="navbar-item" style="border-left: 1px solid #dbdbdb; padding: 0; margin: 0.5rem 0.25rem;"></span>
+          <span class="navbar-item" style="border-left: 1px solid var(--bulma-border-weak); padding: 0; margin: 0.5rem 0.25rem;"></span>
           {% for name in extra_pages %}
             <a class="navbar-item {% if name == current_page %}is-active{% endif %}" href="/{{ name }}">
                 {{ name|module_title }}
@@ -177,6 +200,17 @@
       </div>
 
       <div class="navbar-end">
+        <!-- Theme switcher -->
+        <div class="navbar-item has-dropdown is-hoverable" id="theme-switcher">
+          <a class="navbar-link is-arrowless" title="Color theme">
+            <span class="icon"><i class="fas fa-circle-half-stroke"></i></span>
+          </a>
+          <div class="navbar-dropdown is-right">
+            <a class="navbar-item" data-set-theme="light">&#x2600; Light</a>
+            <a class="navbar-item" data-set-theme="dark">&#x1F319; Dark</a>
+            <a class="navbar-item" data-set-theme="solarized-light">&#x1F33F; Solarized</a>
+          </div>
+        </div>
         <!-- Add the Logs button -->
         <a class="navbar-item" id="logs_button" title="View application logs">
           <span class="icon"><i class="fas fa-terminal"></i></span>
@@ -222,8 +256,8 @@
   <div id="logs-modal" class="modal">
     <div class="modal-background"></div>
     <div class="modal-card" style="width: 80%; max-width: 1200px; height: 100vh;">
-      <section class="modal-card-body is-size-5 py-2" style="background-color: #1e1e1e; display: flex; flex-direction: column;">
-        <pre id="log-container" style="background-color: inherit; color: #d4d4d4; padding: 1em; white-space: pre-wrap; word-wrap: break-word; flex-grow: 1; overflow-y: auto;"></pre>
+      <section class="modal-card-body is-size-5 py-2" data-theme="dark" style="display: flex; flex-direction: column; background-color: var(--bulma-scheme-main);">
+        <pre id="log-container" style="background-color: var(--bulma-scheme-main); color: var(--bulma-text); padding: 1em; white-space: pre-wrap; word-wrap: break-word; flex-grow: 1; overflow-y: auto;"></pre>
       </section>
     </div>
   </div>

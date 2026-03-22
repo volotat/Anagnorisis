@@ -1,26 +1,34 @@
 <!DOCTYPE html>
 <html>
 <head>
+    <!-- Anti-flash: apply saved theme before first paint -->
+    <script>
+      (function() {
+        var t = localStorage.getItem('anagnorisis-theme') || 'light';
+        document.documentElement.setAttribute('data-theme', t);
+      })();
+    </script>
     <title>Initializing {{ module_name }}...</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <link rel="stylesheet" href="/static/css/bulma_1.0.0.min.css">
+    <link rel="stylesheet" href="/static/css/themes.css">
+    <script src="/static/js/socket.io.js"></script>
     <style>
-        body { 
-            display: flex; 
-            align-items: center; 
-            justify-content: center; 
-            min-height: 100vh; 
-            background-color: #f5f5f5; 
+        body {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            background-color: var(--bulma-background);
             padding: 2rem;
         }
-        .loader-container { 
-            width: 100%; 
-            max-width: 800px; 
-            text-align: center; 
-            padding: 2rem; 
-            background: white; 
-            border-radius: 8px; 
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1); 
+        .loader-container {
+            width: 100%;
+            max-width: 800px;
+            text-align: center;
+            padding: 2rem;
+            background: var(--bulma-scheme-main);
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
         }
         .module-status {
             margin-top: 1.5rem;
@@ -30,20 +38,20 @@
             padding: 0.75rem;
             margin-bottom: 0.5rem;
             border-radius: 4px;
-            background: #f5f5f5;
+            background: var(--bulma-background);
             transition: background-color 0.3s;
         }
         .module-item.active {
-            background: #e3f2fd;
-            border-left: 4px solid #2196F3;
+            background: color-mix(in srgb, var(--bulma-info) 20%, var(--bulma-scheme-main));
+            border-left: 4px solid var(--bulma-info);
         }
         .module-item.complete {
-            background: #e8f5e9;
-            border-left: 4px solid #4CAF50;
+            background: color-mix(in srgb, var(--bulma-success) 20%, var(--bulma-scheme-main));
+            border-left: 4px solid var(--bulma-success);
         }
         .module-item.current {
-            background: #fff3e0;
-            border-left: 4px solid #FF9800;
+            background: color-mix(in srgb, var(--bulma-warning) 20%, var(--bulma-scheme-main));
+            border-left: 4px solid var(--bulma-warning);
         }
         .module-name {
             font-weight: bold;
@@ -52,7 +60,7 @@
         }
         .module-status-text {
             font-size: 0.875rem;
-            color: #666;
+            color: var(--bulma-text-weak);
             font-family: 'Courier New', monospace;
         }
         .status-icon {
@@ -63,8 +71,8 @@
             display: inline-block;
             width: 1rem;
             height: 1rem;
-            border: 2px solid #f3f3f3;
-            border-top: 2px solid #3498db;
+            border: 2px solid var(--bulma-border-weak);
+            border-top: 2px solid var(--bulma-info);
             border-radius: 50%;
             animation: spin 1s linear infinite;
         }

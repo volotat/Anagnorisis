@@ -53,6 +53,12 @@ Add new downloadable module for 'Deep Research'-like functionality that uses use
 
 ## Versions History
 
+### Version 0.3.9 (23.03.2026)
+*   **Color Themes:**
+    *   Added three color themes: **Light** (default), **Dark**, and **Solarized Light**. The active theme is persisted in `localStorage` and applied before first paint to avoid flash of unstyled content.
+    *   Theme switcher dropdown added to the navbar, accessible on all pages.
+    *   All hardcoded colors across HTML templates and JavaScript components replaced with Bulma CSS variables so they respond correctly to theme changes.
+
 ### Version 0.3.8 (21.03.2026)
 *   **Universal Evaluator Training**
     *   Added modal window that controls how much time you want to spend on training the model. You can either set a number minutes to train the model or number of optimization steps to take.

@@ -94,7 +94,7 @@ class FolderViewComponent {
     let current_path_ = current_path + folderName + '/';
     const isActive = active_path === current_path_ ? 'is-active' : '';
     let encoded_link = `path=${encodeURIComponent(current_path_)}`;
-    let color = this.isSubfolder(active_path, current_path_) ? 'has-text-black' : 'has-text-grey-light';
+    let color = this.isSubfolder(active_path, current_path_) ? 'has-text-strong' : 'has-text-grey-light';
     if (active_path === current_path_) color = '';
 
     // Conditional check for displaying image counts

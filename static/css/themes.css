@@ -1,0 +1,421 @@
+/* =====================================================================
+   themes.css — Color themes for Anagnorisis
+   Loaded after bulma_1.0.0.min.css.
+
+   Bulma 1.0 activates themes via  data-theme="<name>"  on <html>.
+   - "light"           → default Bulma (no selector needed)
+   - "dark"            → built into bulma_1.0.0.min.css, extended below
+   - "solarized-light" → defined here
+
+   HOW ACCENT COLOR OVERRIDES WORK IN BULMA 1.0
+   ──────────────────────────────────────────────
+   Each accent color (primary, link, info, success, warning, danger) has:
+     --bulma-{color}-h / -s / -l     → root HSL components
+     --bulma-{color}                 → compound: hsla(h, s, l, 1)
+     --bulma-{color}-on-scheme-l     → hardcoded lightness for text on page bg
+     --bulma-{color}-on-scheme       → compound on-scheme color
+
+   Overriding -h, -s, -l is sufficient for the full 21-rung palette (00–100),
+   since every rung uses the same h/s and only varies lightness absolutely.
+   The -on-scheme-l must be set manually because it is also hardcoded.
+   ===================================================================== */
+
+
+/* ── Scrollbar: CSS variables so all themes apply ──────────────────── */
+
+#log-container::-webkit-scrollbar {
+  width: 10px;
+}
+#log-container::-webkit-scrollbar-track {
+  background: var(--bulma-scheme-main);
+}
+#log-container::-webkit-scrollbar-thumb {
+  background-color: var(--bulma-border);
+  border-radius: 5px;
+  border: 2px solid var(--bulma-scheme-main);
+}
+#log-container::-webkit-scrollbar-thumb:hover {
+  background-color: var(--bulma-text-weak);
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   DARK THEME — extends Bulma's built-in dark (in bulma_1.0.0.min.css)
+   with brighter accent colors suited for the ~11% lightness background.
+   Bulma's dark already handles scheme/bg/text/border + on-scheme variants;
+   we only boost the base accent lightness values here.
+   ═══════════════════════════════════════════════════════════════════ */
+
+[data-theme="dark"],
+.theme-dark {
+  /*
+     Push accent base lightness up so buttons/tags are vivid against
+     the near-black (~11%) background. Without this, primary (teal at 41%)
+     and success (green at 53%) look flat and dim.
+
+     We also update -on-scheme-l to match the new -l so
+     has-text-{color} helpers stay readable on the dark scheme.
+  */
+
+  /* Primary — teal, default l=41% → 57% */
+  --bulma-primary-l:          57%;
+  --bulma-primary-on-scheme-l: 57%;
+  --bulma-primary: hsla(var(--bulma-primary-h), var(--bulma-primary-s), var(--bulma-primary-l), 1);
+  --bulma-primary-on-scheme: hsla(var(--bulma-primary-h), var(--bulma-primary-s), var(--bulma-primary-on-scheme-l), 1);
+
+  /* Link — default l=63% → 68% (slight boost) */
+  --bulma-link-l:          68%;
+  --bulma-link-on-scheme-l: 68%;
+  --bulma-link: hsla(var(--bulma-link-h), var(--bulma-link-s), var(--bulma-link-l), 1);
+  --bulma-link-on-scheme: hsla(var(--bulma-link-h), var(--bulma-link-s), var(--bulma-link-on-scheme-l), 1);
+
+  /* Info — default l=70% (already light, minor boost) → 73% */
+  --bulma-info-l:          73%;
+  --bulma-info-on-scheme-l: 73%;
+  --bulma-info: hsla(var(--bulma-info-h), var(--bulma-info-s), var(--bulma-info-l), 1);
+  --bulma-info-on-scheme: hsla(var(--bulma-info-h), var(--bulma-info-s), var(--bulma-info-on-scheme-l), 1);
+
+  /* Success — green, default l=53% → 63% */
+  --bulma-success-l:          63%;
+  --bulma-success-on-scheme-l: 63%;
+  --bulma-success: hsla(var(--bulma-success-h), var(--bulma-success-s), var(--bulma-success-l), 1);
+  --bulma-success-on-scheme: hsla(var(--bulma-success-h), var(--bulma-success-s), var(--bulma-success-on-scheme-l), 1);
+
+  /* Warning — amber, default l=53% → 63% */
+  --bulma-warning-l:          63%;
+  --bulma-warning-on-scheme-l: 63%;
+  --bulma-warning: hsla(var(--bulma-warning-h), var(--bulma-warning-s), var(--bulma-warning-l), 1);
+  --bulma-warning-on-scheme: hsla(var(--bulma-warning-h), var(--bulma-warning-s), var(--bulma-warning-on-scheme-l), 1);
+
+  /* Danger — coral, default l=70% (already bright, minor tweak) → 72% */
+  --bulma-danger-l:          72%;
+  --bulma-danger-on-scheme-l: 72%;
+  --bulma-danger: hsla(var(--bulma-danger-h), var(--bulma-danger-s), var(--bulma-danger-l), 1);
+  --bulma-danger-on-scheme: hsla(var(--bulma-danger-h), var(--bulma-danger-s), var(--bulma-danger-on-scheme-l), 1);
+
+  /* "is-light" / "has-background-light" — elevated dark surface, not plain grey */
+  --bulma-light-h:              221deg;
+  --bulma-light-s:              14%;
+  --bulma-light-l:              20%;
+  --bulma-light:                hsla(221deg, 14%, 20%, 1);
+  --bulma-light-base:           hsla(221deg, 14%, 20%, 1);
+  --bulma-light-invert-l:       70%;
+  --bulma-light-invert:         hsla(221deg, 14%, 70%, 1);
+  --bulma-light-on-scheme-l:    70%;
+  --bulma-light-on-scheme:      hsla(221deg, 14%, 70%, 1);
+
+  /*
+     "is-{color} is-light" combo — in dark mode these default to a near-white
+     background (90th rung) with near-black text (15th rung), both unreadable.
+     Override: dark tinted surface (~20% l) + bright accent text matching the
+     boosted -l values set above.
+  */
+  --bulma-primary-light-l:         20%;
+  --bulma-primary-light:           hsla(var(--bulma-primary-h), var(--bulma-primary-s), 20%, 1);
+  --bulma-primary-light-invert-l:  57%;
+  --bulma-primary-light-invert:    hsla(var(--bulma-primary-h), var(--bulma-primary-s), 57%, 1);
+
+  --bulma-link-light-l:            20%;
+  --bulma-link-light:              hsla(var(--bulma-link-h), var(--bulma-link-s), 20%, 1);
+  --bulma-link-light-invert-l:     68%;
+  --bulma-link-light-invert:       hsla(var(--bulma-link-h), var(--bulma-link-s), 68%, 1);
+
+  --bulma-info-light-l:            20%;
+  --bulma-info-light:              hsla(var(--bulma-info-h), var(--bulma-info-s), 20%, 1);
+  --bulma-info-light-invert-l:     73%;
+  --bulma-info-light-invert:       hsla(var(--bulma-info-h), var(--bulma-info-s), 73%, 1);
+
+  --bulma-success-light-l:         20%;
+  --bulma-success-light:           hsla(var(--bulma-success-h), var(--bulma-success-s), 20%, 1);
+  --bulma-success-light-invert-l:  63%;
+  --bulma-success-light-invert:    hsla(var(--bulma-success-h), var(--bulma-success-s), 63%, 1);
+
+  --bulma-warning-light-l:         20%;
+  --bulma-warning-light:           hsla(var(--bulma-warning-h), var(--bulma-warning-s), 20%, 1);
+  --bulma-warning-light-invert-l:  63%;
+  --bulma-warning-light-invert:    hsla(var(--bulma-warning-h), var(--bulma-warning-s), 63%, 1);
+
+  --bulma-danger-light-l:          20%;
+  --bulma-danger-light:            hsla(var(--bulma-danger-h), var(--bulma-danger-s), 20%, 1);
+  --bulma-danger-light-invert-l:   72%;
+  --bulma-danger-light-invert:     hsla(var(--bulma-danger-h), var(--bulma-danger-s), 72%, 1);
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   SOLARIZED LIGHT THEME
+   Source: VSCode built-in "Solarized Light" theme
+   ═══════════════════════════════════════════════════════════════════
+
+   Base palette (exact hex from VSCode theme):
+     Base3  #FDF6E3  page bg           hsl( 44deg, 87%, 94%)
+     —      #F7F0E0  cell/widget bg    (notebook.cellEditorBackground)
+     Base2  #EEE8D5  panels/dropdowns  hsl( 46deg, 42%, 88%)
+     —      #DDD6C1  input bg, borders hsl( 45deg, 21%, 81%)
+     Base1  #93A1A1  comment/deemph    hsl(180deg,  7%, 60%)
+     Base00 #657B83  body text         hsl(196deg, 13%, 45%)
+     Base01 #586E75  emph/strong       hsl(194deg, 14%, 40%)
+     Base02 #073642  title/heading     hsl(192deg, 81%, 14%)
+
+   Accent palette:
+     Cyan    #2AA198  primary   hsl(175deg, 59%, 40%)
+     Blue    #268BD2  link      hsl(205deg, 69%, 49%)
+     Violet  #6C71C4  info      hsl(237deg, 43%, 60%)
+     Green   #859900  success   hsl( 68deg,100%, 30%)
+     Yellow  #B58900  warning   hsl( 45deg,100%, 35%)
+     Red     #DC322F  danger    hsl(  1deg, 71%, 52%)
+     Orange  #CB4B16  (class names / user-defined constants in Prism)
+     Magenta #D33682  (numbers / markup styling in Prism)
+
+   IMPORTANT: Solarized background tones do NOT share a uniform hue/saturation
+   (base3 is 87% saturated, base2 is only 42%). We therefore set the compound
+   --bulma-scheme-main/background/border vars directly to exact hex values.
+*/
+
+[data-theme="solarized-light"],
+.theme-solarized-light {
+  --bulma-scheme-brightness: light;
+
+  /* ── Scheme / background / border — exact hex, not re-derived from h/s/l ── */
+  --bulma-scheme-main:     #FDF6E3;   /* Base3  — editor.background           */
+  --bulma-scheme-main-bis: #F7F0E0;   /* between Base3/Base2 — cell bg        */
+  --bulma-scheme-main-ter: #EEE8D5;   /* Base2  — sidebar / dropdown          */
+  --bulma-background:      #EEE8D5;   /* Base2  — box backgrounds             */
+  --bulma-border-weak:     #DDD6C1;   /* input.background / editorGroup.border*/
+  --bulma-border:          #C9C3AE;   /* slightly darker than border-weak     */
+
+  /* Keep -l vars at plausible values for Bulma internals that read them */
+  --bulma-scheme-main-l:     94%;
+  --bulma-scheme-main-bis-l: 91%;
+  --bulma-scheme-main-ter-l: 88%;
+  --bulma-background-l:      88%;
+  --bulma-border-weak-l:     81%;
+  --bulma-border-l:          76%;
+
+  /* ── Text — cool blue-grey hue; override compound vars directly ── */
+  --bulma-text-weak:   #93A1A1;   /* Base1  — comments, deemphasis */
+  --bulma-text:        #657B83;   /* Base00 — body / foreground    */
+  --bulma-text-strong: #586E75;   /* Base01 — emphasized text      */
+  --bulma-text-title:  #073642;   /* Base02 — headings             */
+
+  /* Keep -l vars consistent */
+  --bulma-text-weak-l:   60%;
+  --bulma-text-l:        45%;
+  --bulma-text-strong-l: 40%;
+  --bulma-text-title-l:  14%;
+
+  /* Interactive deltas — same as default light */
+  --bulma-hover-background-l-delta:  5%;
+  --bulma-active-background-l-delta: 10%;
+  --bulma-hover-border-l-delta:      10%;
+  --bulma-active-border-l-delta:     20%;
+  --bulma-hover-color-l-delta:       5%;
+  --bulma-active-color-l-delta:      10%;
+
+  /* ── Accent colors — full Solarized palette ────────────────────────────
+     Overriding -h / -s / -l rewrites the entire 21-rung palette for each
+     color since every rung is hsla(h, s, <absolute-l>, 1).
+     -on-scheme-l is hardcoded in Bulma and must be set explicitly;
+     values chosen for WCAG AA contrast on the ~94% warm Base3 background.
+  ── */
+
+  /* Primary → Cyan #2AA198  hsl(175 59% 40%) */
+  --bulma-primary-h:           175deg;
+  --bulma-primary-s:           59%;
+  --bulma-primary-l:           40%;
+  --bulma-primary-on-scheme-l: 34%;
+  --bulma-primary: hsla(var(--bulma-primary-h), var(--bulma-primary-s), var(--bulma-primary-l), 1);
+  --bulma-primary-on-scheme: hsla(var(--bulma-primary-h), var(--bulma-primary-s), var(--bulma-primary-on-scheme-l), 1);
+
+  /* Link → Blue #268BD2  hsl(205 69% 49%) */
+  --bulma-link-h:           205deg;
+  --bulma-link-s:           69%;
+  --bulma-link-l:           49%;
+  --bulma-link-on-scheme-l: 42%;
+  --bulma-link: hsla(var(--bulma-link-h), var(--bulma-link-s), var(--bulma-link-l), 1);
+  --bulma-link-on-scheme: hsla(var(--bulma-link-h), var(--bulma-link-s), var(--bulma-link-on-scheme-l), 1);
+
+  /* Info → Violet #6C71C4  hsl(237 43% 60%) */
+  --bulma-info-h:           237deg;
+  --bulma-info-s:           43%;
+  --bulma-info-l:           60%;
+  --bulma-info-on-scheme-l: 46%;
+  --bulma-info: hsla(var(--bulma-info-h), var(--bulma-info-s), var(--bulma-info-l), 1);
+  --bulma-info-on-scheme: hsla(var(--bulma-info-h), var(--bulma-info-s), var(--bulma-info-on-scheme-l), 1);
+
+  /* Success → Green #859900  hsl(68 100% 30%) */
+  --bulma-success-h:           68deg;
+  --bulma-success-s:           100%;
+  --bulma-success-l:           30%;
+  --bulma-success-on-scheme-l: 27%;
+  --bulma-success: hsla(var(--bulma-success-h), var(--bulma-success-s), var(--bulma-success-l), 1);
+  --bulma-success-on-scheme: hsla(var(--bulma-success-h), var(--bulma-success-s), var(--bulma-success-on-scheme-l), 1);
+
+  /* Warning → Yellow #B58900  hsl(45 100% 35%) */
+  --bulma-warning-h:           45deg;
+  --bulma-warning-s:           100%;
+  --bulma-warning-l:           35%;
+  --bulma-warning-on-scheme-l: 30%;
+  --bulma-warning: hsla(var(--bulma-warning-h), var(--bulma-warning-s), var(--bulma-warning-l), 1);
+  --bulma-warning-on-scheme: hsla(var(--bulma-warning-h), var(--bulma-warning-s), var(--bulma-warning-on-scheme-l), 1);
+
+  /* Danger → Red #DC322F  hsl(1 71% 52%) */
+  --bulma-danger-h:           1deg;
+  --bulma-danger-s:           71%;
+  --bulma-danger-l:           52%;
+  --bulma-danger-on-scheme-l: 42%;
+  --bulma-danger: hsla(var(--bulma-danger-h), var(--bulma-danger-s), var(--bulma-danger-l), 1);
+  --bulma-danger-on-scheme: hsla(var(--bulma-danger-h), var(--bulma-danger-s), var(--bulma-danger-on-scheme-l), 1);
+
+  /* "is-light" / "has-background-light" — Base2 elevated surface, harmonious text */
+  --bulma-light-h:              46deg;
+  --bulma-light-s:              42%;
+  --bulma-light-l:              88%;
+  --bulma-light:                #EEE8D5;   /* Base2 */
+  --bulma-light-base:           #EEE8D5;
+  --bulma-light-invert-l:       40%;
+  --bulma-light-invert:         #586E75;   /* Base01 */
+  --bulma-light-on-scheme-l:    40%;
+  --bulma-light-on-scheme:      #586E75;
+}
+
+
+/* ── Prism.js Solarized Light token colors ──────────────────────────
+   Scopes sourced from the VSCode built-in "Solarized (light)" tokenColors.
+   Prism class → VSCode scope mapping:
+     .comment                 → comment                (Base1 italic)
+     .string / .attr-value    → string                 (Cyan)
+     .regex                   → string.regexp          (Red)
+     .number                  → constant.numeric       (Magenta)
+     .tag                     → entity.name.tag        (Blue)
+     .attr-name / .punctuation→ entity.other.attr-name (Base1)
+     .keyword / .atrule       → keyword                (Green)
+     .class-name / .namespace → entity.name.class      (Orange)
+     .function                → entity.name.function / support.function (Blue)
+     .boolean                 → constant.language      (Yellow)
+     .constant / .symbol      → constant.character     (Orange)
+     .variable                → variable.language / variable.other (Blue)
+     .property / .builtin     → support.function / support.type    (Blue/Green)
+     .important (in markup)   → markup.bold / markup.italic        (Magenta)
+     .deleted                 → markup.deleted         (Red)
+     .inserted                → markup.inserted        (Green)
+── */
+
+[data-theme="solarized-light"] code[class*="language-"],
+[data-theme="solarized-light"] pre[class*="language-"] {
+  color: #657B83;              /* Base00 — editor.foreground */
+  background: #FDF6E3;         /* Base3  — editor.background */
+  text-shadow: none;
+}
+
+[data-theme="solarized-light"] :not(pre) > code[class*="language-"] {
+  background: #FDF6E3;
+  padding: 0.1em 0.3em;
+  border-radius: 0.3em;
+}
+
+[data-theme="solarized-light"] .token.comment,
+[data-theme="solarized-light"] .token.prolog,
+[data-theme="solarized-light"] .token.doctype,
+[data-theme="solarized-light"] .token.cdata {
+  color: #93A1A1;   /* Base1 */
+  font-style: italic;
+}
+
+[data-theme="solarized-light"] .token.punctuation {
+  color: #93A1A1;   /* Base1 — tag start/end, punctuation */
+}
+
+[data-theme="solarized-light"] .token.namespace       { color: #CB4B16; } /* Orange */
+[data-theme="solarized-light"] .token.tag             { color: #268BD2; } /* Blue — entity.name.tag */
+[data-theme="solarized-light"] .token.attr-name       { color: #93A1A1; } /* Base1 — entity.other.attribute-name */
+[data-theme="solarized-light"] .token.attr-value,
+[data-theme="solarized-light"] .token.string          { color: #2AA198; } /* Cyan — string */
+[data-theme="solarized-light"] .token.regex           { color: #DC322F; } /* Red — string.regexp */
+[data-theme="solarized-light"] .token.number          { color: #D33682; } /* Magenta — constant.numeric */
+[data-theme="solarized-light"] .token.boolean         { color: #B58900; } /* Yellow — constant.language */
+[data-theme="solarized-light"] .token.constant,
+[data-theme="solarized-light"] .token.symbol          { color: #CB4B16; } /* Orange — constant.character/other */
+[data-theme="solarized-light"] .token.deleted         { color: #DC322F; } /* Red — markup.deleted */
+[data-theme="solarized-light"] .token.inserted        { color: #859900; } /* Green — markup.inserted */
+[data-theme="solarized-light"] .token.keyword,
+[data-theme="solarized-light"] .token.atrule          { color: #859900; } /* Green — keyword */
+[data-theme="solarized-light"] .token.class-name      { color: #CB4B16; } /* Orange — entity.name.class */
+[data-theme="solarized-light"] .token.function,
+[data-theme="solarized-light"] .token.function-name   { color: #268BD2; } /* Blue — entity.name.function */
+[data-theme="solarized-light"] .token.variable        { color: #268BD2; } /* Blue — variable.language/other */
+[data-theme="solarized-light"] .token.property,
+[data-theme="solarized-light"] .token.builtin         { color: #268BD2; } /* Blue — support.function / support.type */
+[data-theme="solarized-light"] .token.operator,
+[data-theme="solarized-light"] .token.entity,
+[data-theme="solarized-light"] .token.url             { color: #657B83; } /* Base00 — default */
+[data-theme="solarized-light"] .token.important,
+[data-theme="solarized-light"] .token.bold            { color: #D33682; font-weight: bold; } /* Magenta — markup styling */
+[data-theme="solarized-light"] .token.italic          { color: #D33682; font-style: italic; }
+
+
+/* ── Prism.js "Tomorrow Night" token overrides for dark theme ───────── */
+/*
+   prism.min.css (light) is always loaded.
+   These rules override token colors when data-theme="dark" is on <html>.
+*/
+
+[data-theme="dark"] code[class*="language-"],
+[data-theme="dark"] pre[class*="language-"] {
+  color: #ccc;
+  background: #2d2d2d;
+  text-shadow: none;
+}
+
+[data-theme="dark"] :not(pre) > code[class*="language-"] {
+  background: #2d2d2d;
+}
+
+[data-theme="dark"] .token.comment,
+[data-theme="dark"] .token.block-comment,
+[data-theme="dark"] .token.prolog,
+[data-theme="dark"] .token.doctype,
+[data-theme="dark"] .token.cdata {
+  color: #999;
+}
+
+[data-theme="dark"] .token.punctuation { color: #ccc; }
+
+[data-theme="dark"] .token.tag,
+[data-theme="dark"] .token.attr-name,
+[data-theme="dark"] .token.namespace,
+[data-theme="dark"] .token.deleted       { color: #e2777a; }
+
+[data-theme="dark"] .token.function-name { color: #6196cc; }
+
+[data-theme="dark"] .token.boolean,
+[data-theme="dark"] .token.number,
+[data-theme="dark"] .token.function      { color: #f08d49; }
+
+[data-theme="dark"] .token.property,
+[data-theme="dark"] .token.class-name,
+[data-theme="dark"] .token.constant,
+[data-theme="dark"] .token.symbol        { color: #f8c555; }
+
+[data-theme="dark"] .token.selector,
+[data-theme="dark"] .token.important,
+[data-theme="dark"] .token.atrule,
+[data-theme="dark"] .token.keyword,
+[data-theme="dark"] .token.builtin       { color: #cc99cd; }
+
+[data-theme="dark"] .token.string,
+[data-theme="dark"] .token.char,
+[data-theme="dark"] .token.attr-value,
+[data-theme="dark"] .token.regex,
+[data-theme="dark"] .token.variable      { color: #7ec699; }
+
+[data-theme="dark"] .token.operator,
+[data-theme="dark"] .token.entity,
+[data-theme="dark"] .token.url           { color: #67cdcc; }
+
+[data-theme="dark"] .token.inserted      { color: #a8ff78; }
+
+[data-theme="dark"] .token.important,
+[data-theme="dark"] .token.bold          { font-weight: bold; }
+
+[data-theme="dark"] .token.italic        { font-style: italic; }
