@@ -53,6 +53,22 @@ Add new downloadable module for 'Deep Research'-like functionality that uses use
 
 ## Versions History
 
+### Version 0.3.10 (05.04.2026)
+*   **OmniDescriptor:**
+    *   Now new, optimized version of the `MiniCPM-o-4.5` model is used for generating descriptions. New model is provided by [Dystrio](https://huggingface.co/dystrio/MiniCPM-o-4_5-Sculpt-Throughput) and is pruned specifically for fast description generation and lower memory footprint, providing faster token generation speed and bigger context window.
+*   **Task Manager:**
+    *   Added a centralised background task queue (`src/task_manager.py`) with a single worker thread. Tasks run sequentially; each task receives a `TaskContext` that supports cooperative pause, resume, and cancel via `threading.Event`, and throttled progress updates (`ctx.update(progress, message)`) at 250 ms intervals.
+    *   Added `TaskManagerComponent.js` — an IIFE frontend component that renders a navbar badge showing the number of active/queued tasks, and a Bulma modal with running, queued, and history sections. Individual tasks can be paused, resumed, cancelled, or removed from history directly in the UI.
+    *   `TaskManager` is instantiated in `app.py` immediately after `SocketIO` and exposed as `app.task_manager` so all modules can reach it.
+*   **Training — Background Processing:**
+    *   Migrated music evaluator, image evaluator, and universal evaluator training handlers to `task_manager.submit()`. The `TRAINING_ACTIVE` global flag is replaced by inspecting the task queue for active/queued `Train:` tasks. Training progress is reported via `TaskContext` in addition to the existing Train-page chart socket events.
+    *   Fixed a pre-existing bug in the training callback where `socketio.emit("emit_train_page_display_train_data", data)` was called unconditionally even when the throttle condition was false, potentially referencing an undefined `data` variable.
+*   **Proactive Background Rating:**
+    *   Each media module now periodically scans the DB for files with a missing or stale model rating and submits them to the Task Manager in the background. By the time a user browses to a folder its files are typically already rated, making the inline rating step faster.
+    *   The check interval is configured per-module in `config.yaml` via `rating_update_interval_minutes` (set to `null` to disable).
+    *   Added `src/scheduler.py` with a `schedule_task(app, interval_minutes, name, fn)` utility used by all four modules.
+    *   Added `FileManager.sync_file_paths()` which walks the media directory on disk, compares file hashes against the DB, and corrects any stale `file_path` values (e.g. from moved files). Returns the number of rows updated. Each module's `_task_preemptive_rating` calls this first to ensure paths are current, then runs its own DB query to find files with a missing or outdated model rating.
+
 ### Version 0.3.9 (23.03.2026)
 *   **Color Themes:**
     *   Added three color themes: **Light** (default), **Dark**, and **Solarized Light**. The active theme is persisted in `localStorage` and applied before first paint to avoid flash of unstyled content.

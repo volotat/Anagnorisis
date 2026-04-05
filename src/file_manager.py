@@ -272,6 +272,44 @@ class FileManager:
         return result
 
 
+    def sync_file_paths(self) -> int:
+        """Walk the media directory and correct any stale file_path values in the
+        DB by comparing hashes.  Returns the number of rows updated.
+
+        This should be called before any query that relies on file_path being
+        current (e.g. finding unrated files) so that moved files are re-discovered
+        and deleted files are handled gracefully.
+        """
+        if self.media_directory is None:
+            return 0
+
+        all_files = self._walk_files_cached(self.media_directory, set(self.media_formats))
+        if not all_files:
+            return 0
+
+        all_hashes = [self.engine.get_file_hash(f) for f in all_files]
+        hash_to_rel = {
+            h: os.path.relpath(p, self.media_directory)
+            for h, p in zip(all_hashes, all_files)
+            if h is not None
+        }
+
+        db_items = self.db_schema.query.filter(
+            self.db_schema.hash.in_(hash_to_rel.keys())
+        ).all()
+
+        updated = 0
+        for item in db_items:
+            new_rel = hash_to_rel.get(item.hash)
+            if new_rel and item.file_path != new_rel:
+                item.file_path = new_rel
+                updated += 1
+
+        if updated:
+            db.session.commit()
+
+        return updated
+
     def get_folders(self, path = ""):
         current_path = self.resolve_media_path(path)
         folder_path = os.path.relpath(current_path, os.path.join(self.media_directory, '..')) + os.path.sep

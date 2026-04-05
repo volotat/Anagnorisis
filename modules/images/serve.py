@@ -22,6 +22,7 @@ import pickle
 from omegaconf import OmegaConf
 
 from src.utils import SortingProgressCallback, EmbeddingGatheringCallback
+from src.scheduler import schedule_task
 from src.socket_events import CommonSocketEvents
 import src.file_manager as file_manager
 
@@ -263,6 +264,29 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
 
         # Commit the transaction
         db_models.db.session.commit()
+
+    def _task_preemptive_rating(ctx):
+        """Background: find all unrated/stale images on disk and rate them."""
+        images_file_manager.sync_file_paths()
+        batch_size = OmegaConf.select(cfg, 'images.rating_update_batch_size', default=None)
+        unrated = db_models.ImagesLibrary.query.filter(
+            db_models.ImagesLibrary.file_path.isnot(None),
+            (db_models.ImagesLibrary.model_rating.is_(None)) |
+            (db_models.ImagesLibrary.model_hash != image_evaluator.hash)
+        ).all()
+        if not unrated:
+            return
+        files_list = [
+            os.path.join(media_directory, item.file_path)
+            for item in unrated
+            if os.path.exists(os.path.join(media_directory, item.file_path))
+        ]
+        if batch_size:
+            files_list = files_list[:batch_size]
+        if not files_list:
+            return
+        ctx.update(0.0, f'Pre-rating {len(files_list)} images...')
+        update_model_ratings(files_list)
 
     common_socket_events.show_loading_status('Setting up filters and routes...')
     # Create common filters instance
@@ -677,5 +701,12 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
         return {"content": content, "file_path": file_path}
 
     common_socket_events.show_loading_status('Images module ready!')
+    rating_update_interval = OmegaConf.select(cfg, 'images.rating_update_interval_minutes', default=None)
+    schedule_task(
+        app,
+        interval_minutes=rating_update_interval,
+        name='Images: rate unrated files',
+        fn=_task_preemptive_rating,
+    )
 
     

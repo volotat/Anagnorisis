@@ -211,6 +211,11 @@
             <a class="navbar-item" data-set-theme="solarized-light">&#x1F33F; Solarized</a>
           </div>
         </div>
+        <!-- Task Manager button -->
+        <a class="navbar-item" id="task-manager-button" title="Background tasks" style="position:relative;">
+          <span class="icon"><i class="fas fa-tasks"></i></span>
+          <span class="tag is-rounded is-info is-small" id="task-manager-badge" style="display:none;position:absolute;top:4px;right:2px;min-width:1.3em;height:1.3em;padding:0 0.35em;font-size:.65rem;">0</span>
+        </a>
         <!-- Add the Logs button -->
         <a class="navbar-item" id="logs_button" title="View application logs">
           <span class="icon"><i class="fas fa-terminal"></i></span>
@@ -261,6 +266,35 @@
       </section>
     </div>
   </div>
+
+  <!-- Task Manager Modal -->
+  <div id="tm-modal" class="modal">
+    <div class="modal-background tm-modal-close"></div>
+    <div class="modal-card" style="width:80%;max-width:720px;height:80vh;display:flex;flex-direction:column;">
+      <header class="modal-card-head py-3 px-4">
+        <p class="modal-card-title">Background Tasks</p>
+        <button class="delete tm-modal-close" aria-label="close"></button>
+      </header>
+      <section class="modal-card-body" id="tm-modal-body" style="flex:1;overflow:auto;">
+        <!-- rendered by TaskManagerComponent.js -->
+      </section>
+      <footer class="modal-card-foot py-2 px-4 is-justify-content-flex-end">
+        <div class="buttons are-small">
+          <!-- <button class="button is-info is-outlined" id="tm-test-counter" title="Submit a test counting task">
+            <span class="icon is-small"><i class="fas fa-vial"></i></span><span>Test Counter</span>
+          </button>
+          <button class="button is-danger is-outlined" id="tm-test-fail" title="Submit a test task that fails">
+            <span class="icon is-small"><i class="fas fa-bug"></i></span><span>Test Fail</span>
+          </button>
+          <button class="button is-success is-outlined" id="tm-test-instant" title="Submit an instant test task">
+            <span class="icon is-small"><i class="fas fa-bolt"></i></span><span>Test Instant</span>
+          </button>  -->
+        </div>
+      </footer>
+    </div>
+  </div>
+
+  <script src="/modules/TaskManagerComponent.js"></script>
 
   {% block content %}{% endblock %}
 </body>

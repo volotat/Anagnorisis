@@ -7,6 +7,8 @@ main:
 music:
   embedding_model: "laion/clap-htsat-fused" 
   media_directory: /mnt/media/music
+  rating_update_interval_minutes: 10 # How often to proactively rate unrated files in the background (set to null to disable)
+  rating_update_batch_size: 1000 # Max number of files rated per background run (set to null for no limit)
   media_formats:
   - .mp3
   - .flac
@@ -18,6 +20,8 @@ music:
 images:
   embedding_model: "google/siglip-base-patch16-224" 
   media_directory: /mnt/media/images
+  rating_update_interval_minutes: 10 # How often to proactively rate unrated files in the background (set to null to disable)
+  rating_update_batch_size: 1000 # Max number of files rated per background run (set to null for no limit)
   media_formats:
   - .jpg
   - .jpeg
@@ -29,6 +33,8 @@ images:
 videos:
   embedding_model: null
   media_directory: /mnt/media/videos
+  rating_update_interval_minutes: 10 # How often to proactively rate unrated files in the background (set to null to disable)
+  rating_update_batch_size: 1000 # Max number of files rated per background run (set to null for no limit)
   media_formats:
   - .mp4
   - .webm
@@ -42,6 +48,8 @@ videos:
   - .mpg
 text:
   media_directory: /mnt/media/text
+  rating_update_interval_minutes: 10 # How often to proactively rate unrated files in the background (set to null to disable)
+  rating_update_batch_size: 1000 # Max number of files rated per background run (set to null for no limit)
   media_formats:
   - .txt
   - .md
@@ -54,7 +62,7 @@ text_embedder: # Used for embedding text in the meta-database search, the univer
   chunk_overlap: 128 # Overlap between chunks
   embedding_dimension: 1024 # Dimension to truncate to (Optional, match Matryoshka)
 omni:
-  model_name: "openbmb/MiniCPM-o-4_5"
+  model_name: "dystrio/MiniCPM-o-4_5-Sculpt-Throughput"
   device: cuda # Device for omni descriptor (cpu/cuda).
   load_in_4bit: true  # BitsAndBytes 4-bit quantization (~5 GB VRAM instead of ~18 GB)
   max_new_tokens: 256

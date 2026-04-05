@@ -301,7 +301,7 @@ class _OmniDescriptorImpl:
 
         result = self.model.chat(
             msgs=msgs,
-            do_sample=True,
+            do_sample=self.cfg.omni.get('do_sample', False),
             max_new_tokens=self.cfg.omni.get('max_new_tokens', 1024),
             use_tts_template=True,
             generate_audio=False,
@@ -924,8 +924,13 @@ class _OmniDescriptorImpl:
         # ------------------------------------------------------------------
         # 4. Probe increasing input lengths
         # ------------------------------------------------------------------
-        probe_targets = [128, 256, 512, 1024, 2048, 4096, 8192, 16384]
-        output_tokens_per_probe = 64   # small fixed output — we're testing input capacity
+        # ~×1.5 steps give finer resolution to track small gains after pruning
+        probe_targets = [
+            128, 192, 256, 384, 512, 768,
+            1024, 1536, 2048, 3072, 4096, 6144,
+            8192, 12288, 16384,
+        ]
+        output_tokens_per_probe = 32   # small fixed output — we're testing input capacity
         results = []
         last_ok_input = 0
         hit_limit = False
@@ -941,6 +946,7 @@ class _OmniDescriptorImpl:
             status = "ok"
             elapsed = 0.0
             vram_delta_mb = 0.0
+            peak_vram_mb = 0.0
             actual_output = 0
 
             try:
@@ -969,16 +975,23 @@ class _OmniDescriptorImpl:
 
             if has_cuda:
                 torch.cuda.synchronize()
-                peak = torch.cuda.max_memory_allocated(0)
-                vram_delta_mb = (peak - mem_before) / 1024**2
+                peak_raw = torch.cuda.max_memory_allocated(0)
+                vram_delta_mb = (peak_raw - mem_before) / 1024**2
+                peak_vram_mb = peak_raw / 1024**2
+
+            tok_per_s = round(actual_input / elapsed, 1) if elapsed > 0 and status == "ok" else 0.0
+            vram_per_tok_kb = round((vram_delta_mb * 1024) / actual_input, 2) if actual_input > 0 and status == "ok" else 0.0
 
             entry = {
-                "target_tokens":  target,
-                "input_tokens":   actual_input,
-                "output_tokens":  actual_output,
-                "elapsed_s":      round(elapsed, 2),
-                "vram_delta_mb":  round(vram_delta_mb, 1),
-                "status":         status,
+                "target_tokens":          target,
+                "input_tokens":           actual_input,
+                "output_tokens":          actual_output,
+                "elapsed_s":              round(elapsed, 2),
+                "tok_per_s":              tok_per_s,
+                "vram_delta_mb":          round(vram_delta_mb, 1),
+                "peak_vram_mb":           round(peak_vram_mb, 1),
+                "vram_per_input_token_kb": vram_per_tok_kb,
+                "status":                 status,
             }
             results.append(entry)
             print(
@@ -986,7 +999,10 @@ class _OmniDescriptorImpl:
                 f"in={actual_input:>6} tok  "
                 f"out={actual_output:>3} tok  "
                 f"{elapsed:5.1f}s  "
-                f"ΔVRAM={vram_delta_mb:+7.1f} MB"
+                f"{tok_per_s:>8,.1f} tok/s  "
+                f"ΔVRAM={vram_delta_mb:+7.1f} MB  "
+                f"peak={peak_vram_mb:>7.0f} MB  "
+                f"{vram_per_tok_kb:.2f} KB/tok"
             )
 
             if status != "ok":
@@ -1423,8 +1439,12 @@ class _OmniDescriptorImpl:
                 actual = len(impl.tokenizer.encode(full_prompt, add_special_tokens=True))
                 return full_prompt, actual
 
-            # CPU is slow — use smaller steps and a per-probe timeout
-            probe_targets = [128, 256, 512, 1024, 2048, 4096]
+            # CPU is slow — use smaller steps and a per-probe timeout.
+            # ~×1.5 steps give finer resolution to track small gains after pruning.
+            probe_targets = [
+                128, 192, 256, 384, 512, 768,
+                1024, 1536, 2048, 3072, 4096,
+            ]
             output_tokens_per_probe = 16  # minimal output — we test input capacity
             per_probe_timeout_s = 300     # 5 min per probe
 
@@ -1468,11 +1488,14 @@ class _OmniDescriptorImpl:
                 rss_after = _get_rss_mb()
                 rss_delta = rss_after - rss_before
 
+                tok_per_s = round(actual_input / elapsed, 1) if elapsed > 0 and status == "ok" else 0.0
+
                 entry = {
                     "target_tokens":  target,
                     "input_tokens":   actual_input,
                     "output_tokens":  actual_output,
                     "elapsed_s":      round(elapsed, 2),
+                    "tok_per_s":      tok_per_s,
                     "rss_delta_mb":   round(rss_delta, 1),
                     "status":         status,
                 }
@@ -1482,6 +1505,7 @@ class _OmniDescriptorImpl:
                     f"in={actual_input:>6} tok  "
                     f"out={actual_output:>3} tok  "
                     f"{elapsed:6.1f}s  "
+                    f"{tok_per_s:>8,.1f} tok/s  "
                     f"ΔRSS={rss_delta:+7.1f} MB"
                 )
 
@@ -1855,7 +1879,8 @@ if __name__ == '__main__':
     # ---------------------------------------------------------------------------
     mock_cfg = OmegaConf.create({
         'omni': {
-            'model_name': 'openbmb/MiniCPM-o-4_5',
+            #'model_name': 'openbmb/MiniCPM-o-4_5',
+            'model_name': 'dystrio/MiniCPM-o-4_5-Sculpt-Throughput',
             'load_in_4bit': True,
             'max_new_tokens': 1024,
             'do_sample': False,
@@ -1921,9 +1946,9 @@ if __name__ == '__main__':
     # Test flags — set to False to skip individual tests
     # ---------------------------------------------------------------------------
     RUN_TEST_CONTEXT_WINDOW    = True
-    RUN_TEST_CONTEXT_WINDOW_CPU = True
+    RUN_TEST_CONTEXT_WINDOW_CPU = False
     RUN_TEST_SPEED_GPU         = True
-    RUN_TEST_SPEED_CPU         = True
+    RUN_TEST_SPEED_CPU         = False
     RUN_TEST_TEXT              = True
     RUN_TEST_IMAGE             = True
     RUN_TEST_IMAGE_CUSTOM      = True
@@ -1947,7 +1972,7 @@ if __name__ == '__main__':
         print("  SKIPPED (disabled)\n")
     else:
         try:
-            print("  Probing input lengths (output capped at 64 tokens each):")
+            print("  Probing input lengths (output capped at 32 tokens each):")
             benchmark_report = descriptor._execute('benchmark_context_window')
 
             gpu = benchmark_report['gpu']
@@ -1962,14 +1987,17 @@ if __name__ == '__main__':
             print(f"  KV-cache cost        : {benchmark_report['kv_cache_kb_per_token']:.0f} KB / token")
             print(f"  Model max context    : {benchmark_report['model_max_position_embeddings']:,} tokens")
             print()
-            print(f"  {'Input tokens':>13}  {'Output tokens':>13}  {'Time':>6}  {'ΔVRAM':>9}  Status")
-            print(f"  {'─'*13}  {'─'*13}  {'─'*6}  {'─'*9}  {'─'*12}")
+            print(f"  {'Input':>7}  {'Output':>6}  {'Time':>6}  {'tok/s':>8}  {'ΔVRAM':>8}  {'Peak':>8}  {'KB/tok':>6}  Status")
+            print(f"  {'─'*7}  {'─'*6}  {'─'*6}  {'─'*8}  {'─'*8}  {'─'*8}  {'─'*6}  {'─'*12}")
             for r in benchmark_report['probes']:
                 print(
-                    f"  {r['input_tokens']:>13,}  "
-                    f"{r['output_tokens']:>13,}  "
+                    f"  {r['input_tokens']:>7,}  "
+                    f"{r['output_tokens']:>6,}  "
                     f"{r['elapsed_s']:>5.1f}s  "
-                    f"{r['vram_delta_mb']:>+8.0f}M  "
+                    f"{r['tok_per_s']:>8,.1f}  "
+                    f"{r['vram_delta_mb']:>+7.0f}M  "
+                    f"{r['peak_vram_mb']:>7.0f}M  "
+                    f"{r['vram_per_input_token_kb']:>6.2f}  "
                     f"{r['status']}"
                 )
             print()
@@ -2017,14 +2045,15 @@ if __name__ == '__main__':
             print(f"  KV-cache cost      : {benchmark_cpu_report['kv_cache_kb_per_token']:.0f} KB / token")
             print(f"  Model max context  : {benchmark_cpu_report['model_max_position_embeddings']:,} tokens")
             print()
-            print(f"  {'Input tokens':>13}  {'Output tokens':>13}  {'Time':>6}  {'ΔRSS':>9}  Status")
-            print(f"  {'─'*13}  {'─'*13}  {'─'*6}  {'─'*9}  {'─'*12}")
+            print(f"  {'Input':>7}  {'Output':>6}  {'Time':>7}  {'tok/s':>8}  {'ΔRSS':>8}  Status")
+            print(f"  {'─'*7}  {'─'*6}  {'─'*7}  {'─'*8}  {'─'*8}  {'─'*12}")
             for r in benchmark_cpu_report['probes']:
                 print(
-                    f"  {r['input_tokens']:>13,}  "
-                    f"{r['output_tokens']:>13,}  "
-                    f"{r['elapsed_s']:>5.1f}s  "
-                    f"{r['rss_delta_mb']:>+8.0f}M  "
+                    f"  {r['input_tokens']:>7,}  "
+                    f"{r['output_tokens']:>6,}  "
+                    f"{r['elapsed_s']:>6.1f}s  "
+                    f"{r['tok_per_s']:>8,.1f}  "
+                    f"{r['rss_delta_mb']:>+7.0f}M  "
                     f"{r['status']}"
                 )
             print()

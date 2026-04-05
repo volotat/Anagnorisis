@@ -195,6 +195,11 @@ def before_request_auth():
 # Set the socketio parameters
 socketio = SocketIO(app, cors_allowed_origins="*", path="/socket.io")
 
+# Initialize the background task manager (queue + worker thread)
+from src.task_manager import TaskManager
+task_manager = TaskManager(socketio, app)
+app.task_manager = task_manager
+
 # Register the Share API (REST endpoints for cross-instance file sharing)
 # init_share_api(app, cfg)
 

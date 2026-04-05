@@ -44,9 +44,6 @@ except ImportError:
 
 import time
 
-# Global, process-local flag. Simple and survives page refresh in the same server process.
-TRAINING_ACTIVE = False
-
 def init_socket_events(socketio, cfg=None, app=None, data_folder='./project_data'):
     '''data = {
         'train_loss_hist': self.train_loss_hist,
@@ -55,96 +52,102 @@ def init_socket_events(socketio, cfg=None, app=None, data_folder='./project_data
     }
     socketio.emit("emit_display_loss_data", data) '''
 
-    train_accuracy_hist = []
-    test_accuracy_hist = []
-    last_emit_time = 0  # Initialize the last emit time
+    task_manager = app.task_manager
 
-    def callback(status, percent, baseline_accuracy, train_accuracy = None, test_accuracy = None):
-        nonlocal last_emit_time  # Access the outer scope variable
-        current_time = time.time()  # Get the current time
+    def _make_train_callback(ctx, train_accuracy_hist, test_accuracy_hist):
+        """Return a training progress callback that feeds both the Train page chart
+        and the Task Manager modal."""
+        last_emit = [0.0]
 
-        if train_accuracy is not None and test_accuracy is not None:
-            train_accuracy_hist.append(train_accuracy * 100)
-            test_accuracy_hist.append(test_accuracy * 100)
+        def callback(status, percent, baseline_accuracy, train_accuracy=None, test_accuracy=None):
+            if train_accuracy is not None and test_accuracy is not None:
+                train_accuracy_hist.append(train_accuracy * 100)
+                test_accuracy_hist.append(test_accuracy * 100)
+            now = time.time()
+            if now - last_emit[0] >= 1:
+                last_emit[0] = now
+                data = {
+                    'status': status,
+                    'percent': percent * 100,
+                    'baseline_accuracy': baseline_accuracy * 100,
+                    'train_accuracy_hist': list(train_accuracy_hist),
+                    'test_accuracy_hist': list(test_accuracy_hist)
+                }
+                socketio.emit("emit_train_page_display_train_data", data)
+            ctx.update(percent, status)
 
-        if current_time - last_emit_time >= 1:
-            data = {
-                'status': status,
-                'percent': percent * 100,
-                'baseline_accuracy': baseline_accuracy * 100,
-                'train_accuracy_hist': list(train_accuracy_hist),
-                'test_accuracy_hist': list(test_accuracy_hist)
-            }
-        socketio.emit("emit_train_page_display_train_data", data)
+        return callback
+
+    def _is_training_active():
+        """Check if any training task is currently queued or running."""
+        state = task_manager.get_state()
+        all_tasks = ([state['active']] if state['active'] else []) + state['queued']
+        return any(
+            t and t.get('name', '').startswith('Train:')
+            for t in all_tasks
+        )
 
     @socketio.on("emit_train_page_get_training_status")
-    def handle_emit_get_training_status():
-        # return current status to just this client
-        socketio.emit("emit_train_page_status", {"active": TRAINING_ACTIVE}, room=request.sid)
+    def handle_emit_get_training_status(data=None):
+        socketio.emit("emit_train_page_status", {"active": _is_training_active()}, room=request.sid)
 
     @socketio.on("emit_train_page_start_music_evaluator_training")
-    def handle_emit_start_music_evaluator_training():
-        global TRAINING_ACTIVE
-        nonlocal train_accuracy_hist, test_accuracy_hist # Access the outer scope variables
-        train_accuracy_hist = []
-        test_accuracy_hist = []
-
-        if TRAINING_ACTIVE:
+    def handle_emit_start_music_evaluator_training(data=None):
+        if _is_training_active():
             socketio.emit("emit_train_page_status", {"active": True}, room=request.sid)
             return
 
-        TRAINING_ACTIVE = True
+        def _task(ctx):
+            hist_train, hist_test = [], []
+            cb = _make_train_callback(ctx, hist_train, hist_test)
+            socketio.emit("emit_train_page_status", {"active": True})
+            try:
+                modules.music.train.train_music_evaluator(cfg, cb, socketio)
+            finally:
+                socketio.emit("emit_train_page_status", {"active": False})
+
+        task_manager.submit('Train: music evaluator', _task)
         socketio.emit("emit_train_page_status", {"active": True})
-        try:
-            modules.music.train.train_music_evaluator(cfg, callback, socketio)
-        finally:
-            TRAINING_ACTIVE = False
-            socketio.emit("emit_train_page_status", {"active": False})
-    
+
     @socketio.on("emit_train_page_start_image_evaluator_training")
-    def handle_emit_start_image_evaluator_training():
-        global TRAINING_ACTIVE
-        nonlocal train_accuracy_hist, test_accuracy_hist # Access the outer scope variables
-        train_accuracy_hist = []
-        test_accuracy_hist = []
-
-        if TRAINING_ACTIVE:
+    def handle_emit_start_image_evaluator_training(data=None):
+        if _is_training_active():
             socketio.emit("emit_train_page_status", {"active": True}, room=request.sid)
             return
-        
-        TRAINING_ACTIVE = True
+
+        def _task(ctx):
+            hist_train, hist_test = [], []
+            cb = _make_train_callback(ctx, hist_train, hist_test)
+            socketio.emit("emit_train_page_status", {"active": True})
+            try:
+                modules.images.train.train_image_evaluator(cfg, cb)
+            finally:
+                socketio.emit("emit_train_page_status", {"active": False})
+
+        task_manager.submit('Train: image evaluator', _task)
         socketio.emit("emit_train_page_status", {"active": True})
-        try:
-            modules.images.train.train_image_evaluator(cfg, callback)
-        finally:
-            TRAINING_ACTIVE = False
-            socketio.emit("emit_train_page_status", {"active": False})
 
     @socketio.on("emit_train_page_start_universal_evaluator_training")
     def handle_emit_start_universal_evaluator_training(data=None):
-        global TRAINING_ACTIVE
-        nonlocal train_accuracy_hist, test_accuracy_hist
-        train_accuracy_hist = []
-        test_accuracy_hist = []
-
-        if TRAINING_ACTIVE:
+        if _is_training_active():
             socketio.emit("emit_train_page_status", {"active": True}, room=request.sid)
             return
 
-        max_steps = None
-        time_budget_seconds = None
-        if data:
-            max_steps = data.get('max_steps', None)
-            time_budget_seconds = data.get('time_budget_seconds', None)
+        max_steps = data.get('max_steps', None) if data else None
+        time_budget_seconds = data.get('time_budget_seconds', None) if data else None
 
-        TRAINING_ACTIVE = True
+        def _task(ctx):
+            hist_train, hist_test = [], []
+            cb = _make_train_callback(ctx, hist_train, hist_test)
+            socketio.emit("emit_train_page_status", {"active": True})
+            try:
+                modules.train.universal_train.train_universal_evaluator(
+                    cfg, cb,
+                    max_steps=max_steps,
+                    time_budget_seconds=time_budget_seconds,
+                )
+            finally:
+                socketio.emit("emit_train_page_status", {"active": False})
+
+        task_manager.submit('Train: universal evaluator', _task)
         socketio.emit("emit_train_page_status", {"active": True})
-        try:
-            modules.train.universal_train.train_universal_evaluator(
-                cfg, callback,
-                max_steps=max_steps,
-                time_budget_seconds=time_budget_seconds,
-            )
-        finally:
-            TRAINING_ACTIVE = False
-            socketio.emit("emit_train_page_status", {"active": False})
