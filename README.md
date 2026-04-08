@@ -1,6 +1,8 @@
 <!--[![Join on Reddit](https://img.shields.io/reddit/subreddit-subscribers/Anagnorisis?style=social)](https://www.reddit.com/r/Anagnorisis)-->
 
 # Anagnorisis
+[![Anagnorisis Health](https://oss-health-monitor.vercel.app/api/badge/volotat/Anagnorisis?v=2)](https://github.com/volotat/OSS-Health-Monitor)
+
 Anagnorisis - is a local recommendation system that allows you to fine-tune models on your data to predict your data preferences. You can feed it as much of your personal data as you like and not be afraid of it leaking as all of it is stored and processed locally on your own computer. All you need  to run it is 8GB VRAM GPU or 16GB of RAM in CPU-only mode. 
 
 
