@@ -265,28 +265,66 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
         # Commit the transaction
         db_models.db.session.commit()
 
-    def _task_preemptive_rating(ctx):
-        """Background: find all unrated/stale images on disk and rate them."""
-        images_file_manager.sync_file_paths()
+    def _check_and_submit_rating():
+        """Scheduled: find unrated images on disk and submit a rating task if needed."""
+        base_name = 'Images: rate unrated files'
+        state = app.task_manager.get_state()
+        active = state['active']
+        if (active and active.get('name', '').startswith(base_name)) or \
+                any(t.get('name', '').startswith(base_name) for t in state['queued']):
+            return
+        candidates = images_file_manager.get_unrated_files(image_evaluator.hash)
+        total = len(candidates)
+        if total == 0:
+            return
+
         batch_size = OmegaConf.select(cfg, 'images.rating_update_batch_size', default=None)
-        unrated = db_models.ImagesLibrary.query.filter(
-            db_models.ImagesLibrary.file_path.isnot(None),
-            (db_models.ImagesLibrary.model_rating.is_(None)) |
-            (db_models.ImagesLibrary.model_hash != image_evaluator.hash)
-        ).all()
-        if not unrated:
+        batch_size = min(batch_size, total) if batch_size else total
+        number_of_files_to_rate_str = f"{batch_size} of {total}" if batch_size < total else f"{total}"
+
+        def task(ctx):
+            files_list = candidates[:batch_size]
+            ctx.update(0.0, f'Rating {len(files_list)} of {total} images...')
+            update_model_ratings(files_list)
+
+        app.task_manager.submit(f'{base_name} ({number_of_files_to_rate_str})', task)
+
+    def _check_and_submit_description():
+        """Scheduled: find undescribed images on disk and submit a description task if needed."""
+        base_name = 'Images: describe undescribed files'
+        state = app.task_manager.get_state()
+        active = state['active']
+        if (active and active.get('name', '').startswith(base_name)) or \
+                any(t.get('name', '').startswith(base_name) for t in state['queued']):
             return
-        files_list = [
-            os.path.join(media_directory, item.file_path)
-            for item in unrated
-            if os.path.exists(os.path.join(media_directory, item.file_path))
-        ]
-        if batch_size:
-            files_list = files_list[:batch_size]
-        if not files_list:
+        all_files = images_file_manager.list_all_files()
+        if not all_files:
             return
-        ctx.update(0.0, f'Pre-rating {len(files_list)} images...')
-        update_model_ratings(files_list)
+        candidates = metadata_search_engine.get_undescribed_files(all_files)
+        # None means model hash is unknown (never loaded) — treat all files as candidates
+        if candidates is not None and len(candidates) == 0:
+            return
+        if candidates is None:
+            candidates = all_files
+        batch_size = OmegaConf.select(cfg, 'images.description_update_batch_size', default=100)
+        batch_size = min(batch_size, len(candidates))
+        batch = candidates[:batch_size]
+        n_total = len(candidates)
+        label = f'{batch_size} of {n_total}' if batch_size < n_total else str(n_total)
+
+        def task(ctx):
+            try:
+                for i, fp in enumerate(batch):
+                    ctx.check()
+                    ctx.update(i / len(batch), f'Describing image {i + 1}/{len(batch)} of {n_total}...')
+                    try:
+                        metadata_search_engine._get_auto_description(fp)
+                    except Exception as e:
+                        print(f'[Images: describe] Failed for {fp}: {e}')
+            finally:
+                metadata_search_engine.omni_descriptor.unload()
+
+        app.task_manager.submit(f'{base_name} ({label})', task)
 
     common_socket_events.show_loading_status('Setting up filters and routes...')
     # Create common filters instance
@@ -701,12 +739,11 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
         return {"content": content, "file_path": file_path}
 
     common_socket_events.show_loading_status('Images module ready!')
+
     rating_update_interval = OmegaConf.select(cfg, 'images.rating_update_interval_minutes', default=None)
-    schedule_task(
-        app,
-        interval_minutes=rating_update_interval,
-        name='Images: rate unrated files',
-        fn=_task_preemptive_rating,
-    )
+    schedule_task(app, interval_minutes=rating_update_interval, fn=_check_and_submit_rating)
+
+    desc_interval = OmegaConf.select(cfg, 'images.description_update_interval_minutes', default=None)
+    schedule_task(app, interval_minutes=desc_interval, fn=_check_and_submit_description)
 
     

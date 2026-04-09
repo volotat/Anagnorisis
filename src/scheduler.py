@@ -2,27 +2,22 @@ import threading
 import time
 
 
-def schedule_task(app, interval_minutes: float, name: str, fn) -> None:
-    """Start a daemon thread that submits *fn* to the TaskManager every *interval_minutes*.
+def schedule_task(app, interval_minutes: float, fn) -> None:
+    """Start a daemon thread that calls *fn* every *interval_minutes* minutes.
 
-    The task is only queued if no task with the same *name* is already active
-    or queued, preventing pile-ups when a run takes longer than the interval.
+    *fn* is called with no arguments inside an ``app.app_context()`` so it can
+    perform DB queries and use Flask extensions freely.  Whatever *fn* decides
+    to do (submit a task, skip, log, etc.) is entirely its own concern.
+
     *interval_minutes* must be a positive number; passing 0 or None is a no-op.
     """
     if not interval_minutes:
         return
 
     def _loop():
-        print(f"[Scheduler] Starting '{name}' with interval {interval_minutes} minutes")
         while True:
             time.sleep(interval_minutes * 60)
-            state = app.task_manager.get_state()
-            active = state['active']
-            already = (
-                (active and active.get('name') == name) or
-                any(t.get('name') == name for t in state['queued'])
-            )
-            if not already:
-                app.task_manager.submit(name, fn)
+            with app.app_context():
+                fn()
 
-    threading.Thread(target=_loop, daemon=True, name=f"scheduler:{name}").start()
+    threading.Thread(target=_loop, daemon=True, name="scheduler").start()

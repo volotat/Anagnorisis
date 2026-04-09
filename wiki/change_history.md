@@ -53,6 +53,19 @@ Add new downloadable module for 'Deep Research'-like functionality that uses use
 
 ## Versions History
 
+### Version 0.3.11 (08.04.2026)
+*   **Background Ratings:**
+    *   Replaced the DB-first unrated file query (which was counting stale rows pointing to deleted/moved files as "unrated") with a disk-first approach. `FileManager.get_unrated_files(evaluator_hash)` now walks the media directory, hashes every file via the engine's path+mtime cache, and queries the DB to find which hashes lack a current rating — naturally ignoring files that no longer exist on disk.
+    *   `get_unrated_files()` calls `sync_file_paths()` first, so moved or renamed files have their DB `file_path` corrected before the rating lookup. Both operations share the same disk walk and hash pass, so there is no extra I/O.
+    *   All four module `_check_and_submit_rating()` functions simplified: `candidates = file_manager.get_unrated_files(evaluator_hash)` replaces the `unrated_q()` factory, `sync_file_paths()` call, and `os.path.exists()` filter that were needed before.
+*   **Background Description Generation:**
+    *   Added proactive background description generation via `OmniDescriptor`, analogous to the existing rating scheduler. Every 10 minutes each module checks for files whose auto-description is not yet in the cache and submits a batch to the task manager.
+    *   `MetadataSearch.get_undescribed_files(file_paths)` probes the shared `TwoLevelCache` for each file's `auto_desc::` key using the current model hash. Returns `None` if the model hash is not yet known (model was never loaded since install), in which case the scheduler falls back to treating all files as candidates.
+    *   `MetadataSearch._get_omni_model_hash()` resolves the model hash from the proxy's in-memory `model_hash` first, then falls back to `omni_model_hash::{model_name}` in the shared cache. The hash is persisted to cache immediately after `OmniDescriptor.initiate()` completes, so it survives process restarts without reloading the model.
+    *   `FileManager.list_all_files()` added — returns all media file paths on disk via the existing mtime-cached walker, without hashing. Used by the description scheduler (no DB involved).
+    *   All four modules (`images`, `music`, `text`, `videos`) have a new `_check_and_submit_description()` function and a corresponding `schedule_task` registration at module startup.
+    *   `config.yaml` gains `description_update_interval_minutes` (default: 10) and `description_update_batch_size` (default: 100; 50 for videos) per module. Set to `null` to disable.
+
 ### Version 0.3.10 (05.04.2026)
 *   **OmniDescriptor:**
     *   Now new, optimized version of the `MiniCPM-o-4.5` model is used for generating descriptions. New model is provided by [Dystrio](https://huggingface.co/dystrio/MiniCPM-o-4_5-Sculpt-Throughput) and is pruned specifically for fast description generation and lower memory footprint, providing faster token generation speed and bigger context window.

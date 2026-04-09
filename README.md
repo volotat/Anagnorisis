@@ -189,7 +189,7 @@ To make audio, visual, video and text search possible the project uses these mod
 
 All models are downloaded automatically when the project is started for the first time. This might take some time depending on the internet connection. You can see the progress inside `logs/anagnorisis-app_log.txt` file that will appear in the project's root folder if you run the project from the Docker container.
 
-**Huge thanks to [Dystrio](https://huggingface.co/dystrio) for optimizing the MiniCPM-o-4_5 model specifically for the Anagnorisis project, making it more then 2 times faster at token generation speed and providing even bigger context window!**
+**Huge thanks to [Dystrio](https://huggingface.co/dystrio) for optimizing the MiniCPM-o-4_5 model specifically for the Anagnorisis project, making it more then 2 times faster at token generation speed and providing even bigger context window with minimal loss in model's accuracy.**
 
 ---
 

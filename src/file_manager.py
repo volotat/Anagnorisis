@@ -276,9 +276,8 @@ class FileManager:
         """Walk the media directory and correct any stale file_path values in the
         DB by comparing hashes.  Returns the number of rows updated.
 
-        This should be called before any query that relies on file_path being
-        current (e.g. finding unrated files) so that moved files are re-discovered
-        and deleted files are handled gracefully.
+        Useful after files are moved or renamed so the DB stays consistent.
+        Uses the engine's hash cache, so repeated calls are fast.
         """
         if self.media_directory is None:
             return 0
@@ -294,9 +293,13 @@ class FileManager:
             if h is not None
         }
 
-        db_items = self.db_schema.query.filter(
-            self.db_schema.hash.in_(hash_to_rel.keys())
-        ).all()
+        BATCH = 500
+        disk_hashes = list(hash_to_rel.keys())
+        db_items = []
+        for i in range(0, len(disk_hashes), BATCH):
+            db_items.extend(self.db_schema.query.filter(
+                self.db_schema.hash.in_(disk_hashes[i:i + BATCH])
+            ).all())
 
         updated = 0
         for item in db_items:
@@ -309,6 +312,61 @@ class FileManager:
             db.session.commit()
 
         return updated
+
+    def get_unrated_files(self, evaluator_hash: str | None = None) -> list[str]:
+        """Walk the media directory and return full paths of files that need rating.
+
+        A file needs rating if its hash has no DB row, or its DB row has
+        model_rating IS NULL, or its model_hash doesn't match evaluator_hash
+        (i.e. the model was updated).
+
+        Calls sync_file_paths() first so that moved/renamed files have their
+        DB file_path corrected before the rating lookup.
+
+        Uses the engine's hash cache so repeated calls within a session are fast.
+        Batches DB queries to stay within SQLite's variable limit.
+        """
+        if self.media_directory is None:
+            return []
+
+        self.sync_file_paths()
+
+        all_files = self._walk_files_cached(self.media_directory, set(self.media_formats))
+        if not all_files:
+            return []
+
+        all_hashes = [self.engine.get_file_hash(f) for f in all_files]
+
+        # First occurrence wins for duplicate hashes (e.g. identical files)
+        hash_to_full: dict[str, str] = {}
+        for h, f in zip(all_hashes, all_files):
+            if h is not None and h not in hash_to_full:
+                hash_to_full[h] = f
+
+        disk_hashes = list(hash_to_full.keys())
+        if not disk_hashes:
+            return []
+
+        # Find which disk hashes are already rated with the current model
+        rated_hashes: set[str] = set()
+        BATCH = 500
+        for i in range(0, len(disk_hashes), BATCH):
+            batch = disk_hashes[i:i + BATCH]
+            q = self.db_schema.query.with_entities(self.db_schema.hash).filter(
+                self.db_schema.hash.in_(batch),
+                self.db_schema.model_rating.isnot(None),
+            )
+            if evaluator_hash is not None:
+                q = q.filter(self.db_schema.model_hash == evaluator_hash)
+            rated_hashes.update(row[0] for row in q.all())
+
+        return [hash_to_full[h] for h in disk_hashes if h not in rated_hashes]
+
+    def list_all_files(self) -> list[str]:
+        """Return all media file paths currently on disk (no DB, no hashing)."""
+        if self.media_directory is None:
+            return []
+        return self._walk_files_cached(self.media_directory, set(self.media_formats))
 
     def get_folders(self, path = ""):
         current_path = self.resolve_media_path(path)

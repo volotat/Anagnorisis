@@ -145,6 +145,47 @@ class MetadataSearch:
             return 'describe_text'
         return None
 
+    def _get_omni_model_hash(self) -> Optional[str]:
+        """Return the OmniDescriptor model hash from memory, or from the shared cache
+        if the model hasn't been loaded yet this session (e.g. after an app restart).
+        Returns None if the hash has never been persisted anywhere.
+        """
+        mh = self.omni_descriptor.model_hash
+        if mh:
+            return mh
+        model_name = getattr(getattr(self.cfg, 'omni', None), 'model_name', None)
+        if model_name:
+            return self._fast_cache.get(f"omni_model_hash::{model_name}")
+        return None
+
+    def get_undescribed_files(self, file_paths: list[str]) -> list[str] | None:
+        """Return paths from file_paths that have no cached auto-description.
+
+        Returns None if the OmniDescriptor model hash is not yet known
+        (model was never loaded on this machine). Callers should treat None
+        as "all files may need describing."
+        """
+        model_hash = self._get_omni_model_hash()
+        if model_hash is None:
+            return None
+
+        undescribed = []
+        for fp in file_paths:
+            ext = os.path.splitext(fp)[1].lower()
+            method_name = self._extension_to_describe_method(ext)
+            if method_name is None:
+                continue
+            try:
+                file_hash = self.engine.get_file_hash(fp)
+            except Exception:
+                continue
+            if file_hash is None:
+                continue
+            cache_key = f"auto_desc::{file_hash}::{model_hash}::{method_name}"
+            if self._fast_cache.get(cache_key) is None:
+                undescribed.append(fp)
+        return undescribed
+
     def _get_auto_description(self, file_path: str, generate_desc_if_not_in_cache: bool = True) -> str:
         """
         Uses OmniDescriptor to generate an automatic description of the file.
@@ -184,6 +225,8 @@ class MetadataSearch:
         if not getattr(descriptor, 'model_hash', None):
             models_folder = self.cfg.main.embedding_models_path
             descriptor.initiate(models_folder)
+            # Persist hash for cold-start lookups by _get_omni_model_hash() after process restart.
+            self._fast_cache.set(f"omni_model_hash::{self.cfg.omni.model_name}", descriptor.model_hash)
 
         try:
             method = getattr(descriptor, method_name)
