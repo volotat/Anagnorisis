@@ -1,19 +1,14 @@
 
-from flask import Flask, render_template, send_from_directory
+from flask import send_from_directory
 import os
-import sys
 import glob
-import subprocess
 import hashlib
 import numpy as np
 from io import BytesIO
 
 
 from modules.images.engine import ImageSearch, ImageEvaluator
-import math
-from scipy.spatial import distance
 import torch
-import gc
 import send2trash
 import time
 import datetime
@@ -32,6 +27,7 @@ from src.utils import convert_size, convert_length, time_difference
 import src.scoring_models
 from src.common_filters import CommonFilters
 from src.metadata_search import MetadataSearch
+from src.module_helpers import register_meta_handlers, make_scheduled_rating_check, make_scheduled_description_check
 
 # EVENTS:
 # Incoming (handled with @socketio.on):
@@ -66,7 +62,6 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
         print("Images media folder is not set.")
         media_directory = None
     else:
-        # media_directory = os.path.join(data_folder, cfg.images.media_directory)
         media_directory = cfg.images.media_directory
     
     # TODO: Remove this hack from the codebase and create a proper file-manager system
@@ -126,18 +121,11 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
     images_search_engine = ImageSearch(cfg=cfg)
     images_search_engine.initiate(models_folder=cfg.main.embedding_models_path, cache_folder=cfg.main.cache_path)
 
-    # cached_file_hash = images_search_engine.cached_file_hash
-    # cached_metadata = images_search_engine.cached_metadata
-
     common_socket_events.show_loading_status('Initializing image evaluator...')
-    image_evaluator = ImageEvaluator() #src.scoring_models.Evaluator(embedding_dim=768)
+    image_evaluator = ImageEvaluator()
 
     common_socket_events.show_loading_status('Loading image evaluator model...')
     image_evaluator.load(os.path.join(cfg.main.personal_models_path, 'image_evaluator.pt'))
-
-    # def show_search_status(status):
-    #     common_socket_events.show_search_status(status)
-    #     # socketio.emit('emit_images_page_show_search_status', status)
 
     def gather_resolutions(all_files, all_hashes, media_directory):
         resolutions = {}
@@ -145,11 +133,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
 
         for ind, full_path in enumerate(all_files):
             file_path = os.path.relpath(full_path, media_directory)
-            # file_hash = all_hashes[ind]
 
-            image_metadata = images_search_engine.get_metadata(full_path)
-            if 'resolution' not in image_metadata:
-                raise Exception(f"Resolution not found for image: {file_path}")
             
             resolutions[full_path] = image_metadata['resolution']
             progress_callback(ind + 1, len(all_files)) # Update progress
@@ -176,9 +160,6 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
     def update_model_ratings(files_list):
         print(f"Updating model ratings for {len(files_list)} images...")
 
-        # filter out files that already have a rating in the DB
-        #files_list_hash_map = {file_path: images_search_engine.get_file_hash(file_path) for file_path in files_list}
-
         files_list_hash_map = {}
         for ind, file_path in enumerate(files_list):
             common_socket_events.show_search_status(f"Computing files hashes {ind+1}/{len(files_list)}")
@@ -186,16 +167,6 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
             files_list_hash_map[file_path] = file_hash
 
         hash_list = list(files_list_hash_map.values())
-
-        # # Fetch rated images from the database in a single query
-        # rated_images_db_items = db_models.ImagesLibrary.query.filter(
-        #     db_models.ImagesLibrary.hash.in_(hash_list),
-        #     db_models.ImagesLibrary.model_rating.isnot(None),
-        #     db_models.ImagesLibrary.model_hash.is_(image_evaluator.hash)
-        # ).all()
-
-        # # Create a list of hashes for rated images
-        # rated_images_hashes = {item.hash for item in rated_images_db_items}
 
         # Fetch ALL images from the database in a single query (not just rated ones)
         all_existing_db_items = db_models.ImagesLibrary.query.filter(
@@ -265,66 +236,10 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
         # Commit the transaction
         db_models.db.session.commit()
 
-    def _check_and_submit_rating():
-        """Scheduled: find unrated images on disk and submit a rating task if needed."""
-        base_name = 'Images: rate unrated files'
-        state = app.task_manager.get_state()
-        active = state['active']
-        if (active and active.get('name', '').startswith(base_name)) or \
-                any(t.get('name', '').startswith(base_name) for t in state['queued']):
-            return
-        candidates = images_file_manager.get_unrated_files(image_evaluator.hash)
-        total = len(candidates)
-        if total == 0:
-            return
-
-        batch_size = OmegaConf.select(cfg, 'images.rating_update_batch_size', default=None)
-        batch_size = min(batch_size, total) if batch_size else total
-        number_of_files_to_rate_str = f"{batch_size} of {total}" if batch_size < total else f"{total}"
-
-        def task(ctx):
-            files_list = candidates[:batch_size]
-            ctx.update(0.0, f'Rating {len(files_list)} of {total} images...')
-            update_model_ratings(files_list)
-
-        app.task_manager.submit(f'{base_name} ({number_of_files_to_rate_str})', task)
-
-    def _check_and_submit_description():
-        """Scheduled: find undescribed images on disk and submit a description task if needed."""
-        base_name = 'Images: describe undescribed files'
-        state = app.task_manager.get_state()
-        active = state['active']
-        if (active and active.get('name', '').startswith(base_name)) or \
-                any(t.get('name', '').startswith(base_name) for t in state['queued']):
-            return
-        all_files = images_file_manager.list_all_files()
-        if not all_files:
-            return
-        candidates = metadata_search_engine.get_undescribed_files(all_files)
-        # None means model hash is unknown (never loaded) — treat all files as candidates
-        if candidates is not None and len(candidates) == 0:
-            return
-        if candidates is None:
-            candidates = all_files
-        batch_size = OmegaConf.select(cfg, 'images.description_update_batch_size', default=100)
-        batch_size = min(batch_size, len(candidates))
-        batch = candidates[:batch_size]
-        n_total = len(candidates)
-        label = f'{batch_size} of {n_total}' if batch_size < n_total else str(n_total)
-
-        def task(ctx):
-            try:
-                for i, fp in enumerate(batch):
-                    ctx.check()
-                    ctx.update(i / len(batch), f'Describing image {i + 1}/{len(batch)} of {n_total}...')
-                    try:
-                        metadata_search_engine._get_auto_description(fp)
-                    except Exception as e:
-                        print(f'[Images: describe] Failed for {fp}: {e}')
-            finally:
-                metadata_search_engine.omni_descriptor.unload()
-
-        app.task_manager.submit(f'{base_name} ({label})', task)
+    _check_and_submit_rating = make_scheduled_rating_check(
+        app, 'Images', images_file_manager, image_evaluator, cfg, 'images', update_model_ratings)
+    _check_and_submit_description = make_scheduled_description_check(
+        app, 'Images', images_file_manager, metadata_search_engine, cfg, 'images')
 
     common_socket_events.show_loading_status('Setting up filters and routes...')
     # Create common filters instance
@@ -686,57 +601,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
         
         socketio.emit('emit_images_page_show_image_metadata_content', {"content": content, "file_path": file_path})
 
-    @socketio.on('emit_images_page_get_external_metadata_file_content')
-    def get_external_metadata_file_content(file_path):
-        """
-        Reads the content of the external .meta file associated with a file.
-        If the file does not exist, returns an empty string.
-        """
-        nonlocal media_directory
-        full_path = os.path.join(media_directory, file_path)
-        metadata_file_path = full_path + ".meta"
-
-        content = ""
-        try:
-            if os.path.exists(metadata_file_path):
-                with open(metadata_file_path, 'r', encoding='utf-8') as f:
-                    content = f.read()
-            print(f"Read external metadata for {file_path}")
-        except Exception as e:
-            print(f"Error reading external metadata for {file_path}: {e}")
-
-        return {"content": content, "file_path": file_path}
-
-    @socketio.on('emit_images_page_save_external_metadata_file_content')
-    def save_external_metadata_file_content(data):
-        """
-        Saves the provided content to the .meta file associated with a file.
-        """
-        nonlocal media_directory
-        file_path = data['file_path']
-        metadata_content = data['metadata_content']
-        
-        full_path = os.path.join(media_directory, file_path)
-        metadata_file_path = full_path + ".meta"
-
-        try:
-            # Ensure the directory exists before writing the file
-            os.makedirs(os.path.dirname(metadata_file_path), exist_ok=True)
-            with open(metadata_file_path, 'w', encoding='utf-8') as f:
-                f.write(metadata_content)
-            print(f"Saved metadata for {file_path}")
-        except Exception as e:
-            print(f"Error saving metadata for {file_path}: {e}")
-
-    @socketio.on('emit_images_page_get_full_metadata_description')
-    def get_full_metadata_description(file_path):
-        """
-        Generates a full metadata description for a single file.
-        """
-        nonlocal media_directory
-        full_path = os.path.join(media_directory, file_path)
-        content = metadata_search_engine.generate_full_description(full_path, media_directory)
-        return {"content": content, "file_path": file_path}
+    register_meta_handlers(socketio, 'images', lambda: media_directory, metadata_search_engine)
 
     common_socket_events.show_loading_status('Images module ready!')
 
@@ -745,5 +610,3 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
 
     desc_interval = OmegaConf.select(cfg, 'images.description_update_interval_minutes', default=None)
     schedule_task(app, interval_minutes=desc_interval, fn=_check_and_submit_description)
-
-    

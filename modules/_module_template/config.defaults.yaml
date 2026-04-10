@@ -1,0 +1,29 @@
+# config.defaults.yaml — Module configuration defaults (OPTIONAL)
+#
+# This file is auto-merged into the root config at startup via OmegaConf.merge.
+# The top-level key MUST match the module folder name (e.g. "example" → modules/example/).
+# User values in config.yaml always override these defaults.
+#
+# Only include keys your module actually uses. Delete unused lines.
+
+example:
+  # Path to the media directory this module manages.
+  # null means the module is disabled at startup.
+  media_directory: null
+
+  # File extensions to include when scanning media_directory.
+  media_formats:
+    - .ext1
+    - .ext2
+
+  # HuggingFace model ID used by the search engine (engine.py).
+  # Set to null if your module does not use an embedding model.
+  embedding_model: null
+
+  # Background task intervals (minutes). null or 0 = disabled.
+  # rating_update_interval_minutes:   30
+  # description_update_interval_minutes: 60
+
+  # Batch sizes for background tasks.
+  # rating_update_batch_size:   50
+  # description_update_batch_size: 10

@@ -8,7 +8,8 @@
     {% endblock %}
 
   You do NOT write <html>, <head>, or <body> tags — base.html provides those
-  along with the navbar, Bulma CSS, jQuery, Socket.IO client, etc.
+  along with the navbar, Bulma CSS, jQuery, Socket.IO client, theme support,
+  TaskManagerComponent (navbar badge + modal), and log viewer.
 
   Conventions:
     • Load your JS as an ES module: <script type="module" src="modules/YOUR_MODULE/js/main.js">
@@ -16,6 +17,7 @@
     • Use Bulma CSS classes for layout consistency.
     • Mount shared components (SearchBarComponent, FileGridComponent, etc.)
       into placeholder <div> elements.
+    • Use CSS variables from base.html for theme-aware colors (not hardcoded).
 -->
 
 <!-- Load module JavaScript -->
@@ -23,9 +25,9 @@
 
 <!-- PAGE MAIN CONTENT -->
 <div class="container is-fluid columns is-centered py-6">
-  <!-- Optional sidebar -->
+  <!-- Optional sidebar (folder tree, settings, etc.) -->
   <aside class="column is-2 menu">
-    <!-- Sidebar content (folder tree, settings, etc.) -->
+    <div id="folder_tree_container"></div>
   </aside>
 
   <!-- Main content area -->
@@ -62,3 +64,8 @@
     </nav>
   </div>
 </div>
+
+<!-- MetaEditor mount point — for editing .meta sidecar files -->
+<div id="meta_editor_container"></div>
+<!-- MetaEditor mount point — for viewing full AI-generated descriptions (read-only) -->
+<div id="full_description_container"></div>

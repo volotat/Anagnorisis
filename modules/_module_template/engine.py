@@ -5,8 +5,9 @@ This file contains the search engine class that inherits from
 ``BaseSearchEngine``.  The base class handles:
   • Model downloading from Hugging Face Hub
   • Two-level caching (in-memory + on-disk)
-  • File hashing
-  • Batch processing orchestration
+  • File hashing (default MD5; overridable for custom schemes like xxh3)
+  • Batch processing orchestration with progress callbacks
+  • Singleton pattern (one instance per subclass)
 
 Your subclass must implement the abstract methods listed below.
 
@@ -37,6 +38,10 @@ def get_example_metadata(file_path: str) -> dict:
       • Audio  → TinyTag (title, artist, duration, bitrate)
       • Text   → file size, creation time
       • Video  → resolution, duration, codec
+
+    This function is also used by MetadataSearch.generate_full_description()
+    to build the text representation for universal evaluator training.
+    Keep it fast — it is called for every file on every page load.
     """
     metadata = {}
     try:
@@ -59,6 +64,16 @@ class ExampleSearch(BaseSearchEngine):
       4. Implement ``_process_single_file`` to produce an embedding tensor.
       5. Implement ``_get_metadata`` to return file metadata.
       6. Implement ``_get_db_model_class`` to return your SQLAlchemy model.
+      7. Implement ``_get_model_hash_postfix`` for embedding versioning.
+
+    Optional overrides:
+      • ``_get_media_folder()`` — return the media directory path (has a
+        default empty-string implementation in the base class; override if
+        you need path validation in the engine layer).
+      • ``get_file_hash(file_path)`` — override the default MD5 hash with
+        a custom algorithm (e.g. videos use xxh3 sampled hashing for speed).
+      • ``compare(embeds_target, embeds_query)`` — override for custom
+        similarity logic (e.g. text module uses smooth-max over chunks).
     """
 
     def __init__(self, cfg=None):
@@ -109,6 +124,8 @@ class ExampleSearch(BaseSearchEngine):
         of shape ``(1, embedding_dim)``.
 
         This is called by the base class during batch processing.
+        The result is cached using ``(file_hash, model_hash)`` as key.
+        Must be deterministic — same file always produces the same embedding.
         """
         raise NotImplementedError("Implement _process_single_file for your media type")
 
@@ -120,8 +137,21 @@ class ExampleSearch(BaseSearchEngine):
         """Return the SQLAlchemy model class for this module."""
         return db_models.ExampleLibrary
 
+    def _get_model_hash_postfix(self) -> str:
+        """
+        Return a short postfix appended to the model hash for cache keying.
+        Bump this when you change how embeddings are computed (different
+        preprocessing, pooling, etc.) to invalidate stale cached embeddings.
+        """
+        return "_v1.0.0"
+
     def _get_media_folder(self) -> str:
-        """Return the configured media directory path."""
+        """
+        Return the configured media directory path.
+        Used by the base class for file path validation.
+        Override this if you need the engine to know the media folder
+        (not required if only serve.py uses it).
+        """
         if self.cfg is None:
-            raise ValueError("Config not available")
-        return self.cfg.get("example", {}).get("media_directory", "")
+            return ""
+        return self.cfg.get("example", {}).get("media_directory", "") or ""

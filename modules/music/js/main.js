@@ -6,7 +6,7 @@ import PaginationComponent from '/modules/PaginationComponent.js';
 import FileGridComponent from '/modules/FileGridComponent.js';
 import SearchBarComponent from '/modules/SearchBarComponent.js';
 import ContextMenuComponent from '/modules/ContextMenuComponent.js';
-import MetaEditor from '/modules/MetaEditor.js';
+import createModuleMetaEditors from '/modules/ModuleMetaEditors.js';
 
 //// BEFORE PAGE LOADED
 
@@ -122,55 +122,7 @@ function renderCustomData(fileData) { // Function for custom data rendering
   path = decodeURIComponent(path);
   console.log('path', path);
 
-  // Create generic .meta editor wired to Images socket events
-  const externalMetaEditor = new MetaEditor({
-    api: {
-      // Load .meta (Images backend expects the file_path string, returns {content, file_path})
-      load: (filePath, onLoaded) => {
-        socket.emit('emit_music_page_get_external_metadata_file_content', filePath, (response)=>{
-          onLoaded(response.content || '');
-        });
-      },
-      // Save .meta
-      save: async (filePath, content) => {
-        socket.emit('emit_music_page_save_external_metadata_file_content', {
-          file_path: filePath,
-          metadata_content: content
-        });
-      }
-    }
-  });  
-  function openExternalMetaEditorForFile(fileData, readOnly=false) {
-    externalMetaEditor.open({
-      filePath: fileData.file_path,                        // relative path inside media dir
-      displayName: (fileData.base_name + '.meta') || '',   // optional nice title
-    });
-  }
-
-
-  const fullDescriptionMetaEditor = new MetaEditor({
-    api: {
-      // Load full description (Music backend expects the file_path string, returns {content, file_path})
-      load: (filePath, onLoaded) => {
-        socket.emit('emit_music_page_get_full_metadata_description', filePath, (response)=>{
-          onLoaded(response.content || '');
-        });
-      },
-      // Save full description (not implemented)
-      save: (filePath, content) => {
-        // No saving for full description
-        return Promise.resolve();
-      }
-    },
-    readOnly: true, // Always read-only
-  });
-  
-  function openFullDescriptionForFile(fileData) {
-    fullDescriptionMetaEditor.open({
-      filePath: fileData.file_path,                                     // relative path inside media dir
-      displayName: (fileData.base_name + ' full search description') || '',   // optional nice title
-    });
-  }
+  const { openMetaEditor: openExternalMetaEditorForFile, openFullDescription: openFullDescriptionForFile } = createModuleMetaEditors(socket, 'music');
 
   // Create context menu for file items
   const ctxMenu = new ContextMenuComponent();
@@ -444,7 +396,4 @@ function renderCustomData(fileData) { // Function for custom data rendering
   })
 
   //// RESPONDS TO SOCKET EVENTS
-  //socket.on('emit_music_page_add_radio_state', (state) => {
-  //  add_radio_state(state)
-  //});
 })();

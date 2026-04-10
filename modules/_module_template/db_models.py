@@ -36,7 +36,7 @@ class ExampleLibrary(db.Model):
 
     # --- Content identity --------------------------------------------------
     hash = db.Column(db.String, nullable=True, unique=True)
-    hash_algorithm = db.Column(db.String, nullable=True, default=None)
+    hash_algorithm = db.Column(db.String, nullable=True, default=None)  # e.g. "xxh3_128" — set by search engine
     file_path = db.Column(db.String, nullable=True)  # Relative to media_directory
 
     # --- Ratings -----------------------------------------------------------

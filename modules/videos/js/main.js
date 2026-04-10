@@ -3,7 +3,7 @@ import FileGridComponent from '/modules/FileGridComponent.js';
 import PaginationComponent from '/modules/PaginationComponent.js';
 import SearchBarComponent from '/modules/SearchBarComponent.js';
 import ContextMenuComponent from '/modules/ContextMenuComponent.js';
-import MetaEditor from '/modules/MetaEditor.js';
+import createModuleMetaEditors from '/modules/ModuleMetaEditors.js';
 
 // Create a closed scope to avoid any variable collisions  
 (function() {
@@ -22,39 +22,6 @@ import MetaEditor from '/modules/MetaEditor.js';
   // text_query = decodeURIComponent(text_query);
   path = decodeURIComponent(path);
   console.log('path', path);
-
-  // function resize_image(image, maxWidth, maxHeight) {
-  //   const canvas = document.createElement('canvas');
-  //   const ctx = canvas.getContext('2d');
-
-  //   // Set the dimensions of the canvas to the desired dimensions of the image
-  //   let width = image.width;
-  //   let height = image.height;
-
-  //   // Calculate the width and height, maintaining the aspect ratio
-  //   if (width > height) {
-  //     if (width > maxWidth) {
-  //       height *= maxWidth / width;
-  //       width = maxWidth;
-  //     }
-  //   } else {
-  //     if (height > maxHeight) {
-  //       width *= maxHeight / height;
-  //       height = maxHeight;
-  //     }
-  //   }
-
-  //   // Set the canvas width and height and draw the image data into the canvas
-  //   canvas.width = width;
-  //   canvas.height = height;
-  //   ctx.drawImage(image, 0, 0, width, height);
-
-  //   // Get the reduced image data from the canvas
-  //   const reducedImage = new Image();
-  //   reducedImage.src = canvas.toDataURL();
-
-  //   return reducedImage;
-  // }
 
   function renderVideoPreview(fileData) {
     const videoPreviewContainer = document.createElement('div');
@@ -132,53 +99,7 @@ import MetaEditor from '/modules/MetaEditor.js';
     return dataContainer;
   }
 
-  // Create generic .meta editor wired to Images socket events
-  const metaEditor = new MetaEditor({
-    api: {
-      // Load .meta (Images backend expects the file_path string, returns {content, file_path})
-      load: (filePath, onLoaded) => {
-        socket.emit('emit_videos_page_get_external_metadata_file_content', filePath, (response)=>{
-          onLoaded(response.content || '');
-        });
-      },
-      // Save .meta
-      save: async (filePath, content) => {
-        socket.emit('emit_videos_page_save_external_metadata_file_content', {
-          file_path: filePath,
-          metadata_content: content
-        });
-      }
-    }
-  });  
-  function openMetaEditorForFile(fileData) {
-    metaEditor.open({
-      filePath: fileData.file_path,           // relative path inside media dir
-      displayName: fileData.base_name || ''   // optional nice title
-    });
-  }
-
-  const fullDescriptionMetaEditor = new MetaEditor({
-    api: {
-      // Load full description (Videos backend expects the file_path string, returns {content, file_path})
-      load: (filePath, onLoaded) => {
-        socket.emit('emit_videos_page_get_full_metadata_description', filePath, (response)=>{
-          onLoaded(response.content || '');
-        });
-      },
-      // Save full description (read-only — not implemented)
-      save: (filePath, content) => {
-        return Promise.resolve();
-      }
-    },
-    readOnly: true, // Always read-only
-  });
-
-  function openFullDescriptionForFile(fileData) {
-    fullDescriptionMetaEditor.open({
-      filePath: fileData.file_path,
-      displayName: (fileData.base_name + ' full search description') || '',
-    });
-  }
+  const { openMetaEditor: openMetaEditorForFile, openFullDescription: openFullDescriptionForFile } = createModuleMetaEditors(socket, 'videos');
 
   // Create context menu for file items
   const ctxMenu = new ContextMenuComponent();

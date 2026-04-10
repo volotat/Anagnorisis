@@ -53,6 +53,17 @@ Add new downloadable module for 'Deep Research'-like functionality that uses use
 
 ## Versions History
 
+### Version 0.3.12 (10.04.2026)
+*   **Module Template:**
+    *   Updated `modules/_module_template/` to match the actual module architecture. Updated `serve.py`, `engine.py`, `train.py`, `db_models.py`, `page.html`, `js/main.js`, `config.defaults.yaml`, `ARCHITECTURE.md`, `BEST_PRACTICES.md`, and `README.md` with accurate examples, conventions, and documentation reflecting the current codebase.
+*   **Code Deduplication:**
+    *   Extracted shared Python helpers (`src/module_helpers.py`) for `.meta` file handlers and scheduled background tasks (rating and description checks). All four modules now use these shared helpers instead of maintaining their own near-identical copies.
+    *   Extracted shared JavaScript factory (`modules/ModuleMetaEditors.js`) for creating MetaEditor instances. Images, Music, and Videos modules now use a single `createModuleMetaEditors(socket, moduleName)` call instead of duplicating the same MetaEditor setup code.
+*   **Dead Code Removal:**
+    *   Removed unused `parse_terminal_command()` function from `src/file_manager.py`.
+    *   Removed unused imports across all module `serve.py` files.
+    *   Removed commented-out code blocks from Python and JavaScript files across all modules.
+
 ### Version 0.3.11 (08.04.2026)
 *   **Background Ratings:**
     *   Replaced the DB-first unrated file query (which was counting stale rows pointing to deleted/moved files as "unrated") with a disk-first approach. `FileManager.get_unrated_files(evaluator_hash)` now walks the media directory, hashes every file via the engine's path+mtime cache, and queries the DB to find which hashes lack a current rating — naturally ignoring files that no longer exist on disk.

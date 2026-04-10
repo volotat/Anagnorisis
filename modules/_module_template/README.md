@@ -29,14 +29,17 @@ cp -r modules/_module_template modules/my_module
 
 ```
 modules/my_module/
-├── serve.py          # REQUIRED — entry point, socket events, Flask routes
-├── engine.py         # REQUIRED for media modules — search / embedding engine
-├── page.html         # REQUIRED — frontend HTML (injected into base.html)
+├── serve.py               # REQUIRED — entry point, socket events, Flask routes
+├── engine.py              # REQUIRED for media modules — search / embedding engine
+├── page.html              # REQUIRED — frontend HTML (injected into base.html)
 ├── js/
-│   └── main.js       # REQUIRED — frontend JavaScript (ES module)
-├── db_models.py      # OPTIONAL — only if the module needs persistent storage (ratings, play counts, etc.)
-├── train.py          # OPTIONAL — hook for the universal evaluator training pipeline
-└── README.md         # OPTIONAL — module-specific documentation
+│   └── main.js            # REQUIRED — frontend JavaScript (ES module)
+├── db_models.py           # OPTIONAL — persistent storage (ratings, play counts, …)
+├── train.py               # OPTIONAL — universal evaluator training hook
+├── config.defaults.yaml   # OPTIONAL — module config defaults (auto-merged at startup)
+├── requirements.txt       # OPTIONAL — Python dependencies (pip install -r)
+├── CHANGELOG.md           # OPTIONAL — version history (for downloadable modules)
+└── README.md              # OPTIONAL — module-specific documentation
 ```
 
 ---
@@ -53,6 +56,7 @@ Subclass `BaseSearchEngine` and implement the abstract methods:
 - `_process_single_file(file_path)` — produce a `torch.Tensor` embedding
 - `_get_metadata(file_path)` — return a dict of file metadata
 - `_get_db_model_class()` — return your SQLAlchemy model class
+- `_get_model_hash_postfix()` — return a short string identifying model config (used in cache key)
 
 The base class provides: model downloading, two-level caching, hash computation, and batch processing with progress callbacks.
 
@@ -115,43 +119,53 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
 - Import shared components:
 
 ```javascript
-import SearchBarComponent  from '/modules/SearchBarComponent.js';
-import FileGridComponent   from '/modules/FileGridComponent.js';
-import PaginationComponent from '/modules/PaginationComponent.js';
-import StarRatingComponent from '/modules/StarRating.js';
+import SearchBarComponent   from '/modules/SearchBarComponent.js';
+import FileGridComponent    from '/modules/FileGridComponent.js';
+import PaginationComponent  from '/modules/PaginationComponent.js';
+import StarRatingComponent  from '/modules/StarRating.js';
+import ContextMenuComponent from '/modules/ContextMenuComponent.js';
+import MetaEditor           from '/modules/MetaEditor.js';
 ```
 
-### 5. Add configuration (`config.yaml`)
+### 5. Add configuration
+
+Create a `config.defaults.yaml` in your module folder with sensible defaults. This is auto-merged at startup — users can override any value in the root `config.yaml`:
 
 ```yaml
+# modules/my_module/config.defaults.yaml
 my_module:
-  embedding_model: "namespace/model-name"
-  media_directory: /path/to/media/files
+  media_directory: null          # null = disabled at startup
   media_formats:
     - .ext1
     - .ext2
+  embedding_model: "namespace/model-name"
+```
+
+Users can then override in the root `config.yaml`:
+
+```yaml
+my_module:
+  media_directory: /path/to/media/files
 ```
 
 ### 6. Integrate with the universal evaluator (`train.py`) — *optional*
 
-Anagnorisis does **not** use per-module evaluator models. Instead, a single **universal evaluator** is trained on user-rated items from **all** modules. It works by converting every media file into a text description (via `MetadataSearch.generate_full_description()`), embedding that text, and training on `(embedding, user_rating)` pairs.
+Anagnorisis does **not** use per-module evaluator models. Instead, a single **universal evaluator** is trained on user-rated items from **all** modules. The training system auto-discovers modules by globbing `modules/*/train.py` and calling `get_training_pairs()`.
 
-To integrate your module, create `train.py` that exposes a helper the training system can call:
+To integrate your module, create `train.py` that exposes this function:
 
 ```python
-import os
-
-def get_rated_items(cfg):
+def get_training_pairs(cfg, text_embedder, status_callback=None):
     """
-    Return a list of dicts for the universal evaluator training pipeline.
+    Yield (embedding, user_rating) pairs for universal evaluator training.
 
-    Each dict must contain:
-      - "text_path": str — absolute path to a text file (.txt / .md) containing
-                           a textual representation of the media item
-                           (auto-generated description, metadata, etc.)
-      - "user_rating": float — the user's score for this item (0–10)
+    Args:
+        cfg:             OmegaConf config object
+        text_embedder:   TextEmbedder instance — call text_embedder.embed(text) → tensor
+        status_callback: Optional callable for progress reporting — status_callback("message")
 
-    The universal evaluator embeds the text and trains on (embedding, rating) pairs.
+    Yields:
+        tuple of (torch.Tensor, float) — (text_embedding, user_rating)
     """
     import modules.my_module.db_models as db_models
 
@@ -159,21 +173,15 @@ def get_rated_items(cfg):
         db_models.MyModuleLibrary.user_rating.isnot(None)
     ).all()
 
-    media_dir = cfg.my_module.media_directory
-    rated_items = []
+    for i, entry in enumerate(entries):
+        if status_callback:
+            status_callback(f"Processing {i + 1}/{len(entries)}")
 
-    for entry in entries:
-        file_path = os.path.join(media_dir, entry.file_path)
-        # Text description file — generated by MetadataSearch or your own logic
-        text_path = file_path + ".description.txt"
+        # Build a text description of the file (metadata, .meta content, etc.)
+        description = build_description(entry)  # your logic here
+        embedding = text_embedder.embed(description)
 
-        if os.path.isfile(text_path):
-            rated_items.append({
-                "text_path": text_path,
-                "user_rating": entry.user_rating,
-            })
-
-    return rated_items
+        yield embedding, entry.user_rating
 ```
 
-The text description file should mirror what `MetadataSearch.generate_full_description()` produces: file name, relative path, OmniDescriptor auto-description, internal metadata, and `.meta` sidecar content. See [ARCHITECTURE.md](ARCHITECTURE.md) for the full training pipeline.
+The universal evaluator converts every rated item into a text description, embeds it, and trains on `(embedding, user_rating)` pairs. See [ARCHITECTURE.md](ARCHITECTURE.md) for the full training pipeline.

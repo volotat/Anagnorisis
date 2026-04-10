@@ -4,7 +4,7 @@ import PaginationComponent from '/modules/PaginationComponent.js';
 import FileGridComponent from '/modules/FileGridComponent.js';
 import SearchBarComponent from '/modules/SearchBarComponent.js';
 import ContextMenuComponent from '/modules/ContextMenuComponent.js';
-import MetaEditor from '/modules/MetaEditor.js';
+import createModuleMetaEditors from '/modules/ModuleMetaEditors.js';
 
 
 // Create a closed scope to avoid any variable collisions  
@@ -208,61 +208,6 @@ import MetaEditor from '/modules/MetaEditor.js';
     levelLeft.append(btnsRow1);
     levelLeft.append(btnsRow2);
 
-    // Create buttons for opening the file
-    // const btn_open = document.createElement('button');
-    // btn_open.className = 'button level-left is-gapless';
-    // btn_open.innerHTML = '<span class="icon"><i class="fas fa-folder-open"></i></span><span>Open</span>';
-    // btn_open.onclick = function() {
-    //   console.log('Open file in folder: ' + fileData.full_path);
-    //   socket.emit('emit_images_page_open_file_in_folder', fileData.full_path);
-    // };
-    // btnsRow1.append(btn_open);
-
-    // Create a button for finding similar images
-    // const btn_find_similar = document.createElement('button');
-    // btn_find_similar.className = 'button level-left is-gapless';
-    // btn_find_similar.innerHTML = '<span class="icon"><i class="fas fa-search"></i></span><span>Find similar</span>';
-    // btn_find_similar.onclick = function() {
-    //   console.log('Find similar images for: ' + fileData.full_path);
-
-    //   let url = new URL(window.location.href);
-    //   let params = new URLSearchParams(url.search);
-    //   params.set('text_query', fileData.full_path);
-    //   params.set('page', 1);
-    //   url.search = params.toString();
-    //   window.location.href = url.toString();
-    // };
-    // btnsRow1.append(btn_find_similar);
-
-    // --- Add the Edit Internal Metadata button (temporarily disabled) ---
-    // const btn_edit_internal_metadata = document.createElement('button');
-    // btn_edit_internal_metadata.disabled = true; // Temporarily disable this button
-    // btn_edit_internal_metadata.className = 'button level-left is-gapless';
-    // btn_edit_internal_metadata.innerHTML = '<span class="icon"><i class="fas fa-file"></i></span><span>Edit meta</span>';
-    // btn_edit_internal_metadata.onclick = function() {
-    //     // console.log('Edit internal metadata for: ' + fileData.file_path);
-    //     // currentImageMetadataFilePath = fileData.file_path; // Set the global tracker
-    //     // $('#metadata_modal_title').text(`Edit ${fileData.base_name}.meta`); // Set modal title
-    //     // $('#metadata_content_textarea').val('Loading metadata...'); // Show loading state
-    //     // socket.emit('emit_images_page_get_image_metadata_file_content', fileData.file_path);
-    //     // $('#metadata_editor_modal').addClass('is-active'); // Show modal
-    // };
-    // btnsRow2.append(btn_edit_internal_metadata);
-
-    // --- Add the Edit External Metadata button ---
-    // const btn_edit_external_metadata = document.createElement('button');
-    // btn_edit_external_metadata.className = 'button level-left is-gapless';
-    // btn_edit_external_metadata.innerHTML = '<span class="icon"><i class="fas fa-question"></i></span><span>Edit .meta</span>'; // Changed to 'Edit Meta' for space
-    // btn_edit_external_metadata.onclick = function() {
-    //     console.log('Edit metadata for: ' + fileData.file_path);
-    //     currentImageMetadataFilePath = fileData.file_path; // Set the global tracker
-    //     $('#metadata_modal_title').text(`Edit ${fileData.base_name}.meta`); // Set modal title
-    //     $('#metadata_content_textarea').val('Loading metadata...'); // Show loading state
-    //     socket.emit('emit_images_page_get_image_metadata_file_content', fileData.file_path);
-    //     $('#metadata_editor_modal').addClass('is-active'); // Show modal
-    // };
-    // btnsRow2.append(btn_edit_external_metadata);
-
     // Create a checkbox for selecting the file for further actions
     const checkboxLabel = document.createElement('label');
     checkboxLabel.className = 'b-checkbox checkbox is-large level-right mr-0 ';
@@ -409,54 +354,7 @@ import MetaEditor from '/modules/MetaEditor.js';
     return folderRepresentation;
   }
 
-  // Create generic .meta editor wired to Images socket events
-  const metaEditor = new MetaEditor({
-    api: {
-      // Load .meta (Images backend expects the file_path string, returns {content, file_path})
-      load: (filePath, onLoaded) => {
-        socket.emit('emit_images_page_get_external_metadata_file_content', filePath, (response)=>{
-          onLoaded(response.content || '');
-        });
-      },
-      // Save .meta
-      save: async (filePath, content) => {
-        socket.emit('emit_images_page_save_external_metadata_file_content', {
-          file_path: filePath,
-          metadata_content: content
-        });
-      }
-    }
-  });  
-  function openMetaEditorForFile(fileData) {
-    metaEditor.open({
-      filePath: fileData.file_path,           // relative path inside media dir
-      displayName: fileData.base_name || ''   // optional nice title
-    });
-  }
-
-  const fullDescriptionMetaEditor = new MetaEditor({
-    api: {
-      // Load full description (Images backend expects the file_path string, returns {content, file_path})
-      load: (filePath, onLoaded) => {
-        socket.emit('emit_images_page_get_full_metadata_description', filePath, (response)=>{
-          onLoaded(response.content || '');
-        });
-      },
-      // Save full description (not implemented)
-      save: (filePath, content) => {
-        // No saving for full description
-        return Promise.resolve();
-      }
-    },
-    readOnly: true, // Always read-only
-  });
-  
-  function openFullDescriptionForFile(fileData) {
-    fullDescriptionMetaEditor.open({
-      filePath: fileData.file_path,                                     // relative path inside media dir
-      displayName: (fileData.base_name + ' full search description') || '',   // optional nice title
-    });
-  }
+  const { openMetaEditor: openMetaEditorForFile, openFullDescription: openFullDescriptionForFile } = createModuleMetaEditors(socket, 'images');
 
   // Create context menu for file items
   const ctxMenu = new ContextMenuComponent();

@@ -278,20 +278,6 @@ $(document).ready(function() {
         }
     });
 
-    
-
-    // // --- Folder View ---
-    // socket.on('emit_text_page_show_folders', (data) => { // NEW event handler for folders
-    //     const folderView = new FolderViewComponent(data.folders, data.folder_path, true); // Enable context menu
-    //     $('.menu').append(folderView.getDOMElement());
-    // });
-
-    
-    // let paginationComponent; // Declare paginationComponent in the scope 
-    // socket.on('emit_text_page_show_files', (data) => {
-        
-    // });
-
     // Function to switch tabs in the modal
     function showTab(tabName) {
         $('.tab-content').hide(); // Hide all tab contents

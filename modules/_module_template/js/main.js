@@ -5,23 +5,27 @@
  * The global `socket` variable (Socket.IO client) is available from base.html.
  *
  * Shared UI components are importable from /modules/:
- *   - SearchBarComponent  — text input + sorting dropdown
+ *   - SearchBarComponent  — text input + sorting/mode dropdown + temperature control
  *   - FileGridComponent   — responsive grid of file cards
  *   - PaginationComponent — page navigation controls
  *   - FolderViewComponent — collapsible folder tree sidebar
  *   - StarRatingComponent — clickable 1–10 star widget
- *   - ContextMenuComponent — right-click context menu
- *   - MetaEditor          — file metadata editor modal
+ *   - ContextMenuComponent — right-click context menu builder
+ *   - MetaEditor          — file metadata editor modal (editable + read-only modes)
+ *
+ * TaskManagerComponent is auto-initialised by base.html — no import needed.
  *
  * Naming conventions for socket events:
  *   emit_{module}_page_{action}   — must match the handlers in serve.py
  */
 
-import SearchBarComponent from '/modules/SearchBarComponent.js';
-import FileGridComponent  from '/modules/FileGridComponent.js';
+import SearchBarComponent  from '/modules/SearchBarComponent.js';
+import FileGridComponent   from '/modules/FileGridComponent.js';
 import PaginationComponent from '/modules/PaginationComponent.js';
 import FolderViewComponent from '/modules/FolderViewComponent.js';
 import StarRatingComponent from '/modules/StarRating.js';
+import ContextMenuComponent from '/modules/ContextMenuComponent.js';
+import MetaEditor          from '/modules/MetaEditor.js';
 
 // Wrap everything in an IIFE to avoid polluting the global scope
 (function () {
@@ -42,6 +46,66 @@ import StarRatingComponent from '/modules/StarRating.js';
     seed = Math.floor(Math.random() * 1e9);
     urlParams.set('seed', seed);
     window.history.replaceState({}, '', '?' + urlParams.toString());
+  }
+
+  // ── MetaEditor instances ───────────────────────────────────────────
+  // Editable instance — for .meta sidecar files
+  const metaEditor = new MetaEditor({
+    containerId: 'meta_editor_container',
+    readOnly: false,
+    onSave: (filePath, content) => {
+      socket.emit(`emit_${MODULE_NAME}_page_save_external_metadata_file_content`, {
+        file_path: filePath,
+        metadata_content: content,
+      });
+    },
+  });
+
+  // Read-only instance — for viewing full AI-generated descriptions
+  const fullDescriptionViewer = new MetaEditor({
+    containerId: 'full_description_container',
+    readOnly: true,
+  });
+
+  // ── Context menu ───────────────────────────────────────────────────
+  const contextMenu = new ContextMenuComponent();
+
+  function createContextMenuForFile(fileData) {
+    return [
+      {
+        label: 'Open in new tab',
+        action: () => {
+          window.open(`/${MODULE_NAME}_files/${fileData.file_path}`, '_blank');
+        },
+      },
+      {
+        label: 'Find similar',
+        action: () => {
+          searchBar.setValue(fileData.file_path);
+          searchBar.setSortBy('similarity');
+          page = 1;
+          requestFiles();
+        },
+      },
+      {
+        label: 'Edit .meta file',
+        action: () => {
+          socket.emit(`emit_${MODULE_NAME}_page_get_external_metadata_file_content`,
+            fileData.file_path, (response) => {
+              metaEditor.open(response.file_path, response.content);
+            });
+        },
+      },
+      {
+        label: 'Show full search description',
+        action: () => {
+          socket.emit(`emit_${MODULE_NAME}_page_get_full_metadata_description`,
+            fileData.file_path, (response) => {
+              fullDescriptionViewer.open(response.file_path, response.content);
+            });
+        },
+      },
+    ];
   }
 
   // ── Render helpers ─────────────────────────────────────────────────
@@ -103,6 +167,21 @@ import StarRatingComponent from '/modules/StarRating.js';
     },
   });
 
+  // ── Folder tree ────────────────────────────────────────────────────
+  const folderView = new FolderViewComponent({
+    containerId: 'folder_tree_container',
+    onFolderSelect: (folderPath) => {
+      path = folderPath;
+      page = 1;
+      requestFiles();
+    },
+  });
+
+  // Request folder tree from backend
+  socket.emit(`emit_${MODULE_NAME}_page_get_folders`, { path: '' }, (data) => {
+    folderView.render(data);
+  });
+
   // ── Pagination ─────────────────────────────────────────────────────
   const pagination = new PaginationComponent({
     containerSelectors: ['.pagination-list'],
@@ -118,6 +197,10 @@ import StarRatingComponent from '/modules/StarRating.js';
     columnsPerRow: FILES_PER_ROW,
     renderPreview: renderPreview,
     renderCustomData: renderCustomData,
+    onContextMenu: (fileData, event) => {
+      event.preventDefault();
+      contextMenu.show(event, createContextMenuForFile(fileData));
+    },
   });
 
   // ── Data fetching ──────────────────────────────────────────────────

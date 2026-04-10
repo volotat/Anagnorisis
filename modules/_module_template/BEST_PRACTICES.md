@@ -86,6 +86,113 @@ with app.app_context():
 
 ---
 
+## Module configuration
+
+### `config.defaults.yaml`
+
+If your module has configurable settings, create a `config.defaults.yaml` in your module folder. This file is auto-merged into the root config at startup — values in the root `config.yaml` override module defaults.
+
+```yaml
+# modules/my_module/config.defaults.yaml
+my_module:
+  media_directory: null
+  media_formats:
+    - .ext1
+    - .ext2
+  embedding_model: null
+  rating_update_interval_minutes: 60
+  rating_update_batch_size: 100
+  description_update_interval_minutes: 10
+  description_update_batch_size: 100
+```
+
+> The section name **must** match your module folder name. Set `null` for values that users must configure (like `media_directory`).
+
+### `requirements.txt`
+
+If your module needs Python packages beyond the core dependencies, list them in a `requirements.txt` inside your module folder. Users must rebuild the Docker image or `pip install -r modules/my_module/requirements.txt` after installing your module.
+
+```
+# modules/my_module/requirements.txt
+some-library>=1.0
+another-package
+```
+
+Keep this minimal — only list packages not already in the root `requirements.txt`.
+
+---
+
+## Task Manager usage
+
+Use `app.task_manager.submit()` for any operation that takes more than a few seconds:
+- Batch rating of files
+- AI description generation
+- Model training
+- File re-indexing
+
+Do **not** use it for quick queries (file listing, folder tree, single rating save). Those should execute directly in the socket handler.
+
+```python
+def task(ctx):
+    for i, item in enumerate(items):
+        ctx.check()  # Raises if user cancelled the task
+        ctx.update(i / len(items), f'Processing {i+1}/{len(items)}...')
+        process(item)
+
+app.task_manager.submit('My Module: process items (42)', task)
+```
+
+Always check for duplicate tasks before submitting (see [ARCHITECTURE.md](ARCHITECTURE.md) → Task Manager).
+
+---
+
+## Scheduled background tasks
+
+Use `schedule_task()` for periodic background maintenance that submits work to the Task Manager:
+
+```python
+from src.scheduler import schedule_task
+
+def _check_and_submit_rating():
+    # 1. Check if task already running/queued → return early
+    # 2. Find candidates (file_manager.get_unrated_files)
+    # 3. Submit as task_manager job
+    ...
+
+# Register at end of init_socket_events, after all handlers
+interval = OmegaConf.select(cfg, 'my_module.rating_update_interval_minutes', default=None)
+schedule_task(app, interval_minutes=interval, fn=_check_and_submit_rating)
+```
+
+- Set interval to `null` in config to disable a scheduled task.
+- Define the `_check_and_submit_*` functions **inside** `init_socket_events` so they have access to the module's local variables via closure.
+- Register `schedule_task()` calls at the **end** of `init_socket_events`, after all socket handlers are set up.
+
+---
+
+## `.meta` sidecar files
+
+All media modules support external metadata via `{filename}.meta` text files stored alongside the original file. Include these three socket handlers in your module:
+
+1. **Read `.meta` content:** `emit_{module}_page_get_external_metadata_file_content`
+2. **Save `.meta` content:** `emit_{module}_page_save_external_metadata_file_content`
+3. **Generate full AI description:** `emit_{module}_page_get_full_metadata_description`
+
+The `.meta` content is included in `MetadataSearch.generate_full_description()` and contributes to both search relevance and universal evaluator training.
+
+---
+
+## Docker path conversion
+
+When running in Docker, the host media directory path differs from the container path. File move operations need to handle both:
+
+- The user sees and inputs **host** paths (from `docker-compose.override.yaml`)
+- The backend works with **container** paths
+
+If your module supports file move operations, implement path conversion by mapping from the Docker volume mount source to the container mount target. See the images module's `emit_images_page_move_files` handler for the reference implementation.
+
+---
+
 ## Database model guidelines
 
 ### When to create `db_models.py`
@@ -205,6 +312,10 @@ def _get_model_hash_postfix(self):
 | Files 404 in the browser | Verify the Flask route path matches what the frontend requests (e.g. `/my_module_files/...`) |
 | Stale embeddings after model change | Bump `_get_model_hash_postfix()` to invalidate caches |
 | `model_name` returns `None` but you expected it | Check that your config section name in `config.yaml` exactly matches what `engine.py` reads |
+| `config.defaults.yaml` not being merged | Verify the file is at `modules/my_module/config.defaults.yaml` (not nested deeper) and the top-level YAML key matches the module folder name |
+| Scheduled tasks not running | Check that the interval in config is a positive number, not `null`. Verify `schedule_task()` is called after `init_socket_events` finishes setup |
+| Task Manager not available | Access via `app.task_manager`, not by importing directly. It's set on the Flask app object in `app.py` |
+| Module not contributing to training | Ensure `train.py` exists at `modules/my_module/train.py` and exposes `get_training_pairs()`. The folder must not start with `_` |
 
 ---
 
@@ -216,3 +327,12 @@ def _get_model_hash_postfix(self):
 4. **Watch the logs.** Any exceptions in `init_socket_events` are caught and logged, but the module will appear stuck on the loading screen.
 5. **Test with a small media folder** first — a handful of files is enough to validate the full pipeline.
 6. **Test the rating flow end-to-end:** rate a file → check it appears in the database → train the universal evaluator → verify `model_rating` gets written back.
+
+---
+
+## Documentation for downloadable modules
+
+If your module is distributed separately (e.g. via `git clone` into `modules/`), include:
+
+- **`README.md`** — Installation instructions, dependencies, configuration keys, usage notes.
+- **`CHANGELOG.md`** — Version history and breaking changes so users know what changed between updates.

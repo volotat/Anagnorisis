@@ -1,5 +1,5 @@
 
-from flask import Flask, render_template, send_from_directory, Response, stream_with_context
+from flask import send_from_directory
 import os
 import sys
 import glob
@@ -37,6 +37,7 @@ from src.utils import convert_size, convert_length, time_difference
 from src.common_filters import CommonFilters
 from src.metadata_search import MetadataSearch
 from src.scheduler import schedule_task
+from src.module_helpers import register_meta_handlers, make_scheduled_rating_check, make_scheduled_description_check
 
 
 # EVENTS:
@@ -227,68 +228,13 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
         # Commit the transaction
         db_models.db.session.commit()
 
-    def _check_and_submit_rating():
-        """Scheduled: find unrated videos on disk and submit a rating task if needed."""
-        if videos_evaluator.hash is None:
-            return
-        base_name = 'Videos: rate unrated files'
-        state = app.task_manager.get_state()
-        active = state['active']
-        if (active and active.get('name', '').startswith(base_name)) or \
-                any(t.get('name', '').startswith(base_name) for t in state['queued']):
-            return
-        candidates = videos_file_manager.get_unrated_files(videos_evaluator.hash)
-        total = len(candidates)
-        if total == 0:
-            return
+    _check_and_submit_rating = make_scheduled_rating_check(
+        app, 'Videos', videos_file_manager, videos_evaluator, cfg, 'videos', update_model_ratings
+    )
 
-        batch_size = OmegaConf.select(cfg, 'videos.rating_update_batch_size', default=None)
-        batch_size = min(batch_size, total) if batch_size else total
-        number_of_files_to_rate_str = f"{batch_size} of {total}" if batch_size < total else f"{total}"
-
-        def task(ctx):
-            files_list = candidates[:batch_size]
-            ctx.update(0.0, f'Rating {len(files_list)} of {total} videos...')
-            update_model_ratings(files_list)
-
-        app.task_manager.submit(f'{base_name} ({number_of_files_to_rate_str})', task)
-
-    def _check_and_submit_description():
-        """Scheduled: find undescribed videos on disk and submit a description task if needed."""
-        base_name = 'Videos: describe undescribed files'
-        state = app.task_manager.get_state()
-        active = state['active']
-        if (active and active.get('name', '').startswith(base_name)) or \
-                any(t.get('name', '').startswith(base_name) for t in state['queued']):
-            return
-        all_files = videos_file_manager.list_all_files()
-        if not all_files:
-            return
-        candidates = metadata_search_engine.get_undescribed_files(all_files)
-        # None means model hash is unknown (never loaded) — treat all files as candidates
-        if candidates is not None and len(candidates) == 0:
-            return
-        if candidates is None:
-            candidates = all_files
-        batch_size = OmegaConf.select(cfg, 'videos.description_update_batch_size', default=50)
-        batch_size = min(batch_size, len(candidates))
-        batch = candidates[:batch_size]
-        n_total = len(candidates)
-        label = f'{batch_size} of {n_total}' if batch_size < n_total else str(n_total)
-
-        def task(ctx):
-            try:
-                for i, fp in enumerate(batch):
-                    ctx.check()
-                    ctx.update(i / len(batch), f'Describing video {i + 1}/{len(batch)} of {n_total}...')
-                    try:
-                        metadata_search_engine._get_auto_description(fp)
-                    except Exception as e:
-                        print(f'[Videos: describe] Failed for {fp}: {e}')
-            finally:
-                metadata_search_engine.omni_descriptor.unload()
-
-        app.task_manager.submit(f'{base_name} ({label})', task)
+    _check_and_submit_description = make_scheduled_description_check(
+        app, 'Videos', videos_file_manager, metadata_search_engine, cfg, 'videos'
+    )
 
     common_socket_events.show_loading_status('Setting up filters and routes...')
 
@@ -502,58 +448,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
             db_models.db.session.add(new_video)
             db_models.db.session.commit()
 
-    @socketio.on('emit_videos_page_get_external_metadata_file_content')
-    def get_external_metadata_file_content(file_path):
-        """
-        Reads the content of the external .meta file associated with a file.
-        If the file does not exist, returns an empty string.
-        """
-        nonlocal media_directory
-        full_path = os.path.join(media_directory, file_path)
-        metadata_file_path = full_path + ".meta"
-
-        content = ""
-        try:
-            if os.path.exists(metadata_file_path):
-                with open(metadata_file_path, 'r', encoding='utf-8') as f:
-                    content = f.read()
-            print(f"Read external metadata for {file_path}")
-        except Exception as e:
-            print(f"Error reading external metadata for {file_path}: {e}")
-
-        return {"content": content, "file_path": file_path}
-
-    @socketio.on('emit_videos_page_save_external_metadata_file_content')
-    def save_external_metadata_file_content(data):
-        """
-        Saves the provided content to the .meta file associated with a file.
-        """
-        nonlocal media_directory
-        file_path = data['file_path']
-        metadata_content = data['metadata_content']
-        
-        full_path = os.path.join(media_directory, file_path)
-        metadata_file_path = full_path + ".meta"
-
-        try:
-            # Ensure the directory exists before writing the file
-            os.makedirs(os.path.dirname(metadata_file_path), exist_ok=True)
-            with open(metadata_file_path, 'w', encoding='utf-8') as f:
-                f.write(metadata_content)
-            print(f"Saved metadata for {file_path}")
-        except Exception as e:
-            print(f"Error saving metadata for {file_path}: {e}")
-
-    @socketio.on('emit_videos_page_get_full_metadata_description')
-    def get_full_metadata_description(file_path):
-        """
-        Generates a full metadata description for a single file,
-        including any automatic description from OmniDescriptor.
-        """
-        nonlocal media_directory
-        full_path = os.path.join(media_directory, file_path)
-        content = metadata_search_engine.generate_full_description(full_path, media_directory)
-        return {"content": content, "file_path": file_path}
+    register_meta_handlers(socketio, 'videos', lambda: media_directory, metadata_search_engine)
 
     # ----------------------------------------
     # HSL Streaming test

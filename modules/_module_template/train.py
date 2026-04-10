@@ -113,4 +113,5 @@ def get_training_pairs(cfg, text_embedder, status_callback=None):
 
         yield (np.array(chunk_embeddings, dtype=np.float32), float(entry.user_rating))
 
-        status_callback(f"my_module: embedded {i + 1}/{total} items...")
+        if status_callback:
+            status_callback(f"my_module: embedded {i + 1}/{total} items...")

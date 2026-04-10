@@ -1,73 +1,11 @@
 import os
+import json
 import pickle
 import hashlib
 import datetime
-import shlex
-import json
 import torch
 
 from src.db_models import db
-
-def parse_terminal_command(input_string: str) -> tuple[str | None, dict]:
-    """
-    Parses a terminal-like command string into a command and a dictionary of arguments.
-
-    Args:
-        input_string: The string to parse, e.g., "recommendation -t 0.2 --mode strict".
-
-    Returns:
-        A tuple containing:
-        - The command name (str) if parsing is successful, otherwise None.
-        - A dictionary of parsed arguments.
-    """
-    try:
-        # Use shlex.split to handle quoted arguments correctly
-        parts = shlex.split(input_string)
-    except ValueError:
-        # shlex fails on unclosed quotes, treat as a non-command
-        return None, {}
-
-    if not parts:
-        return None, {}
-
-    command = parts[0]
-    # A simple check: if the first "word" contains internal spaces, it's likely not a command.
-    # shlex.split handles quotes, so this is a safe check.
-    if ' ' in command:
-        return None, {}
-
-    # Check if any subsequent part looks like an argument flag.
-    # This is our heuristic to decide if it's a "command-like" string.
-    is_command_like = any(p.startswith('-') for p in parts[1:])
-    
-    # If it's just a single word (like "recommendation"), treat it as a command.
-    if len(parts) == 1 and not command.startswith('-'):
-         is_command_like = True
-
-    if not is_command_like:
-        return None, {}
-
-    args = {}
-    i = 1
-    while i < len(parts):
-        part = parts[i]
-        if part.startswith('-'):
-            # Check if there is a next part and it's not another flag
-            if i + 1 < len(parts) and not parts[i+1].startswith('-'):
-                # It's a key-value pair, e.g., "-t 0.2"
-                args[part] = parts[i+1]
-                i += 2
-            else:
-                # It's a flag without a value, e.g., "--verbose"
-                args[part] = True
-                i += 1
-        else:
-            # This part is not a flag, so we can't process it in key-value style.
-            # You could assign it to a default key or ignore it.
-            # For now, we'll ignore it to keep the parsing strict.
-            i += 1
-            
-    return command, args
 
 def get_folder_structure(folder_path, media_extensions=None):
     # Check if directory exists and return None if not

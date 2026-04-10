@@ -2,8 +2,7 @@ import os
 import time
 import datetime
 
-from flask import Flask, render_template, send_from_directory
-from flask_socketio import SocketIO
+
 
 import src.utils
 import src.file_manager as file_manager 
@@ -16,6 +15,7 @@ from modules.text.engine import TextSearch
 from modules.train.universal_train import UniversalEvaluator
 from src.utils import SortingProgressCallback, EmbeddingGatheringCallback
 from src.scheduler import schedule_task
+from src.module_helpers import make_scheduled_rating_check, make_scheduled_description_check
 
 
 from omegaconf import OmegaConf
@@ -201,66 +201,13 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
         # Commit the transaction
         db_models.db.session.commit()
 
-    def _check_and_submit_rating():
-        """Scheduled: find unrated text files on disk and submit a rating task if needed."""
-        base_name = 'Text: rate unrated files'
-        state = app.task_manager.get_state()
-        active = state['active']
-        if (active and active.get('name', '').startswith(base_name)) or \
-                any(t.get('name', '').startswith(base_name) for t in state['queued']):
-            return
-        candidates = text_file_manager.get_unrated_files(text_evaluator.hash)
-        total = len(candidates)
-        if total == 0:
-            return
+    _check_and_submit_rating = make_scheduled_rating_check(
+        app, 'Text', text_file_manager, text_evaluator, cfg, 'text', update_model_ratings
+    )
 
-        batch_size = OmegaConf.select(cfg, 'text.rating_update_batch_size', default=None)
-        batch_size = min(batch_size, total) if batch_size else total
-        number_of_files_to_rate_str = f"{batch_size} of {total}" if batch_size < total else f"{total}"
-
-        def task(ctx):
-            files_list = candidates[:batch_size]
-            ctx.update(0.0, f'Rating {len(files_list)} of {total} text files...')
-            update_model_ratings(files_list)
-
-        app.task_manager.submit(f'{base_name} ({number_of_files_to_rate_str})', task)
-
-    def _check_and_submit_description():
-        """Scheduled: find undescribed text files on disk and submit a description task if needed."""
-        base_name = 'Text: describe undescribed files'
-        state = app.task_manager.get_state()
-        active = state['active']
-        if (active and active.get('name', '').startswith(base_name)) or \
-                any(t.get('name', '').startswith(base_name) for t in state['queued']):
-            return
-        all_files = text_file_manager.list_all_files()
-        if not all_files:
-            return
-        candidates = metadata_search_engine.get_undescribed_files(all_files)
-        # None means model hash is unknown (never loaded) — treat all files as candidates
-        if candidates is not None and len(candidates) == 0:
-            return
-        if candidates is None:
-            candidates = all_files
-        batch_size = OmegaConf.select(cfg, 'text.description_update_batch_size', default=100)
-        batch_size = min(batch_size, len(candidates))
-        batch = candidates[:batch_size]
-        n_total = len(candidates)
-        label = f'{batch_size} of {n_total}' if batch_size < n_total else str(n_total)
-
-        def task(ctx):
-            try:
-                for i, fp in enumerate(batch):
-                    ctx.check()
-                    ctx.update(i / len(batch), f'Describing file {i + 1}/{len(batch)} of {n_total}...')
-                    try:
-                        metadata_search_engine._get_auto_description(fp)
-                    except Exception as e:
-                        print(f'[Text: describe] Failed for {fp}: {e}')
-            finally:
-                metadata_search_engine.omni_descriptor.unload()
-
-        app.task_manager.submit(f'{base_name} ({label})', task)
+    _check_and_submit_description = make_scheduled_description_check(
+        app, 'Text', text_file_manager, metadata_search_engine, cfg, 'text'
+    )
 
     common_socket_events.show_loading_status('Setting up filters and routes...')
     # Create common filters instance

@@ -7,10 +7,12 @@ discovers it automatically and calls `init_socket_events(...)` during startup.
 Responsibilities:
   1. Create a CommonSocketEvents instance for progress/status reporting.
   2. Instantiate and initialise the search engine (engine.py).
-  3. Optionally load an evaluator model for AI-based scoring.
+  3. Load the universal evaluator for AI-based scoring.
   4. Set up FileManager for browsing / hashing / paginating files.
-  5. Register Flask routes (e.g. serving raw media files to the browser).
-  6. Register SocketIO event handlers for every action the frontend needs.
+  5. Set up MetadataSearch and CommonFilters.
+  6. Register Flask routes (e.g. serving raw media files to the browser).
+  7. Register SocketIO event handlers for every action the frontend needs.
+  8. Define and schedule background tasks (rating, description generation).
 
 Naming conventions for socket events:
   Incoming  →  emit_{MODULE}_page_{action}   (e.g. emit_example_page_get_files)
@@ -35,6 +37,7 @@ import modules._module_template.db_models as db_models
 from src.socket_events import CommonSocketEvents
 from src.common_filters import CommonFilters
 from src.metadata_search import MetadataSearch
+from src.scheduler import schedule_task
 from src.utils import convert_size, SortingProgressCallback, EmbeddingGatheringCallback
 
 
@@ -46,6 +49,9 @@ from src.utils import convert_size, SortingProgressCallback, EmbeddingGatheringC
 #   emit_example_page_set_rating
 #   emit_example_page_get_path_to_media_folder
 #   emit_example_page_update_path_to_media_folder
+#   emit_example_page_get_external_metadata_file_content
+#   emit_example_page_save_external_metadata_file_content
+#   emit_example_page_get_full_metadata_description
 #
 # Outgoing socket events emitted by this module:
 #
@@ -91,11 +97,11 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
 
     # --- 4. (Optional) Load the universal evaluator for AI scoring --------
     # Anagnorisis uses a single universal evaluator for all modules.
-    # Load it here if you want model-predicted ratings in your file listings:
+    # Uncomment these lines to enable model-predicted ratings in file listings:
     #
-    # from modules.train.universal_train import UniversalEvaluator
-    # evaluator = UniversalEvaluator()
-    # evaluator.load(os.path.join(cfg.main.personal_models_path, 'universal_evaluator.pt'))
+    from modules.train.universal_train import UniversalEvaluator
+    evaluator = UniversalEvaluator()
+    evaluator.load(os.path.join(cfg.main.personal_models_path, 'universal_evaluator.pt'))
 
     # --- 5. Embedding callback (for progress reporting) ------------------
     embedding_callback = EmbeddingGatheringCallback(common_socket_events.show_search_status)
@@ -122,10 +128,128 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
     def update_model_ratings(files_list):
         """
         Re-compute AI model ratings for files that don't have one yet. 
-        Called automatically by CommonFilters when the user sorts by 'rating'.
-        Adapt this to your evaluator model.
+        Called automatically by CommonFilters when the user sorts by 'rating'
+        and by the scheduled background rating task.
+
+        This implementation follows the same pattern used by images/music/videos/text modules:
+          1. For each file, check if a DB entry exists with a current model_hash.
+          2. If not, generate a text description via MetadataSearch.
+          3. Embed the description and predict a rating with the evaluator.
+          4. Save to DB (create or update the row).
         """
-        pass  # TODO: implement when you add an evaluator model
+        if not evaluator.is_loaded():
+            return
+
+        with app.app_context():
+            update_items = []
+            new_items = []
+
+            for file_path, file_hash in files_list:
+                try:
+                    description = metadata_search_engine.generate_full_description(
+                        file_path, media_directory,
+                        generate_desc_if_not_in_cache=False,
+                    )
+                    if not description:
+                        continue
+
+                    embedding = metadata_search_engine.text_embedder.embed_text(description)
+                    if embedding is None or len(embedding) == 0:
+                        continue
+
+                    predicted_score = evaluator.predict(embedding)
+
+                    db_item = db_models.ExampleLibrary.query.filter_by(hash=file_hash).first()
+                    if db_item is None:
+                        db_item = db_models.ExampleLibrary(
+                            hash=file_hash,
+                            hash_algorithm=search_engine.get_hash_algorithm(),
+                            file_path=os.path.relpath(file_path, media_directory),
+                        )
+                        new_items.append(db_item)
+                    else:
+                        update_items.append(db_item)
+
+                    db_item.model_rating = predicted_score
+                    db_item.model_hash = evaluator.hash
+                except Exception as e:
+                    print(f"[Example] Error rating {file_path}: {e}")
+
+            # Deduplicate new items by hash before bulk insert
+            seen = set()
+            deduped = []
+            for item in new_items:
+                if item.hash not in seen:
+                    seen.add(item.hash)
+                    deduped.append(item)
+
+            if update_items:
+                db_models.db.session.bulk_save_objects(update_items)
+            if deduped:
+                db_models.db.session.bulk_save_objects(deduped)
+            db_models.db.session.commit()
+
+    # --- 8b. Scheduled background tasks -----------------------------------
+
+    def _check_and_submit_rating():
+        """Scheduled: find unrated files on disk and submit a rating task if needed."""
+        base_name = 'Example: rate unrated files'
+        state = app.task_manager.get_state()
+        active = state['active']
+        if (active and active.get('name', '').startswith(base_name)) or \
+                any(t.get('name', '').startswith(base_name) for t in state['queued']):
+            return
+        candidates = example_file_manager.get_unrated_files(evaluator.hash)
+        total = len(candidates)
+        if total == 0:
+            return
+
+        batch_size = OmegaConf.select(cfg, 'example.rating_update_batch_size', default=None)
+        batch_size = min(batch_size, total) if batch_size else total
+        label = f"{batch_size} of {total}" if batch_size < total else f"{total}"
+
+        def task(ctx):
+            files_list = candidates[:batch_size]
+            ctx.update(0.0, f'Rating {len(files_list)} of {total} files...')
+            update_model_ratings(files_list)
+
+        app.task_manager.submit(f'{base_name} ({label})', task)
+
+    def _check_and_submit_description():
+        """Scheduled: find undescribed files and submit a description task if needed."""
+        base_name = 'Example: describe undescribed files'
+        state = app.task_manager.get_state()
+        active = state['active']
+        if (active and active.get('name', '').startswith(base_name)) or \
+                any(t.get('name', '').startswith(base_name) for t in state['queued']):
+            return
+        all_files = example_file_manager.list_all_files()
+        if not all_files:
+            return
+        candidates = metadata_search_engine.get_undescribed_files(all_files)
+        if candidates is not None and len(candidates) == 0:
+            return
+        if candidates is None:
+            candidates = all_files
+        batch_size = OmegaConf.select(cfg, 'example.description_update_batch_size', default=100)
+        batch_size = min(batch_size, len(candidates))
+        batch = candidates[:batch_size]
+        n_total = len(candidates)
+        label = f'{batch_size} of {n_total}' if batch_size < n_total else str(n_total)
+
+        def task(ctx):
+            try:
+                for i, fp in enumerate(batch):
+                    ctx.check()
+                    ctx.update(i / len(batch), f'Describing file {i + 1}/{len(batch)}...')
+                    try:
+                        metadata_search_engine._get_auto_description(fp)
+                    except Exception as e:
+                        print(f'[Example: describe] Failed for {fp}: {e}')
+            finally:
+                metadata_search_engine.omni_descriptor.unload()
+
+        app.task_manager.submit(f'{base_name} ({label})', task)
 
     common_filters = CommonFilters(
         engine=search_engine,
@@ -196,7 +320,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
             "filters": filters,
             "get_file_info": get_file_info,
             "update_model_ratings": update_model_ratings,
-            "evaluator_hash": None,  # Set to evaluator.hash when you have one
+            "evaluator_hash": evaluator.hash if evaluator.is_loaded() else None,
         })
         return example_file_manager.get_files(**input_params)
 
@@ -219,4 +343,52 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
         db_item.user_rating_date = datetime.datetime.utcnow()
         db_models.db.session.commit()
 
-    common_socket_events.show_loading_status('Initialization complete')
+    # --- .meta sidecar file handlers -------------------------------------
+
+    @socketio.on('emit_example_page_get_external_metadata_file_content')
+    def get_external_metadata_file_content(file_path):
+        """Read the content of the .meta sidecar file for a given file."""
+        nonlocal media_directory
+        full_path = os.path.join(media_directory, file_path)
+        metadata_file_path = full_path + ".meta"
+        content = ""
+        try:
+            if os.path.exists(metadata_file_path):
+                with open(metadata_file_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+        except Exception as e:
+            print(f"Error reading external metadata for {file_path}: {e}")
+        return {"content": content, "file_path": file_path}
+
+    @socketio.on('emit_example_page_save_external_metadata_file_content')
+    def save_external_metadata_file_content(data):
+        """Save content to the .meta sidecar file."""
+        nonlocal media_directory
+        file_path = data['file_path']
+        metadata_content = data['metadata_content']
+        full_path = os.path.join(media_directory, file_path)
+        metadata_file_path = full_path + ".meta"
+        try:
+            os.makedirs(os.path.dirname(metadata_file_path), exist_ok=True)
+            with open(metadata_file_path, 'w', encoding='utf-8') as f:
+                f.write(metadata_content)
+        except Exception as e:
+            print(f"Error saving metadata for {file_path}: {e}")
+
+    @socketio.on('emit_example_page_get_full_metadata_description')
+    def get_full_metadata_description(file_path):
+        """Generate a full AI-powered metadata description for a single file."""
+        nonlocal media_directory
+        full_path = os.path.join(media_directory, file_path)
+        content = metadata_search_engine.generate_full_description(full_path, media_directory)
+        return {"content": content, "file_path": file_path}
+
+    # --- Finish initialisation & schedule background tasks ----------------
+
+    common_socket_events.show_loading_status('Example module ready!')
+
+    rating_interval = OmegaConf.select(cfg, 'example.rating_update_interval_minutes', default=None)
+    schedule_task(app, interval_minutes=rating_interval, fn=_check_and_submit_rating)
+
+    desc_interval = OmegaConf.select(cfg, 'example.description_update_interval_minutes', default=None)
+    schedule_task(app, interval_minutes=desc_interval, fn=_check_and_submit_description)
