@@ -424,6 +424,15 @@ class FileManager:
         # Walk with cache 1.5s for 66k files
         all_files = self._walk_files_cached(current_path, self.media_formats)
 
+        if len(all_files) == 0:
+            self.show_status(f"No files found in '{folder_path}'.")
+            return {
+                "files_data": [],
+                "folder_path": folder_path,
+                "total_files": 0,
+                "all_files_paths": []
+            }
+
         # self.show_status(f"Gathering hashes for {len(all_files)} files.")
         # all_hashes = self._get_all_hashes_with_progress(all_files)
 

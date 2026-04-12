@@ -53,6 +53,12 @@ Add new downloadable module for 'Deep Research'-like functionality that uses use
 
 ## Versions History
 
+### Version 0.3.13 (12.04.2026)
+*  **File Manager:**
+    *   Fixed bug displaying error when trying to show files in the empty folder. Now the message "No files found in this folder" is displayed instead of an error.
+*  **Docker Deployment:**
+    *   If error occurs during the installation of the dependencies of the container (for example, due to incorrect media folder path), the error message is now displayed in the console.
+
 ### Version 0.3.12 (10.04.2026)
 *   **Module Template:**
     *   Updated `modules/_module_template/` to match the actual module architecture. Updated `serve.py`, `engine.py`, `train.py`, `db_models.py`, `page.html`, `js/main.js`, `config.defaults.yaml`, `ARCHITECTURE.md`, `BEST_PRACTICES.md`, and `README.md` with accurate examples, conventions, and documentation reflecting the current codebase.

@@ -10,7 +10,7 @@ music:
   rating_update_interval_minutes: 10 # How often to proactively rate unrated files in the background (set to null to disable)
   rating_update_batch_size: 3000 # Max number of files rated per background run (set to null for no limit)
   description_update_interval_minutes: 30 # How often to proactively describe undescribed files via OmniDescriptor (set to null to disable)
-  description_update_batch_size: 100 # Max number of files described per background run
+  description_update_batch_size: 10 # Max number of files described per background run
   media_formats:
   - .mp3
   - .flac
@@ -25,7 +25,7 @@ images:
   rating_update_interval_minutes: 10 # How often to proactively rate unrated files in the background (set to null to disable)
   rating_update_batch_size: 3000 # Max number of files rated per background run (set to null for no limit)
   description_update_interval_minutes: 30 # How often to proactively describe undescribed files via OmniDescriptor (set to null to disable)
-  description_update_batch_size: 100 # Max number of files described per background run
+  description_update_batch_size: 10 # Max number of files described per background run
   media_formats:
   - .jpg
   - .jpeg
@@ -40,7 +40,7 @@ videos:
   rating_update_interval_minutes: 10 # How often to proactively rate unrated files in the background (set to null to disable)
   rating_update_batch_size: 3000 # Max number of files rated per background run (set to null for no limit)
   description_update_interval_minutes: 30 # How often to proactively describe undescribed files via OmniDescriptor (set to null to disable)
-  description_update_batch_size: 100 # Max number of files described per background run (videos are slower)
+  description_update_batch_size: 10 # Max number of files described per background run (videos are slower)
   media_formats:
   - .mp4
   - .webm
@@ -56,8 +56,8 @@ text:
   media_directory: /mnt/media/text
   rating_update_interval_minutes: 10 # How often to proactively rate unrated files in the background (set to null to disable)
   rating_update_batch_size: 3000 # Max number of files rated per background run (set to null for no limit)
-  description_update_interval_minutes: 30 # How often to proactively describe undescribed files via OmniDescriptor (set to null to disable)
-  description_update_batch_size: 100 # Max number of files described per background run
+  # description_update_interval_minutes: 30 # How often to proactively describe undescribed files via OmniDescriptor (set to null to disable)
+  # description_update_batch_size: 100 # Max number of files described per background run
   media_formats:
   - .txt
   - .md

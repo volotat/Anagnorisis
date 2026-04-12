@@ -169,9 +169,10 @@ docker compose up -d --build
 
 ### Available external modules
 
-| Module | Description |
-|--------|-------------|
-| [WebSearch](https://github.com/volotat/WebSearch) | Crawls and indexes websites, enabling semantic search and preference-based ranking over web content. |
+| Module | Description | Status |
+|--------|-------------|--------|
+| [WebSearch](https://github.com/volotat/WebSearch) | Crawls and indexes websites, enabling semantic search and preference-based ranking over web content. | experimental |
+| [YouTube](https://github.com/volotat/YouTube) | Treats YouTube as CDN leaving search and recommendations to Anagnorisis local algorithms. | experimental |
 
 ### Building your own module
 
