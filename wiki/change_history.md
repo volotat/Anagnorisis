@@ -53,6 +53,23 @@ Add new downloadable module for 'Deep Research'-like functionality that uses use
 
 ## Versions History
 
+### Version 0.3.14 (26.04.2026)
+*   **TransformerEvaluator:**
+    *   Replaced the fixed sinusoidal positional encoding (`register_buffer`) with a trainable `nn.Embedding(max_seq_len + 1, d_model)` table (position 0 = CLS, 1–512 = chunk positions), initialized with `std=0.02`. The model now learns what positional information is useful for rating prediction rather than relying on a fixed mathematical formula. Batch size when training increased to 32, learning rate is also adjusted. All of this significantly improved the text evaluator's training behavior make it improving for the test accuracy on the span of the whole training run, rather than plateauing after a few hundred epochs.
+*   **Solarized Light Theme:**
+    *   Fixed hover and active states rendering as achromatic gray. Added `--bulma-scheme-h/s` (44°/60%) so all Bulma-computed interactive states stay in the warm solarized palette. Pinned `--bulma-background-hover/active` and `--bulma-border-hover/active` to explicit warm solarized hex values for clear state feedback.
+    *   Improved text contrast: body text darkened from 45% to 38% lightness, secondary text from 60% to 52%, so all text is more legible on the cream Base3 background.
+    *   Fixed muddy same-hue text on colored backgrounds (`is-info`, `is-primary`, etc.). Bulma's default invert for solarized accent colors produced dark-tinted text on a same-hue background. All accent inverts now use white, giving proper contrast on buttons, tags, panels, and progress bars.
+    *   Images now render with a warm sepia filter (`sepia(30%) saturate(85%)`) to blend with the cream palette; hovering restores full color.
+*   **Database Migration:**
+    *   Fixed issue with migrations for staled database. Introduced naming conventions for columns that should help to avoid migration issues in the future. 
+*   **Docker Deployment:**
+    *   Dockerfile updated to better handle issues with external `Youtube` module. Particularly `Node.js 20` now installed to support the latest `yt-dlp` versions.
+*   **Scheduler:**
+    *   Changed `schedule_task` from a fixed-interval timer to a *cooldown-after-completion* model. The new cycle is: sleep N minutes → fire → wait for the submitted task to finish → sleep N minutes → repeat. Previously the interval was wall-clock based, so a long-running description or rating batch would accumulate duplicate submissions in the queue by the time it finished. Now the N-minute gap always starts *after* the previous task is done.
+    *   Added `TaskManager.wait_for_task(task_id)` — polls at 2-second intervals until the task leaves the active/queued state. Used internally by the scheduler; safe to call from any thread.
+    *   Both factory functions in `src/module_helpers.py` (`make_scheduled_rating_check`, `make_scheduled_description_check`) and the `_module_template` equivalents now `return` the task id from `app.task_manager.submit()` so the scheduler can track completion.
+
 ### Version 0.3.13 (12.04.2026)
 *  **File Manager:**
     *   Fixed bug displaying error when trying to show files in the empty folder. Now the message "No files found in this folder" is displayed instead of an error.

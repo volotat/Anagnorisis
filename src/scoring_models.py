@@ -228,7 +228,7 @@ class TransformerEvaluator:
   ------------
   1.  Linear projection: embedding_dim → d_model
   2.  Learnable [CLS] token prepended to the sequence
-  3.  Sinusoidal positional encoding (capped at max_seq_len)
+  3.  Learned positional embeddings (trainable, one vector per position)
   4.  N TransformerEncoder layers
   5.  [CLS] output → small MLP head → rate_classes logits
   6.  Weighted-softmax → scalar prediction (same convention as Evaluator)
@@ -249,6 +249,10 @@ class TransformerEvaluator:
     self.embedding_dim = embedding_dim
     self.rate_classes = rate_classes
     self.d_model = d_model
+    self.nhead = nhead
+    self.num_layers = num_layers
+    self.dim_feedforward = dim_feedforward
+    self.dropout = dropout
     self.max_seq_len = max_seq_len
     self.hash = None
     self.mape_bias = 2
@@ -272,11 +276,11 @@ class TransformerEvaluator:
     """Construct and return a freshly initialised TransformerNet instance."""
     embedding_dim   = self.embedding_dim
     d_model         = self.d_model
-    nhead           = 4
-    num_layers      = 2
-    dim_feedforward = 512
+    nhead           = self.nhead
+    num_layers      = self.num_layers
+    dim_feedforward = self.dim_feedforward
     max_seq_len     = self.max_seq_len
-    dropout         = 0.1
+    dropout         = self.dropout
     rate_classes    = self.rate_classes
 
     # ---- inner network ----
@@ -289,9 +293,14 @@ class TransformerEvaluator:
         # Learnable [CLS] token
         inner_self.cls_token = nn.Parameter(torch.randn(1, 1, d_model) * 0.02)
 
-        # Sinusoidal positional encoding buffer (max_seq_len + 1 for CLS)
-        pe = inner_self._sinusoidal_pe(max_seq_len + 1, d_model)
-        inner_self.register_buffer("pe", pe)  # [1, max_seq_len+1, d_model]
+        # Learned positional embeddings (one trainable vector per position).
+        # Position 0 = [CLS], positions 1..max_seq_len = chunk positions.
+        inner_self.pos_emb = nn.Embedding(max_seq_len + 1, d_model)
+        nn.init.normal_(inner_self.pos_emb.weight, std=0.02)
+
+        # OLD: sinusoidal (fixed) positional encoding
+        # pe = inner_self._sinusoidal_pe(max_seq_len + 1, d_model)
+        # inner_self.register_buffer("pe", pe)  # [1, max_seq_len+1, d_model]
 
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=d_model,
@@ -311,14 +320,15 @@ class TransformerEvaluator:
             nn.Linear(d_model // 4, rate_classes),
         )
 
-      @staticmethod
-      def _sinusoidal_pe(length: int, d_model: int) -> torch.Tensor:
-        pos = torch.arange(length).unsqueeze(1).float()
-        div = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model))
-        pe = torch.zeros(1, length, d_model)
-        pe[0, :, 0::2] = torch.sin(pos * div)
-        pe[0, :, 1::2] = torch.cos(pos * div)
-        return pe
+      # OLD: sinusoidal PE helper (kept for reference)
+      # @staticmethod
+      # def _sinusoidal_pe(length: int, d_model: int) -> torch.Tensor:
+      #   pos = torch.arange(length).unsqueeze(1).float()
+      #   div = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model))
+      #   pe = torch.zeros(1, length, d_model)
+      #   pe[0, :, 0::2] = torch.sin(pos * div)
+      #   pe[0, :, 1::2] = torch.cos(pos * div)
+      #   return pe
 
       def forward(inner_self, x: torch.Tensor, padding_mask: torch.Tensor = None):
         """
@@ -338,8 +348,10 @@ class TransformerEvaluator:
         cls_tokens = inner_self.cls_token.expand(B, -1, -1)  # [B, 1, d_model]
         x = torch.cat([cls_tokens, x], dim=1)                # [B, S+1, d_model]
 
-        # Positional encoding (truncate if sequence is shorter than buffer)
-        x = x + inner_self.pe[:, :S + 1, :]
+        # Positional encoding
+        positions = torch.arange(S + 1, device=x.device)     # [S+1]
+        x = x + inner_self.pos_emb(positions).unsqueeze(0)   # [1, S+1, d_model]
+        # OLD: x = x + inner_self.pe[:, :S + 1, :]
 
         # Extend padding mask for the CLS position (never masked)
         if padding_mask is not None:
@@ -600,4 +612,4 @@ class TransformerEvaluator:
   def reinitialize_optimizer(self):
     _fused = torch.cuda.is_available()
     #self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=1e-4, weight_decay=1e-2, fused=_fused)
-    self.optimizer = torch.optim.Adam(self.model.parameters(), lr=1e-4, fused=_fused)
+    self.optimizer = torch.optim.Adam(self.model.parameters(), lr=2e-5, fused=_fused)

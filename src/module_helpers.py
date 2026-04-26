@@ -101,7 +101,7 @@ def make_scheduled_rating_check(app, label, file_manager, evaluator, cfg, cfg_ke
             ctx.update(0.0, f'Rating {len(files_list)} of {total} files...')
             update_model_ratings_fn(files_list)
 
-        app.task_manager.submit(f'{base_name} ({count_str})', task)
+        return app.task_manager.submit(f'{base_name} ({count_str})', task)
 
     return _check_and_submit_rating
 
@@ -150,6 +150,6 @@ def make_scheduled_description_check(app, label, file_manager, metadata_search_e
             finally:
                 metadata_search_engine.omni_descriptor.unload()
 
-        app.task_manager.submit(f'{base_name} ({count_label})', task)
+        return app.task_manager.submit(f'{base_name} ({count_label})', task)
 
     return _check_and_submit_description

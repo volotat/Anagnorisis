@@ -231,7 +231,7 @@ for extension_name in extension_names:
 
 # Initialize Flask-Migrate
 db.init_app(app)
-migrate = Migrate(app, db, directory=migrations_path)
+migrate = Migrate(app, db, directory=migrations_path, render_as_batch=True)
 
 markdown_extensions = [
     'tables',
@@ -530,7 +530,7 @@ def migrate_database():
         if not os.path.exists(migrations_dir):
             print("Initializing migrations...")
             init(directory=migrations_dir)
-            
+
         # Apply any existing migrations first (bring DB up to current head)
         print("Applying migrations...")
         upgrade(directory=migrations_dir)

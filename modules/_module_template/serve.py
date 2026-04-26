@@ -213,7 +213,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
             ctx.update(0.0, f'Rating {len(files_list)} of {total} files...')
             update_model_ratings(files_list)
 
-        app.task_manager.submit(f'{base_name} ({label})', task)
+        return app.task_manager.submit(f'{base_name} ({label})', task)
 
     def _check_and_submit_description():
         """Scheduled: find undescribed files and submit a description task if needed."""
@@ -249,7 +249,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
             finally:
                 metadata_search_engine.omni_descriptor.unload()
 
-        app.task_manager.submit(f'{base_name} ({label})', task)
+        return app.task_manager.submit(f'{base_name} ({label})', task)
 
     common_filters = CommonFilters(
         engine=search_engine,

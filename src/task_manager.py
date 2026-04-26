@@ -179,6 +179,20 @@ class TaskManager:
             history = list(self._history)
         return {"active": active, "queued": queued, "history": history}
 
+    def wait_for_task(self, task_id: str, poll_interval: float = 2.0) -> None:
+        """Block the calling thread until *task_id* is no longer active or queued.
+
+        Returns immediately if the task id is not found (already completed,
+        cancelled, or was never submitted).  Safe to call from any thread.
+        """
+        while True:
+            with self._lock:
+                is_active = self._active is not None and self._active.id == task_id
+                is_queued = any(t.id == task_id for t in self._queue)
+            if not is_active and not is_queued:
+                return
+            time.sleep(poll_interval)
+
     # ------------------------------------------------------------------
     # Socket events
     # ------------------------------------------------------------------

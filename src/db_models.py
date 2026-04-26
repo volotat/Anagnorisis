@@ -1,12 +1,22 @@
 from flask_sqlalchemy import SQLAlchemy
 import csv
 from io import StringIO
-from sqlalchemy import inspect, or_
+from sqlalchemy import inspect, or_, MetaData
 from sqlalchemy.types import DateTime
 from datetime import datetime
 
+# Naming convention so Alembic batch migrations on SQLite can handle
+# constraints properly (all constraints get deterministic names).
+naming_convention = {
+    "ix": "ix_%(column_0_label)s",
+    "uq": "uq_%(table_name)s_%(column_0_name)s",
+    "ck": "ck_%(table_name)s_%(constraint_name)s",
+    "fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s",
+    "pk": "pk_%(table_name)s",
+}
+
 # Initialize SQLAlchemy to make a reference object for main application and extensions to use
-db = SQLAlchemy()
+db = SQLAlchemy(metadata=MetaData(naming_convention=naming_convention))
 
 def export_db_to_csv(db_session, excluded_columns=None):
     """

@@ -148,7 +148,7 @@ class _TextEmbedderImpl:
                 local_path, 
                 device='cpu', 
                 trust_remote_code=True,
-                tokenizer_kwargs={"fix_mistral_regex": True}
+                processor_kwargs={"fix_mistral_regex": True}
             )
             self.tokenizer = raw_model.tokenizer
             self.embedding_dim = self.cfg.text_embedder.embedding_dimension or raw_model.get_sentence_embedding_dimension()

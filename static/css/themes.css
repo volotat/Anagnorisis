@@ -176,32 +176,60 @@
 .theme-solarized-light {
   --bulma-scheme-brightness: light;
 
-  /* ── Scheme / background / border — exact hex, not re-derived from h/s/l ── */
-  --bulma-scheme-main:     #FDF6E3;   /* Base3  — editor.background           */
-  --bulma-scheme-main-bis: #F7F0E0;   /* between Base3/Base2 — cell bg        */
-  --bulma-scheme-main-ter: #EEE8D5;   /* Base2  — sidebar / dropdown          */
-  --bulma-background:      #EEE8D5;   /* Base2  — box backgrounds             */
-  --bulma-border-weak:     #DDD6C1;   /* input.background / editorGroup.border*/
-  --bulma-border:          #C9C3AE;   /* slightly darker than border-weak     */
+  /* ── Scheme / background / border ───────────────────────────────────────
+     Solarized base tones share hue ~44° but have very different saturation
+     per rung, so we set the compound vars directly to exact hex values AND
+     also define --bulma-scheme-h/s so that all HSL-computed states
+     (hover, active, focus) stay in the warm solarized palette instead of
+     falling back to Bulma's achromatic gray defaults.
 
-  /* Keep -l vars at plausible values for Bulma internals that read them */
+     The h/s pair (44 deg / 60%) is a middle-ground approximation that keeps
+     all computed derivatives visibly warm; exact base colors are still
+     anchored by the compound hex overrides below.
+  ── */
+  --bulma-scheme-h: 44deg;   /* solarized warm hue — drives all hover/active calc */
+  --bulma-scheme-s: 60%;     /* middle-ground saturation for smooth ramp           */
+
+  --bulma-scheme-main:      #FDF6E3;   /* Base3  — editor.background           */
+  --bulma-scheme-main-bis:  #F7F0E0;   /* between Base3/Base2 — cell bg        */
+  --bulma-scheme-main-ter:  #EEE8D5;   /* Base2  — sidebar / dropdown          */
+  --bulma-background:       #EEE8D5;   /* Base2  — box backgrounds             */
+  --bulma-border-weak:      #DDD6C1;   /* input.background / editorGroup.border*/
+  --bulma-border:           #C9C3AE;   /* slightly darker than border-weak     */
+
+  /* Lightness vars — must be plain percentages (used in calc() by Bulma) */
   --bulma-scheme-main-l:     94%;
   --bulma-scheme-main-bis-l: 91%;
   --bulma-scheme-main-ter-l: 88%;
   --bulma-background-l:      88%;
   --bulma-border-weak-l:     81%;
-  --bulma-border-l:          76%;
+  --bulma-border-l:          74%;
+
+  /* ── Explicit hover / active overrides ──────────────────────────────────
+     Bulma computes these as hsl(scheme-h, scheme-s, calc(base-l ± delta)).
+     We pin them to exact solarized-palette hex values so hover and active
+     states are both warm AND perceptibly distinct from the resting color.
+
+     Hover  — lighter (+5 % on background-l=88%): warm cream between Base2/Base3
+     Active — darker  (−8 % on background-l=88%): warm sand, clear press shadow
+
+     Border hover/active follow the same darker-on-interact convention.
+  ── */
+  --bulma-background-hover:   #F8F2E2;   /* hsl(44 60% 93%) — Base2 lightened  */
+  --bulma-background-active:  #EBDAAD;   /* hsl(44 60% 80%) — Base2 darkened   */
+  --bulma-border-hover:       #BCB28F;   /* hsl(46 25% 65%) — border darkened  */
+  --bulma-border-active:      #AC9D6C;   /* hsl(46 28% 55%) — border more dark */
 
   /* ── Text — cool blue-grey hue; override compound vars directly ── */
-  --bulma-text-weak:   #93A1A1;   /* Base1  — comments, deemphasis */
-  --bulma-text:        #657B83;   /* Base00 — body / foreground    */
-  --bulma-text-strong: #586E75;   /* Base01 — emphasized text      */
-  --bulma-text-title:  #073642;   /* Base02 — headings             */
+  --bulma-text-weak:   #7B8E8E;   /* between Base1/Base00 — deemphasis, l≈52% */
+  --bulma-text:        #4E6B75;   /* deeper than Base00 — body text, l≈38%    */
+  --bulma-text-strong: #3D5960;   /* deeper than Base01 — emphasized, l≈30%   */
+  --bulma-text-title:  #073642;   /* Base02 — headings                         */
 
   /* Keep -l vars consistent */
-  --bulma-text-weak-l:   60%;
-  --bulma-text-l:        45%;
-  --bulma-text-strong-l: 40%;
+  --bulma-text-weak-l:   52%;
+  --bulma-text-l:        38%;
+  --bulma-text-strong-l: 30%;
   --bulma-text-title-l:  14%;
 
   /* Interactive deltas — same as default light */
@@ -226,6 +254,9 @@
   --bulma-primary-on-scheme-l: 34%;
   --bulma-primary: hsla(var(--bulma-primary-h), var(--bulma-primary-s), var(--bulma-primary-l), 1);
   --bulma-primary-on-scheme: hsla(var(--bulma-primary-h), var(--bulma-primary-s), var(--bulma-primary-on-scheme-l), 1);
+  /* White text on dark cyan (l=40%) — ~5.5:1 contrast vs Bulma's default dark-tint-on-same-hue */
+  --bulma-primary-invert-l:    100%;
+  --bulma-primary-invert:      #ffffff;
 
   /* Link → Blue #268BD2  hsl(205 69% 49%) */
   --bulma-link-h:           205deg;
@@ -234,6 +265,9 @@
   --bulma-link-on-scheme-l: 42%;
   --bulma-link: hsla(var(--bulma-link-h), var(--bulma-link-s), var(--bulma-link-l), 1);
   --bulma-link-on-scheme: hsla(var(--bulma-link-h), var(--bulma-link-s), var(--bulma-link-on-scheme-l), 1);
+  /* White text on medium blue (l=49%) — ~4.5:1 WCAG AA */
+  --bulma-link-invert-l:       100%;
+  --bulma-link-invert:         #ffffff;
 
   /* Info → Violet #6C71C4  hsl(237 43% 60%) */
   --bulma-info-h:           237deg;
@@ -242,6 +276,13 @@
   --bulma-info-on-scheme-l: 46%;
   --bulma-info: hsla(var(--bulma-info-h), var(--bulma-info-s), var(--bulma-info-l), 1);
   --bulma-info-on-scheme: hsla(var(--bulma-info-h), var(--bulma-info-s), var(--bulma-info-on-scheme-l), 1);
+  /*
+     Bulma defaults info-invert to its darkest rung (~10% l), producing
+     dark-violet text on medium-violet background — same hue, very muddy.
+     White text gives ~5:1 contrast and is crisp on the violet bg.
+  */
+  --bulma-info-invert-l:       100%;
+  --bulma-info-invert:         #ffffff;
 
   /* Success → Green #859900  hsl(68 100% 30%) */
   --bulma-success-h:           68deg;
@@ -250,6 +291,9 @@
   --bulma-success-on-scheme-l: 27%;
   --bulma-success: hsla(var(--bulma-success-h), var(--bulma-success-s), var(--bulma-success-l), 1);
   --bulma-success-on-scheme: hsla(var(--bulma-success-h), var(--bulma-success-s), var(--bulma-success-on-scheme-l), 1);
+  /* White text on dark olive-green (l=30%) — ~7:1 */
+  --bulma-success-invert-l:    100%;
+  --bulma-success-invert:      #ffffff;
 
   /* Warning → Yellow #B58900  hsl(45 100% 35%) */
   --bulma-warning-h:           45deg;
@@ -258,6 +302,9 @@
   --bulma-warning-on-scheme-l: 30%;
   --bulma-warning: hsla(var(--bulma-warning-h), var(--bulma-warning-s), var(--bulma-warning-l), 1);
   --bulma-warning-on-scheme: hsla(var(--bulma-warning-h), var(--bulma-warning-s), var(--bulma-warning-on-scheme-l), 1);
+  /* White text on dark amber (l=35%) — ~6.5:1 */
+  --bulma-warning-invert-l:    100%;
+  --bulma-warning-invert:      #ffffff;
 
   /* Danger → Red #DC322F  hsl(1 71% 52%) */
   --bulma-danger-h:           1deg;
@@ -266,6 +313,9 @@
   --bulma-danger-on-scheme-l: 42%;
   --bulma-danger: hsla(var(--bulma-danger-h), var(--bulma-danger-s), var(--bulma-danger-l), 1);
   --bulma-danger-on-scheme: hsla(var(--bulma-danger-h), var(--bulma-danger-s), var(--bulma-danger-on-scheme-l), 1);
+  /* White text on medium-bright red (l=52%) — ~4.2:1 AA for large/bold text */
+  --bulma-danger-invert-l:     100%;
+  --bulma-danger-invert:       #ffffff;
 
   /* "is-light" / "has-background-light" — Base2 elevated surface, harmonious text */
   --bulma-light-h:              46deg;
@@ -277,6 +327,33 @@
   --bulma-light-invert:         #586E75;   /* Base01 */
   --bulma-light-on-scheme-l:    40%;
   --bulma-light-on-scheme:      #586E75;
+}
+
+
+/* ── Solarized Light — image rendering ──────────────────────────────
+   Apply a warm sepia-tinted filter to images so they blend with the
+   Base3 (#FDF6E3) cream background rather than looking like bright
+   foreign objects.
+
+   Filter breakdown:
+     sepia(30%)       — shifts RGB toward warm yellow/brown, echoing Base3
+     saturate(85%)    — mild desaturation to match solarized's muted palette
+     brightness(103%) — compensates for the slight darkening sepia introduces
+     hue-rotate(5deg) — nudges the sepia residue toward solarized's warm hue
+
+   Hover restores full color so the user can inspect the real image.
+   Transition keeps it smooth. Tweak sepia() to taste (20%=subtle, 50%=strong).
+── */
+
+[data-theme="solarized-light"] img,
+.theme-solarized-light img {
+  filter: sepia(40%) saturate(75%) brightness(103%) hue-rotate(5deg);
+  transition: filter 0.25s ease;
+}
+
+[data-theme="solarized-light"] img:hover,
+.theme-solarized-light img:hover {
+  filter: none;
 }
 
 

@@ -286,7 +286,7 @@ def train_universal_evaluator(cfg, callback=None, max_steps=None, time_budget_se
     best_test_accuracy = 0
     best_epoch = 0
     total_epochs = max_steps if max_steps is not None else 5001
-    batch_size = 16
+    batch_size = 32
 
     model_save_path = os.path.join(cfg.main.personal_models_path, 'universal_evaluator.pt')
 
