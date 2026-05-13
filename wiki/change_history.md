@@ -53,6 +53,21 @@ Add new downloadable module for 'Deep Research'-like functionality that uses use
 
 ## Versions History
 
+### Version 0.3.15 (13.05.2026)
+*   **Scheduler:**
+    *   Removed manual dedup guards (`startswith(base_name)` active/queued checks) from `src/module_helpers.py` (`make_scheduled_rating_check` and `make_scheduled_description_check`) and from `modules/_module_template/serve.py`. The scheduler's cooldown-after-completion model is the correct mechanism to prevent accumulation; the in-function guards were redundant and masked the real issue.
+    *   Added a `start_immediately` option to `schedule_task`. When enabled, the scheduled task fires once right away on startup instead of waiting for the first interval to pass. Defaults to the previous behavior (wait first).
+*   **Docker Deployment:**
+    *   Fixed a bug where module-specific Python packages (e.g. `beautifulsoup4` from `WebSearch`) were silently not installed. When Docker copied all module `requirements.txt` files into a flat temporary directory they all had the same filename, so each one overwrote the previous and only the last one (alphabetically) survived. The Dockerfile now copies the entire `modules/` folder structure so each module keeps its own path, and all requirements are correctly installed.
+*   **UI:**
+    *   Added a list view mode to `FileGridComponent`. A small toggle in the top-right corner of any file grid lets you switch between the existing grid layout and a new horizontal list layout. In list mode each row shows the file preview on the left, its metadata in the middle, and a short text excerpt on the right. The chosen view is saved per-module in the browser so it is remembered across page refreshes.
+    *   Folder lists no longer re-sort themselves alphabetically in the browser. The order returned by the server is now used as-is, making it possible to control folder ordering from the backend.
+    *   Fixed text overflow in the task manager panel. Long task names and progress messages now truncate with an ellipsis instead of pushing other elements out of place.
+*   **File Manager:**
+    *   Hidden files and folders (names starting with `.`) are now skipped when scanning media directories, preventing dot-files like `.DS_Store` or `.Trash` from being treated as media.
+*   **Background Description Generation:**
+    *   Temporarily disabled the automatic background description scheduling for Images, Music, and Videos modules while the feature is being stabilized.
+
 ### Version 0.3.14 (26.04.2026)
 *   **TransformerEvaluator:**
     *   Replaced the fixed sinusoidal positional encoding (`register_buffer`) with a trainable `nn.Embedding(max_seq_len + 1, d_model)` table (position 0 = CLS, 1–512 = chunk positions), initialized with `std=0.02`. The model now learns what positional information is useful for rating prediction rather than relying on a fixed mathematical formula. Batch size when training increased to 32, learning rate is also adjusted. All of this significantly improved the text evaluator's training behavior make it improving for the test accuracy on the span of the whole training run, rather than plateauing after a few hundred epochs.

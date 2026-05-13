@@ -696,4 +696,4 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
     schedule_task(app, interval_minutes=rating_update_interval, fn=_check_and_submit_rating)
 
     desc_interval = OmegaConf.select(cfg, 'videos.description_update_interval_minutes', default=None)
-    schedule_task(app, interval_minutes=desc_interval, fn=_check_and_submit_description)
+    # schedule_task(app, interval_minutes=desc_interval, fn=_check_and_submit_description)

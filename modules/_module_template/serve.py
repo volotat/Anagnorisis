@@ -193,17 +193,12 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
 
     def _check_and_submit_rating():
         """Scheduled: find unrated files on disk and submit a rating task if needed."""
-        base_name = 'Example: rate unrated files'
-        state = app.task_manager.get_state()
-        active = state['active']
-        if (active and active.get('name', '').startswith(base_name)) or \
-                any(t.get('name', '').startswith(base_name) for t in state['queued']):
-            return
         candidates = example_file_manager.get_unrated_files(evaluator.hash)
         total = len(candidates)
         if total == 0:
             return
 
+        base_name = 'Example: rate unrated files'
         batch_size = OmegaConf.select(cfg, 'example.rating_update_batch_size', default=None)
         batch_size = min(batch_size, total) if batch_size else total
         label = f"{batch_size} of {total}" if batch_size < total else f"{total}"
@@ -217,12 +212,6 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
 
     def _check_and_submit_description():
         """Scheduled: find undescribed files and submit a description task if needed."""
-        base_name = 'Example: describe undescribed files'
-        state = app.task_manager.get_state()
-        active = state['active']
-        if (active and active.get('name', '').startswith(base_name)) or \
-                any(t.get('name', '').startswith(base_name) for t in state['queued']):
-            return
         all_files = example_file_manager.list_all_files()
         if not all_files:
             return
@@ -231,6 +220,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
             return
         if candidates is None:
             candidates = all_files
+        base_name = 'Example: describe undescribed files'
         batch_size = OmegaConf.select(cfg, 'example.description_update_batch_size', default=100)
         batch_size = min(batch_size, len(candidates))
         batch = candidates[:batch_size]

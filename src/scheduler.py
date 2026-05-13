@@ -2,7 +2,7 @@ import threading
 import time
 
 
-def schedule_task(app, interval_minutes: float, fn) -> None:
+def schedule_task(app, interval_minutes: float, fn, start_immediately: bool = False) -> None:
     """Start a daemon thread that calls *fn* every *interval_minutes* minutes.
 
     The cycle is: initial sleep → fire → wait for the submitted task to finish
@@ -20,13 +20,19 @@ def schedule_task(app, interval_minutes: float, fn) -> None:
         return
 
     def _loop():
-        while True:
+        if not start_immediately:
             time.sleep(interval_minutes * 60)
+
+        while True:
             with app.app_context():
                 task_id = fn()
+
             # If a task was submitted, block until it leaves the active/queued state
             # before starting the next cooldown interval.
             if task_id and hasattr(app, 'task_manager'):
                 app.task_manager.wait_for_task(task_id)
+
+            # Wait the cooldown interval before the next check.
+            time.sleep(interval_minutes * 60)
 
     threading.Thread(target=_loop, daemon=True, name="scheduler").start()

@@ -189,6 +189,8 @@ class FileManager:
 
         for entry in entries:
             try:
+                if entry.name.startswith('.'):
+                    continue
                 if entry.is_file(follow_symlinks=False):
                     ext = os.path.splitext(entry.name)[1].lower()
                     if ext in media_extensions:

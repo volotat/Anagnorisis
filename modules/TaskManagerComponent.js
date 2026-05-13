@@ -54,7 +54,7 @@
         </div>
         <progress class="progress ${progressClass} is-small mb-2" value="${pct(t.progress)}" max="100">${pct(t.progress)}%</progress>
         <div class="is-flex is-justify-content-space-between is-align-items-center">
-          <span class="is-size-7 has-text-grey">${escHtml(t.message)}  —  ${pct(t.progress)}%</span>
+          <span class="is-size-7 has-text-grey" style="width:calc(100% - 180px)">${escHtml(t.message)}  —  ${pct(t.progress)}%</span>
           <div class="buttons are-small mb-0">
             ${pauseBtn}
             <button class="button is-small is-danger is-outlined" onclick="window._tm.cancel('${t.id}')">
@@ -72,12 +72,12 @@
     return state.queued.map((t, idx) => `
       <div class="box mb-2 py-2 px-4">
         <div class="is-flex is-justify-content-space-between is-align-items-center">
-          <span>
+          <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-right:0.75rem;">
             <span class="tag is-light is-small mr-2">#${idx + 1}</span>
             ${escHtml(t.name)}
           </span>
-          <div class="buttons are-small mb-0">
-            <button class="button is-small is-outlined" onclick="window._tm.remove('${t.id}')" title="Remove from queue">
+          <div class="buttons are-small mb-0" style="flex-shrink:0;">
+            <button class="button is-small is-danger is-outlined" onclick="window._tm.remove('${t.id}')">
               <span class="icon is-small"><i class="fas fa-times"></i></span>
             </button>
           </div>
@@ -104,7 +104,7 @@
         <div class="is-flex is-align-items-center mb-2">
           <span class="icon is-small ${cls} mr-2"><i class="fas ${icon}"></i></span>
           <span class="is-size-7" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escHtml(t.name)}">${escHtml(t.name)}</span>
-          <span class="is-size-7 has-text-grey ml-2" style="flex-shrink:0;">${ago(t.finished_at)}</span>
+          <span class="is-size-7 has-text-grey ml-2" style="flex-shrink:0">${ago(t.finished_at)}</span>
         </div>${extra}`;
     }).join('');
   }

@@ -13,6 +13,7 @@ To find more about the project and ideas behind it you can read these articles:
 [Anagnorisis. Part 1: A Vision for Better Information Management.](https://volotat.github.io/p/anagnorisis-part-1-a-vision-for-better-information-management/)  
 [Anagnorisis. Part 2: The Music Recommendation Algorithm.](https://volotat.github.io/p/anagnorisis-part-2-the-music-recommendation-algorithm/)  
 [Anagnorisis. Part 3: Why Should You Go Local?](https://volotat.github.io/p/anagnorisis-part-3-why-should-you-go-local/)  
+[Anagnorisis. Part 4: File Sharing is All We Need.](https://volotat.github.io/p/anagnorisis-part-4-file-sharing-is-all-we-need/)
 
 And watch these videos:  
 [Anagnorisis: Search Your Data Effectively (v0.3.1)](https://www.youtube.com/watch?v=X1Go7yYgFlY) - How to effectively search your data across all modules.  

@@ -82,16 +82,11 @@ def make_scheduled_rating_check(app, label, file_manager, evaluator, cfg, cfg_ke
     def _check_and_submit_rating():
         if evaluator.hash is None:
             return
-        base_name = f'{label}: rate unrated files'
-        state = app.task_manager.get_state()
-        active = state['active']
-        if (active and active.get('name', '').startswith(base_name)) or \
-                any(t.get('name', '').startswith(base_name) for t in state['queued']):
-            return
         candidates = file_manager.get_unrated_files(evaluator.hash)
         total = len(candidates)
         if total == 0:
             return
+        base_name = f'{label}: rate unrated files'
         batch_size = OmegaConf.select(cfg, f'{cfg_key}.rating_update_batch_size', default=None)
         batch_size = min(batch_size, total) if batch_size else total
         count_str = f"{batch_size} of {total}" if batch_size < total else f"{total}"
@@ -118,12 +113,6 @@ def make_scheduled_description_check(app, label, file_manager, metadata_search_e
         cfg_key:                  Config prefix, e.g. ``"images"``.
     """
     def _check_and_submit_description():
-        base_name = f'{label}: describe undescribed files'
-        state = app.task_manager.get_state()
-        active = state['active']
-        if (active and active.get('name', '').startswith(base_name)) or \
-                any(t.get('name', '').startswith(base_name) for t in state['queued']):
-            return
         all_files = file_manager.list_all_files()
         if not all_files:
             return
@@ -132,6 +121,7 @@ def make_scheduled_description_check(app, label, file_manager, metadata_search_e
             return
         if candidates is None:
             candidates = all_files
+        base_name = f'{label}: describe undescribed files'
         batch_size = OmegaConf.select(cfg, f'{cfg_key}.description_update_batch_size', default=100)
         batch_size = min(batch_size, len(candidates))
         batch = candidates[:batch_size]

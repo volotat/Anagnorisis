@@ -115,10 +115,8 @@ class FolderViewComponent {
 
     folderRepresentation.appendChild(a);
 
-    // Sort the folders by name
-    const sortedFolders = Object.keys(folders_dict.subfolders).sort((a, b) => {
-      return folders_dict.subfolders[a].name.localeCompare(folders_dict.subfolders[b].name);
-    });
+    // Use the server-provided order 
+    const sortedFolders = Object.keys(folders_dict.subfolders);
 
     const ul = document.createElement('ul');
 
