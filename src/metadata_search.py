@@ -52,6 +52,12 @@ class MetadataSearch:
 
         self._fast_cache = MetadataSearch._shared_cache
 
+        # Optional EmbeddingProxyGenerator — set from the owning module's serve.py.
+        # When set, generate_full_description() injects a proxy section (tags +
+        # fingerprint) derived from the CLAP/SigLIP embedding cache so that the
+        # universal evaluator can score files that lack an OmniDescriptor description.
+        self.embedding_proxy = None
+
         self._initialized = True
     
     def get_algorithm_version(self) -> str:
@@ -273,6 +279,18 @@ class MetadataSearch:
             full_description += auto_desc
             full_description += "\n\n"
 
+        # Embedding proxy: zero-shot tags + quantised fingerprint derived from the
+        # CLAP/SigLIP embedding cache.  get_cached_proxy_text() is cache-only and
+        # never loads any model, so it is safe to call here regardless of which
+        # other models are currently in VRAM.
+        if self.embedding_proxy is not None:
+            try:
+                proxy_text = self.embedding_proxy.get_cached_proxy_text(file_path)
+                if proxy_text:
+                    full_description += proxy_text + "\n"
+            except Exception as _proxy_exc:
+                print(f"[MetadataSearch] Proxy section failed for {file_path}: {_proxy_exc}")
+
         # Include basic internal metadata, only textual fields
         internal_meta = self.engine.get_metadata(file_path)
         # Filter out  string that are bigger then ? to avoid base64 blobs and similar big stuff
@@ -295,7 +313,7 @@ class MetadataSearch:
     
     def _generate_embedding(self, file_path: str, media_folder: str) -> np.ndarray:
         """Generates a metadata embedding for a single file."""
-        meta_text = self.generate_full_description(file_path, media_folder)
+        meta_text = self.generate_full_description(file_path, media_folder, generate_desc_if_not_in_cache=False)
 
         # OmniDescriptor (if used) has finished. Unload it before TextEmbedder
         # reclaims VRAM to generate the embedding. OmniDescriptor auto-restarts

@@ -91,41 +91,15 @@ def init_socket_events(socketio, cfg=None, app=None, data_folder='./project_data
     def handle_emit_get_training_status(data=None):
         socketio.emit("emit_train_page_status", {"active": _is_training_active()}, room=request.sid)
 
-    @socketio.on("emit_train_page_start_music_evaluator_training")
-    def handle_emit_start_music_evaluator_training(data=None):
-        if _is_training_active():
-            socketio.emit("emit_train_page_status", {"active": True}, room=request.sid)
-            return
-
-        def _task(ctx):
-            hist_train, hist_test = [], []
-            cb = _make_train_callback(ctx, hist_train, hist_test)
-            socketio.emit("emit_train_page_status", {"active": True})
-            try:
-                modules.music.train.train_music_evaluator(cfg, cb, socketio)
-            finally:
-                socketio.emit("emit_train_page_status", {"active": False})
-
-        task_manager.submit('Train: music evaluator', _task)
-        socketio.emit("emit_train_page_status", {"active": True})
-
-    @socketio.on("emit_train_page_start_image_evaluator_training")
-    def handle_emit_start_image_evaluator_training(data=None):
-        if _is_training_active():
-            socketio.emit("emit_train_page_status", {"active": True}, room=request.sid)
-            return
-
-        def _task(ctx):
-            hist_train, hist_test = [], []
-            cb = _make_train_callback(ctx, hist_train, hist_test)
-            socketio.emit("emit_train_page_status", {"active": True})
-            try:
-                modules.images.train.train_image_evaluator(cfg, cb)
-            finally:
-                socketio.emit("emit_train_page_status", {"active": False})
-
-        task_manager.submit('Train: image evaluator', _task)
-        socketio.emit("emit_train_page_status", {"active": True})
+    # ───────────────────────────────────────────────────────────────────────────
+    # emit_train_page_start_music_evaluator_training and
+    # emit_train_page_start_image_evaluator_training have been removed.
+    #
+    # MusicEvaluator and ImageEvaluator (MLP on raw CLAP/SigLIP embeddings) are
+    # no longer used for scoring.  All file types are now scored by the single
+    # UniversalEvaluator via text descriptions + the embedding proxy.
+    # The corresponding buttons have also been removed from train/page.html.
+    # ───────────────────────────────────────────────────────────────────────────
 
     @socketio.on("emit_train_page_start_universal_evaluator_training")
     def handle_emit_start_universal_evaluator_training(data=None):

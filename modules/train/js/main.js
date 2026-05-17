@@ -150,8 +150,6 @@ function update_chart(data) {
 // ── Training buttons ──────────────────────────────────────────────────────
 
 function setTrainingActive(active) {
-  document.getElementById('startMusic').disabled    = !!active;
-  document.getElementById('startImages').disabled   = !!active;
   document.getElementById('startUniversal').disabled = !!active;
 }
 
@@ -222,15 +220,6 @@ $('document').ready(function () {
 
   socket.on('emit_show_search_status', (status) => {
     console.log('Status:', status);
-  });
-
-  // Music / Images: emit immediately (no config needed)
-  $('#startMusic').on('click', function () {
-    socket.emit('emit_train_page_start_music_evaluator_training');
-  });
-
-  $('#startImages').on('click', function () {
-    socket.emit('emit_train_page_start_image_evaluator_training');
   });
 
   // Universal: open config modal first

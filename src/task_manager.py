@@ -30,6 +30,8 @@ from typing import Any, Callable
 from flask import Flask
 from flask_socketio import SocketIO
 
+from src.scheduler import Scheduler
+
 
 # ------------------------------------------------------------------
 # Exceptions
@@ -134,6 +136,7 @@ class TaskManager:
         self._active: Task | None = None
         self._history: deque[dict] = deque(maxlen=_HISTORY_LIMIT)
         self._work_available = threading.Event()
+        self._schedulers: list[Scheduler] = []
 
         # Start the single consumer thread
         t = threading.Thread(target=self._worker, daemon=True, name="task-manager-worker")
@@ -171,13 +174,21 @@ class TaskManager:
         self._broadcast()
         return task.id
 
+    def register_scheduler(self, handle: Scheduler) -> None:
+        """Register a Scheduler so it appears in the Task Manager UI."""
+        handle._manager = self
+        with self._lock:
+            self._schedulers.append(handle)
+        self._broadcast()
+
     def get_state(self) -> dict:
         """Return a snapshot of the full manager state."""
         with self._lock:
             active = self._active.to_dict() if self._active else None
             queued = [t.to_dict() for t in self._queue]
             history = list(self._history)
-        return {"active": active, "queued": queued, "history": history}
+            schedulers = [h.get_state() for h in self._schedulers]
+        return {"active": active, "queued": queued, "history": history, "schedulers": schedulers}
 
     def wait_for_task(self, task_id: str, poll_interval: float = 2.0) -> None:
         """Block the calling thread until *task_id* is no longer active or queued.
@@ -224,6 +235,18 @@ class TaskManager:
         def _on_submit_test(data):
             self._submit_test_task(data)
 
+        @sio.on("task_manager_pause_scheduler")
+        def _on_pause_scheduler(data):
+            handle = self._find_scheduler(data.get("scheduler_id", ""))
+            if handle:
+                handle.pause()
+
+        @sio.on("task_manager_resume_scheduler")
+        def _on_resume_scheduler(data):
+            handle = self._find_scheduler(data.get("scheduler_id", ""))
+            if handle:
+                handle.resume()
+
     # ------------------------------------------------------------------
     # Task control helpers
     # ------------------------------------------------------------------
@@ -268,6 +291,13 @@ class TaskManager:
             self._queue = deque(t for t in self._queue if t.status != "cancelled")
         for t in removed:
             self._history.appendleft(t.to_dict())
+
+    def _find_scheduler(self, scheduler_id: str) -> Scheduler | None:
+        with self._lock:
+            for h in self._schedulers:
+                if h.id == scheduler_id:
+                    return h
+        return None
 
     # ------------------------------------------------------------------
     # Worker thread

@@ -2,7 +2,7 @@
 module_helpers.py — Shared helpers that eliminate boilerplate across modules.
 
 Each function either registers socket handlers or returns a callable that
-can be passed to ``schedule_task()``.
+can be passed to ``Scheduler``.
 """
 
 import os
@@ -59,7 +59,7 @@ def register_meta_handlers(socketio, module_name, media_directory_ref, metadata_
     def get_full_metadata_description(file_path):
         media_directory = media_directory_ref()
         full_path = os.path.join(media_directory, file_path)
-        content = metadata_search_engine.generate_full_description(full_path, media_directory)
+        content = metadata_search_engine.generate_full_description(full_path, media_directory, generate_desc_if_not_in_cache=False)
         return {"content": content, "file_path": file_path}
 
 
@@ -68,7 +68,7 @@ def register_meta_handlers(socketio, module_name, media_directory_ref, metadata_
 # ---------------------------------------------------------------------------
 
 def make_scheduled_rating_check(app, label, file_manager, evaluator, cfg, cfg_key, update_model_ratings_fn):
-    """Return a callable for ``schedule_task`` that submits rating tasks.
+    """Return a callable for ``Scheduler`` that submits rating tasks.
 
     Args:
         app:                      Flask app (must have ``app.task_manager``).
@@ -84,8 +84,6 @@ def make_scheduled_rating_check(app, label, file_manager, evaluator, cfg, cfg_ke
             return
         candidates = file_manager.get_unrated_files(evaluator.hash)
         total = len(candidates)
-        if total == 0:
-            return
         base_name = f'{label}: rate unrated files'
         batch_size = OmegaConf.select(cfg, f'{cfg_key}.rating_update_batch_size', default=None)
         batch_size = min(batch_size, total) if batch_size else total
@@ -102,7 +100,7 @@ def make_scheduled_rating_check(app, label, file_manager, evaluator, cfg, cfg_ke
 
 
 def make_scheduled_description_check(app, label, file_manager, metadata_search_engine, cfg, cfg_key):
-    """Return a callable for ``schedule_task`` that submits description tasks.
+    """Return a callable for ``Scheduler`` that submits description tasks.
 
     Args:
         app:                      Flask app (must have ``app.task_manager``).
@@ -114,11 +112,7 @@ def make_scheduled_description_check(app, label, file_manager, metadata_search_e
     """
     def _check_and_submit_description():
         all_files = file_manager.list_all_files()
-        if not all_files:
-            return
         candidates = metadata_search_engine.get_undescribed_files(all_files)
-        if candidates is not None and len(candidates) == 0:
-            return
         if candidates is None:
             candidates = all_files
         base_name = f'{label}: describe undescribed files'
@@ -134,7 +128,7 @@ def make_scheduled_description_check(app, label, file_manager, metadata_search_e
                     ctx.check()
                     ctx.update(i / len(batch), f'Describing file {i + 1}/{len(batch)} of {n_total}...')
                     try:
-                        metadata_search_engine._get_auto_description(fp)
+                        metadata_search_engine._get_auto_description(fp, generate_desc_if_not_in_cache=True)
                     except Exception as e:
                         print(f'[{label}: describe] Failed for {fp}: {e}')
             finally:

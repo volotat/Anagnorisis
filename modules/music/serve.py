@@ -11,14 +11,16 @@ import torch
 import src.file_manager as file_manager
 import modules.music.db_models as db_models
 
-from modules.music.engine import MusicSearch, MusicEvaluator
+from modules.music.engine import MusicSearch  # MusicEvaluator no longer used for scoring — replaced by UniversalEvaluator
+from modules.train.universal_train import UniversalEvaluator
+from src.embedding_proxy import EmbeddingProxyGenerator
 
 from src.utils import convert_size, convert_length, time_difference
 
 from src.recommendation_engine import sort_files_by_recommendation
 
 from src.utils import SortingProgressCallback, EmbeddingGatheringCallback
-from src.scheduler import schedule_task
+from src.scheduler import Scheduler
 from src.module_helpers import register_meta_handlers, make_scheduled_rating_check, make_scheduled_description_check
 
 from src.socket_events import CommonSocketEvents
@@ -69,12 +71,12 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
   # cached_file_hash = music_search_engine.cached_file_hash
   # cached_metadata = music_search_engine.cached_metadata
 
-  common_socket_events.show_loading_status('Initializing music evaluator...')
-  music_evaluator = MusicEvaluator(embedding_dim=music_search_engine.embedding_dim) #src.scoring_models.Evaluator(embedding_dim=768)
-
-  common_socket_events.show_loading_status('Loading music evaluator model...')
-  print('Loading music evaluator model from', os.path.join(cfg.main.personal_models_path, 'music_evaluator.pt'))
-  music_evaluator.load(os.path.join(cfg.main.personal_models_path, 'music_evaluator.pt'))
+  # MusicEvaluator (MLP on CLAP embeddings) has been superseded by UniversalEvaluator
+  # (Transformer on Jina text embeddings).  music_evaluator.pt is no longer used.
+  common_socket_events.show_loading_status('Initializing universal evaluator...')
+  universal_evaluator = UniversalEvaluator()
+  print('Loading universal evaluator model from', os.path.join(cfg.main.personal_models_path, 'universal_evaluator.pt'))
+  universal_evaluator.load(os.path.join(cfg.main.personal_models_path, 'universal_evaluator.pt'))
 
   
   # def show_search_status(status):
@@ -97,74 +99,118 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
   common_socket_events.show_loading_status('Initializing metadata search...')
   metadata_search_engine = MetadataSearch(engine=music_search_engine)
 
+  # Set up embedding proxy so that files without an OmniDescriptor description
+  # still receive a meaningful text representation (CLAP tags + fingerprint).
+  common_socket_events.show_loading_status('Initializing embedding proxy...')
+  _tag_list      = list(OmegaConf.select(cfg, 'music.embedding_tags', default=[]) or [])
+  _tag_threshold_raw = OmegaConf.select(cfg, 'music.embedding_tags_threshold', default=0.25)
+  _tag_threshold = float(_tag_threshold_raw) if _tag_threshold_raw is not None else None
+  music_proxy_gen = EmbeddingProxyGenerator(
+      engine=music_search_engine,
+      tag_list=_tag_list,
+      threshold=_tag_threshold,
+      cache_path=cfg.main.cache_path,
+      model_name=getattr(cfg.music, 'embedding_model', 'CLAP'),
+  )
+  metadata_search_engine.embedding_proxy = music_proxy_gen
+
   def update_model_ratings(files_list):
+    # Skip if the universal evaluator has not been trained yet
+    if universal_evaluator.hash is None:
+      print('[Music] Universal evaluator not trained yet. Skipping model rating update.')
+      return
 
     files_list_hash_map = {}
     for ind, file_path in enumerate(files_list):
-        common_socket_events.show_search_status(f"Computing files hashes {ind+1}/{len(files_list)}")
-        file_hash = music_search_engine.get_file_hash(file_path)
-        files_list_hash_map[file_path] = file_hash
+      common_socket_events.show_search_status(f"Computing files hashes {ind+1}/{len(files_list)}")
+      file_hash = music_search_engine.get_file_hash(file_path)
+      files_list_hash_map[file_path] = file_hash
 
     hash_list = list(files_list_hash_map.values())
 
-    # Fetch rated files from the database in a single query
+    # Fetch files that already have an up-to-date rating in the database
     rated_files_db_items = db_models.MusicLibrary.query.filter(
       db_models.MusicLibrary.hash.in_(hash_list),
       db_models.MusicLibrary.model_rating.isnot(None),
-      db_models.MusicLibrary.model_hash.is_(music_evaluator.hash)
+      db_models.MusicLibrary.model_hash.is_(universal_evaluator.hash)
     ).all()
-
-    # Create a list of hashes for rated files
     rated_files_hashes = {item.hash for item in rated_files_db_items}
 
-    # Filter out files that already have a rating in the database
-    filtered_files_list = [file_path for file_path, file_hash in files_list_hash_map.items() if file_hash not in rated_files_hashes]
-    if not filtered_files_list: return
-    
+    filtered_files_list = [fp for fp, fh in files_list_hash_map.items() if fh not in rated_files_hashes]
+    if not filtered_files_list:
+      return
 
-    # Rate all files in case they are not rated or model was updated
-    common_socket_events.show_search_status(f"Computing embeddings for {len(filtered_files_list)} files...")
-    embeddings = music_search_engine.process_audio(filtered_files_list, callback=embedding_gathering_callback, media_folder=media_directory) #.cpu().detach().numpy() 
-    model_ratings = music_evaluator.predict(embeddings)
+    # ── Step 1: Compute CLAP embeddings (fast — results are disk-cached) ────
+    common_socket_events.show_search_status(f"Computing CLAP embeddings for {len(filtered_files_list)} files...")
+    embeddings = music_search_engine.process_audio(
+      filtered_files_list, callback=embedding_gathering_callback, media_folder=media_directory
+    )  # [N, D] tensor
 
-    # Update the model ratings in the database
-    common_socket_events.show_search_status(f"Updating model ratings of files...") 
-    new_items = []
+    # ── Step 2: Pre-populate proxy cache before the Jina embedding phase ─────
+    # This ensures generate_full_description() always hits the proxy cache and
+    # never needs to load CLAP while Jina is active.
+    common_socket_events.show_search_status("Preparing embedding proxies...")
+    for i, fp in enumerate(filtered_files_list):
+      try:
+        music_proxy_gen.compute_proxy_section(files_list_hash_map[fp], embeddings[i].cpu().numpy())
+      except Exception as e:
+        print(f"[Music] Proxy generation failed for {fp}: {e}")
+
+    # ── Step 3: Build text descriptions (includes proxy section) + Jina embed ─
+    common_socket_events.show_search_status(f"Computing metadata embeddings for {len(filtered_files_list)} files...")
+    all_embeddings = []
+    embedding_dim = metadata_search_engine.text_embedder.embedding_dim or 1024
+    for ind, full_path in enumerate(filtered_files_list):
+      common_socket_events.show_search_status(f"Computing metadata embeddings {ind+1}/{len(filtered_files_list)}")
+      try:
+        description = metadata_search_engine.generate_full_description(
+          full_path,
+          media_folder=media_directory,
+          generate_desc_if_not_in_cache=False,
+        )
+        chunk_embeddings = metadata_search_engine.text_embedder.embed_text(description)
+        if chunk_embeddings is not None and len(chunk_embeddings) > 0:
+          all_embeddings.append(np.array(chunk_embeddings, dtype=np.float32))
+        else:
+          all_embeddings.append(np.zeros((1, embedding_dim), dtype=np.float32))
+      except Exception as e:
+        print(f"[Music] Embedding failed for {full_path}: {e}")
+        all_embeddings.append(np.zeros((1, embedding_dim), dtype=np.float32))
+
+    # ── Step 4: Predict with universal evaluator and persist ─────────────────
+    model_ratings = universal_evaluator.predict(all_embeddings)
+
+    common_socket_events.show_search_status("Updating model ratings of files...")
+    new_items    = []
     update_items = []
     for ind, full_path in enumerate(filtered_files_list):
-      # print(f"Updating model ratings for {ind+1}/{len(filtered_files_list)} files.")
+      file_hash    = files_list_hash_map[full_path]
+      model_rating = float(model_ratings[ind])
 
-      hash = files_list_hash_map[full_path]
-      model_rating = model_ratings[ind].item()
-
-      music_db_item = db_models.MusicLibrary.query.filter_by(hash=hash).first()
+      music_db_item = db_models.MusicLibrary.query.filter_by(hash=file_hash).first()
       if music_db_item:
         music_db_item.model_rating = model_rating
-        music_db_item.model_hash = music_evaluator.hash
+        music_db_item.model_hash   = universal_evaluator.hash
         update_items.append(music_db_item)
       else:
         file_data = {
-            "hash": hash,
-            "hash_algorithm": music_search_engine.get_hash_algorithm(),
-            "file_path": os.path.relpath(full_path, media_directory),
-            "model_rating": model_rating,
-            "model_hash": music_evaluator.hash
+          "hash":           file_hash,
+          "hash_algorithm": music_search_engine.get_hash_algorithm(),
+          "file_path":      os.path.relpath(full_path, media_directory),
+          "model_rating":   model_rating,
+          "model_hash":     universal_evaluator.hash,
         }
         new_items.append(db_models.MusicLibrary(**file_data))
-
       common_socket_events.show_search_status(f"Updated model ratings for {ind+1}/{len(filtered_files_list)} files.")
 
-    # Bulk update and insert
     if update_items:
-        db_models.db.session.bulk_save_objects(update_items)
+      db_models.db.session.bulk_save_objects(update_items)
     if new_items:
-        db_models.db.session.bulk_save_objects(new_items)
-
-    # Commit the transaction
+      db_models.db.session.bulk_save_objects(new_items)
     db_models.db.session.commit()
 
   _check_and_submit_rating = make_scheduled_rating_check(
-      app, 'Music', music_file_manager, music_evaluator, cfg, 'music', update_model_ratings)
+      app, 'Music', music_file_manager, universal_evaluator, cfg, 'music', update_model_ratings)
   _check_and_submit_description = make_scheduled_description_check(
       app, 'Music', music_file_manager, metadata_search_engine, cfg, 'music')
 
@@ -317,7 +363,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
       "filters": filters,
       "get_file_info": get_file_info,
       "update_model_ratings": update_model_ratings,
-      "evaluator_hash": music_evaluator.hash,
+      "evaluator_hash": universal_evaluator.hash,
     })
     return music_file_manager.get_files(**input_params)
 
@@ -409,7 +455,18 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
   common_socket_events.show_loading_status('Music module ready!')
 
   rating_update_interval = OmegaConf.select(cfg, 'music.rating_update_interval_minutes', default=None)
-  schedule_task(app, interval_minutes=rating_update_interval, fn=_check_and_submit_rating)
+  Scheduler(app, interval_minutes=rating_update_interval, fn=_check_and_submit_rating,
+            name='Music: rate unrated files',
+            check_fn=lambda: universal_evaluator.hash is not None and len(music_file_manager.get_unrated_files(universal_evaluator.hash)) > 0)
 
   desc_interval = OmegaConf.select(cfg, 'music.description_update_interval_minutes', default=None)
-  # schedule_task(app, interval_minutes=desc_interval, fn=_check_and_submit_description)
+
+  def _music_desc_check():
+    all_files = music_file_manager.list_all_files()
+    if not all_files:
+      return False
+    candidates = metadata_search_engine.get_undescribed_files(all_files)
+    return candidates is None or len(candidates) > 0
+
+  Scheduler(app, interval_minutes=desc_interval, fn=_check_and_submit_description,
+            name='Music: describe undescribed files', check_fn=_music_desc_check)

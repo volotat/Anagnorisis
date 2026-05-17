@@ -53,6 +53,22 @@ Add new downloadable module for 'Deep Research'-like functionality that uses use
 
 ## Versions History
 
+### Version 0.3.16 (17.05.2026)
+*   **Embedding Proxy:**
+    *   Both the Images and Music modules now use the shared `UniversalEvaluator` for scoring files, replacing their previous module-specific evaluators. The separate "Train music evaluator" and "Train image evaluator" buttons have been removed from the Training page; only the "Train universal evaluator" button remains.
+    *   Added an embedding proxy system for Images and Music. Files that do not yet have an automatic OmniDescriptor description are now assigned a temporary text proxy derived from their SigLIP (images) or CLAP (music) embedding. The proxy includes zero-shot semantic tags matched from a configurable vocabulary and a compact quantized fingerprint, giving the universal evaluator meaningful content to score from immediately, even for files that have never been described.
+    *   Files that fail to generate an embedding (e.g. corrupt or unreadable files) now show a clear error message in the proxy section instead of silently producing no output or an identical misleading result shared across all failed files.
+    *   Fixed a CLAP model compatibility issue with newer `transformers` versions where audio files were silently failing to process, causing zero embeddings to be stored and all music files to show the same proxy. Affected files are automatically re-processed on the next rating pass.
+*   **Scheduler:**
+    *   Created single `Scheduler` class living entirely in `scheduler.py`. Starting a scheduler is now just creating an instance: `Scheduler(app, interval_minutes=..., fn=..., name=..., check_fn=...)`. No more function-with-a-handle split; the class owns both the state and the thread.
+*   **UI:**
+    *   Added a **Schedulers** section to the Background Tasks modal. Each registered scheduler shows its name, how often it runs, and a live countdown to the next fire. Schedulers can be paused and resumed directly from the modal; pausing freezes the countdown and the task will not fire until resumed.
+    *   Schedulers are grouped by module (e.g. all "Music:" entries appear under a "Music" heading), and the module prefix is stripped from the individual row labels to avoid repetition.
+    *   The Schedulers section is placed at the bottom of the modal, below Running, Queued, and Recent, so active task information remains prominent.
+*   **Docker Deployment:**
+    *   Reduced the Docker image size by switching to a lighter base image and using a two-stage build process. Build tools needed only during installation (compilers, git, etc.) are no longer included in the final image, cutting several hundred megabytes of unnecessary overhead. The application itself and all its Python dependencies are unaffected.
+    *   Added `gcc` and `libc6-dev` to the runtime image, which are required by the quantization libraries (`bitsandbytes`/`triton`) that compile small GPU helper utilities on first use.
+
 ### Version 0.3.15 (13.05.2026)
 *   **Scheduler:**
     *   Removed manual dedup guards (`startswith(base_name)` active/queued checks) from `src/module_helpers.py` (`make_scheduled_rating_check` and `make_scheduled_description_check`) and from `modules/_module_template/serve.py`. The scheduler's cooldown-after-completion model is the correct mechanism to prevent accumulation; the in-function guards were redundant and masked the real issue.

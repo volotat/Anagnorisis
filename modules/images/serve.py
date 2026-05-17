@@ -7,7 +7,9 @@ import numpy as np
 from io import BytesIO
 
 
-from modules.images.engine import ImageSearch, ImageEvaluator
+from modules.images.engine import ImageSearch  # ImageEvaluator no longer used for scoring — replaced by UniversalEvaluator
+from modules.train.universal_train import UniversalEvaluator
+from src.embedding_proxy import EmbeddingProxyGenerator
 import torch
 import send2trash
 import time
@@ -17,7 +19,7 @@ import pickle
 from omegaconf import OmegaConf
 
 from src.utils import SortingProgressCallback, EmbeddingGatheringCallback
-from src.scheduler import schedule_task
+from src.scheduler import Scheduler
 from src.socket_events import CommonSocketEvents
 import src.file_manager as file_manager
 
@@ -121,11 +123,12 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
     images_search_engine = ImageSearch(cfg=cfg)
     images_search_engine.initiate(models_folder=cfg.main.embedding_models_path, cache_folder=cfg.main.cache_path)
 
-    common_socket_events.show_loading_status('Initializing image evaluator...')
-    image_evaluator = ImageEvaluator()
-
-    common_socket_events.show_loading_status('Loading image evaluator model...')
-    image_evaluator.load(os.path.join(cfg.main.personal_models_path, 'image_evaluator.pt'))
+    # ImageEvaluator (MLP on SigLIP embeddings) has been superseded by UniversalEvaluator
+    # (Transformer on Jina text embeddings).  image_evaluator.pt is no longer used.
+    common_socket_events.show_loading_status('Initializing universal evaluator...')
+    universal_evaluator = UniversalEvaluator()
+    print('Loading universal evaluator model from', os.path.join(cfg.main.personal_models_path, 'universal_evaluator.pt'))
+    universal_evaluator.load(os.path.join(cfg.main.personal_models_path, 'universal_evaluator.pt'))
 
     def gather_resolutions(all_files, all_hashes, media_directory):
         resolutions = {}
@@ -157,8 +160,28 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
     common_socket_events.show_loading_status('Initializing metadata search...')
     metadata_search_engine = MetadataSearch(engine=images_search_engine)
 
+    # Set up embedding proxy so that files without an OmniDescriptor description
+    # still receive a meaningful text representation (SigLIP tags + fingerprint).
+    common_socket_events.show_loading_status('Initializing embedding proxy...')
+    _tag_list      = list(OmegaConf.select(cfg, 'images.embedding_tags', default=[]) or [])
+    _tag_threshold_raw = OmegaConf.select(cfg, 'images.embedding_tags_threshold', default=0.20)
+    _tag_threshold = float(_tag_threshold_raw) if _tag_threshold_raw is not None else None
+    images_proxy_gen = EmbeddingProxyGenerator(
+        engine=images_search_engine,
+        tag_list=_tag_list,
+        threshold=_tag_threshold,
+        cache_path=cfg.main.cache_path,
+        model_name=getattr(cfg.images, 'embedding_model', 'SigLIP'),
+    )
+    metadata_search_engine.embedding_proxy = images_proxy_gen
+
     def update_model_ratings(files_list):
         print(f"Updating model ratings for {len(files_list)} images...")
+
+        # Skip if the universal evaluator has not been trained yet
+        if universal_evaluator.hash is None:
+            print('[Images] Universal evaluator not trained yet. Skipping model rating update.')
+            return
 
         files_list_hash_map = {}
         for ind, file_path in enumerate(files_list):
@@ -168,76 +191,98 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
 
         hash_list = list(files_list_hash_map.values())
 
-        # Fetch ALL images from the database in a single query (not just rated ones)
+        # Fetch files that already have an up-to-date rating in the database
         all_existing_db_items = db_models.ImagesLibrary.query.filter(
             db_models.ImagesLibrary.hash.in_(hash_list)
         ).all()
+        existing_hashes     = {item.hash for item in all_existing_db_items}
+        rated_images_hashes = {
+            item.hash for item in all_existing_db_items
+            if item.model_rating is not None and item.model_hash == universal_evaluator.hash
+        }
 
-        # Create separate sets for existing hashes and those with current model ratings
-        existing_hashes = {item.hash for item in all_existing_db_items}
-        rated_images_hashes = {item.hash for item in all_existing_db_items 
-                            if item.model_rating is not None and item.model_hash == image_evaluator.hash}
+        filtered_files_list = [fp for fp, fh in files_list_hash_map.items() if fh not in rated_images_hashes]
+        if not filtered_files_list:
+            return
 
-        # Filter out files that already have a rating in the database
-        filtered_files_list = [file_path for file_path, file_hash in files_list_hash_map.items() if file_hash not in rated_images_hashes]
-        if not filtered_files_list: return
-        
-        # Rate all images in case they are not rated or model was updated
-        common_socket_events.show_search_status(f"Computing embeddings for {len(filtered_files_list)} files...")
-        embeddings = images_search_engine.process_images(filtered_files_list, callback=embedding_gathering_callback, media_folder=media_directory) #.cpu().detach().numpy() 
-        model_ratings = image_evaluator.predict(embeddings)
+        # ── Step 1: Compute SigLIP embeddings (fast — results are disk-cached) ──
+        common_socket_events.show_search_status(f"Computing SigLIP embeddings for {len(filtered_files_list)} files...")
+        embeddings = images_search_engine.process_images(
+            filtered_files_list, callback=embedding_gathering_callback, media_folder=media_directory
+        )  # [N, D] tensor
 
-        # Update the model ratings in the database
-        common_socket_events.show_search_status(f"Updating model ratings of images...") 
-        new_items = []
-        update_items = []
-        processed_hashes = set()  # Track hashes we've already processed in this batch
+        # ── Step 2: Pre-populate proxy cache before the Jina embedding phase ───
+        common_socket_events.show_search_status("Preparing embedding proxies...")
+        for i, fp in enumerate(filtered_files_list):
+            try:
+                images_proxy_gen.compute_proxy_section(files_list_hash_map[fp], embeddings[i].cpu().numpy())
+            except Exception as e:
+                print(f"[Images] Proxy generation failed for {fp}: {e}")
+
+        # ── Step 3: Build text descriptions (includes proxy section) + Jina embed ─
+        common_socket_events.show_search_status(f"Computing metadata embeddings for {len(filtered_files_list)} files...")
+        all_embeddings = []
+        embedding_dim  = metadata_search_engine.text_embedder.embedding_dim or 1024
+        for ind, full_path in enumerate(filtered_files_list):
+            common_socket_events.show_search_status(f"Computing metadata embeddings {ind+1}/{len(filtered_files_list)}")
+            try:
+                description = metadata_search_engine.generate_full_description(
+                    full_path,
+                    media_folder=media_directory,
+                    generate_desc_if_not_in_cache=False,
+                )
+                chunk_embeddings = metadata_search_engine.text_embedder.embed_text(description)
+                if chunk_embeddings is not None and len(chunk_embeddings) > 0:
+                    all_embeddings.append(np.array(chunk_embeddings, dtype=np.float32))
+                else:
+                    all_embeddings.append(np.zeros((1, embedding_dim), dtype=np.float32))
+            except Exception as e:
+                print(f"[Images] Embedding failed for {full_path}: {e}")
+                all_embeddings.append(np.zeros((1, embedding_dim), dtype=np.float32))
+
+        # ── Step 4: Predict with universal evaluator and persist ───────────────
+        model_ratings = universal_evaluator.predict(all_embeddings)
+
+        common_socket_events.show_search_status("Updating model ratings of images...")
+        new_items       = []
+        update_items    = []
+        processed_hashes = set()
 
         for ind, full_path in enumerate(filtered_files_list):
-            # print(f"Updating model ratings for {ind+1}/{len(filtered_files_list)} images.")
-
-            hash = files_list_hash_map[full_path]
-
-            # Skip if we've already processed this hash in this batch
-            if hash in processed_hashes:
+            file_hash = files_list_hash_map[full_path]
+            if file_hash in processed_hashes:
                 continue
-            processed_hashes.add(hash)
+            processed_hashes.add(file_hash)
 
-            model_rating = model_ratings[ind].item()
+            model_rating = float(model_ratings[ind])
 
-            # Check if this hash already exists in DB (avoid UNIQUE constraint error)
-            if hash in existing_hashes:
-                # Update existing record
-                image_db_item = db_models.ImagesLibrary.query.filter_by(hash=hash).first()
+            if file_hash in existing_hashes:
+                image_db_item = db_models.ImagesLibrary.query.filter_by(hash=file_hash).first()
                 if image_db_item:
                     image_db_item.model_rating = model_rating
-                    image_db_item.model_hash = image_evaluator.hash
+                    image_db_item.model_hash   = universal_evaluator.hash
                     update_items.append(image_db_item)
             else:
                 image_data = {
-                    "hash": hash,
+                    "hash":           file_hash,
                     "hash_algorithm": images_search_engine.get_hash_algorithm(),
-                    "file_path": os.path.relpath(full_path, media_directory),
-                    "model_rating": model_rating,
-                    "model_hash": image_evaluator.hash
+                    "file_path":      os.path.relpath(full_path, media_directory),
+                    "model_rating":   model_rating,
+                    "model_hash":     universal_evaluator.hash,
                 }
                 new_items.append(db_models.ImagesLibrary(**image_data))
-                # Add to existing_hashes so subsequent duplicates in this batch are caught
-                existing_hashes.add(hash)
+                existing_hashes.add(file_hash)
 
-            common_socket_events.show_search_status(f"Updated model ratings for {ind+1}/{len(filtered_files_list)} images.")    
+            common_socket_events.show_search_status(f"Updated model ratings for {ind+1}/{len(filtered_files_list)} images.")
 
-        # Bulk update and insert
         if update_items:
-                db_models.db.session.bulk_save_objects(update_items)
+            db_models.db.session.bulk_save_objects(update_items)
         if new_items:
-                db_models.db.session.bulk_save_objects(new_items)
-
-        # Commit the transaction
+            db_models.db.session.bulk_save_objects(new_items)
         db_models.db.session.commit()
 
     _check_and_submit_rating = make_scheduled_rating_check(
-        app, 'Images', images_file_manager, image_evaluator, cfg, 'images', update_model_ratings)
+        app, 'Images', images_file_manager, universal_evaluator, cfg, 'images', update_model_ratings)
     _check_and_submit_description = make_scheduled_description_check(
         app, 'Images', images_file_manager, metadata_search_engine, cfg, 'images')
 
@@ -333,7 +378,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
             "filters": filters,
             "get_file_info": get_file_info,
             "update_model_ratings": update_model_ratings,
-            "evaluator_hash": image_evaluator.hash,
+            "evaluator_hash": universal_evaluator.hash,
         })
         return images_file_manager.get_files(**input_params)
 
@@ -606,7 +651,11 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
     common_socket_events.show_loading_status('Images module ready!')
 
     rating_update_interval = OmegaConf.select(cfg, 'images.rating_update_interval_minutes', default=None)
-    schedule_task(app, interval_minutes=rating_update_interval, fn=_check_and_submit_rating)
+    Scheduler(app, interval_minutes=rating_update_interval, fn=_check_and_submit_rating,
+              name='Images: rate unrated files',
+              check_fn=lambda: universal_evaluator.hash is not None and len(images_file_manager.get_unrated_files(universal_evaluator.hash)) > 0)
 
     desc_interval = OmegaConf.select(cfg, 'images.description_update_interval_minutes', default=None)
-    # schedule_task(app, interval_minutes=desc_interval, fn=_check_and_submit_description)
+    Scheduler(app, interval_minutes=desc_interval, fn=_check_and_submit_description,
+              name='Images: describe undescribed files',
+              check_fn=lambda: (lambda f: f and (metadata_search_engine.get_undescribed_files(f) is None or len(metadata_search_engine.get_undescribed_files(f)) > 0))(images_file_manager.list_all_files()))

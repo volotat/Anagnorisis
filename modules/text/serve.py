@@ -14,7 +14,7 @@ import numpy as np
 from modules.text.engine import TextSearch
 from modules.train.universal_train import UniversalEvaluator
 from src.utils import SortingProgressCallback, EmbeddingGatheringCallback
-from src.scheduler import schedule_task
+from src.scheduler import Scheduler
 from src.module_helpers import make_scheduled_rating_check, make_scheduled_description_check
 
 
@@ -342,7 +342,10 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
     common_socket_events.show_loading_status('Text module ready!')
 
     rating_update_interval = OmegaConf.select(cfg, 'text.rating_update_interval_minutes', default=None)
-    schedule_task(app, interval_minutes=rating_update_interval, fn=_check_and_submit_rating)
+    Scheduler(app, interval_minutes=rating_update_interval, fn=_check_and_submit_rating,
+              name='Text: rate unrated files',
+              check_fn=lambda: text_evaluator.hash is not None and len(text_file_manager.get_unrated_files(text_evaluator.hash)) > 0)
 
-    #desc_interval = OmegaConf.select(cfg, 'text.description_update_interval_minutes', default=None)
-    #schedule_task(app, interval_minutes=desc_interval, fn=_check_and_submit_description)
+    desc_interval = OmegaConf.select(cfg, 'text.description_update_interval_minutes', default=None)
+    Scheduler(app, interval_minutes=desc_interval, fn=_check_and_submit_description,
+             name='Text: describe undescribed files')

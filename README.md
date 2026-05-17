@@ -136,7 +136,7 @@ ERROR: for {your container name} Cannot start service anagnorisis: error while c
 You have to create the folder specified as your project config mount target (the path before `:/mnt/project_config` in your `docker-compose.override.yaml`) manually on your host machine. Docker sometimes cannot create such folders by itself due to permission issues.
 
 ## Additional notes for installation
-The Docker container includes Ubuntu 22.04, CUDA drives and several large machine learning models and dependencies, which results in a significant storage footprint. After the container is built it will take about 45GB of storage on your disk. 
+The Docker image (Python dependencies, PyTorch with CUDA runtime, system libraries) takes approximately 8 GB of disk space after building. On first startup the application downloads the required ML models that would take roughly 23 GB from the disk. If you use the project heavily with active use of external modules, their caches can grow to several additional gigabytes. As a rough total estimate, budget around 40 GB of free disk space before starting.
 
 For best user experience I would recommend running the project with relatively modern Nvidia GPU with at least 8Gb of VRAM and 32Gb of RAM. At least this is the configuration I am using myself. However, the project should be able to run on lower configurations, but performance might be poor especially without CUDA-friendly GPU. Note that CPU-only mode might be significantly slower.
 

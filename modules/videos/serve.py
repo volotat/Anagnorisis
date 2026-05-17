@@ -36,7 +36,7 @@ from src.utils import convert_size, convert_length, time_difference
 
 from src.common_filters import CommonFilters
 from src.metadata_search import MetadataSearch
-from src.scheduler import schedule_task
+from src.scheduler import Scheduler
 from src.module_helpers import register_meta_handlers, make_scheduled_rating_check, make_scheduled_description_check
 
 
@@ -693,7 +693,10 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
     common_socket_events.show_loading_status('Videos module ready!')
 
     rating_update_interval = OmegaConf.select(cfg, 'videos.rating_update_interval_minutes', default=None)
-    schedule_task(app, interval_minutes=rating_update_interval, fn=_check_and_submit_rating)
+    Scheduler(app, interval_minutes=rating_update_interval, fn=_check_and_submit_rating,
+              name='Videos: rate unrated files',
+              check_fn=lambda: videos_evaluator.hash is not None and len(videos_file_manager.get_unrated_files(videos_evaluator.hash)) > 0)
 
     desc_interval = OmegaConf.select(cfg, 'videos.description_update_interval_minutes', default=None)
-    # schedule_task(app, interval_minutes=desc_interval, fn=_check_and_submit_description)
+    Scheduler(app, interval_minutes=desc_interval, fn=_check_and_submit_description,
+              name='Videos: describe undescribed files')

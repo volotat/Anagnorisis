@@ -113,7 +113,7 @@ class MusicSearch(BaseSearchEngine):
         return db_models.MusicLibrary
     
     def _get_model_hash_postfix(self):
-        return ""
+        return "v1.2"
     
     def _get_media_folder(self) -> str:
         if self.cfg is None or not hasattr(self.cfg, 'music') or not hasattr(self.cfg.music, 'media_directory'):
@@ -167,7 +167,7 @@ class MusicSearch(BaseSearchEngine):
 
         # Use the CLAP processor; feed plain float arrays
         proc = self.processor(
-            audio=[waveform], #.cpu().numpy()
+            audios=[waveform],
             sampling_rate=sample_rate,
             return_tensors="pt",
             padding=False,

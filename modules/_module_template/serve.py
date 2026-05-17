@@ -37,7 +37,7 @@ import modules._module_template.db_models as db_models
 from src.socket_events import CommonSocketEvents
 from src.common_filters import CommonFilters
 from src.metadata_search import MetadataSearch
-from src.scheduler import schedule_task
+from src.scheduler import Scheduler
 from src.utils import convert_size, SortingProgressCallback, EmbeddingGatheringCallback
 
 
@@ -195,9 +195,6 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
         """Scheduled: find unrated files on disk and submit a rating task if needed."""
         candidates = example_file_manager.get_unrated_files(evaluator.hash)
         total = len(candidates)
-        if total == 0:
-            return
-
         base_name = 'Example: rate unrated files'
         batch_size = OmegaConf.select(cfg, 'example.rating_update_batch_size', default=None)
         batch_size = min(batch_size, total) if batch_size else total
@@ -213,11 +210,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
     def _check_and_submit_description():
         """Scheduled: find undescribed files and submit a description task if needed."""
         all_files = example_file_manager.list_all_files()
-        if not all_files:
-            return
         candidates = metadata_search_engine.get_undescribed_files(all_files)
-        if candidates is not None and len(candidates) == 0:
-            return
         if candidates is None:
             candidates = all_files
         base_name = 'Example: describe undescribed files'
@@ -370,7 +363,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
         """Generate a full AI-powered metadata description for a single file."""
         nonlocal media_directory
         full_path = os.path.join(media_directory, file_path)
-        content = metadata_search_engine.generate_full_description(full_path, media_directory)
+        content = metadata_search_engine.generate_full_description(full_path, media_directory, generate_desc_if_not_in_cache=False)
         return {"content": content, "file_path": file_path}
 
     # --- Finish initialisation & schedule background tasks ----------------
@@ -378,7 +371,18 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
     common_socket_events.show_loading_status('Example module ready!')
 
     rating_interval = OmegaConf.select(cfg, 'example.rating_update_interval_minutes', default=None)
-    schedule_task(app, interval_minutes=rating_interval, fn=_check_and_submit_rating)
+    Scheduler(app, interval_minutes=rating_interval, fn=_check_and_submit_rating,
+              name='Example: rate unrated files',
+              check_fn=lambda: evaluator.hash is not None and len(example_file_manager.get_unrated_files(evaluator.hash)) > 0)
 
     desc_interval = OmegaConf.select(cfg, 'example.description_update_interval_minutes', default=None)
-    schedule_task(app, interval_minutes=desc_interval, fn=_check_and_submit_description)
+
+    def _example_desc_check():
+        all_files = example_file_manager.list_all_files()
+        if not all_files:
+            return False
+        candidates = metadata_search_engine.get_undescribed_files(all_files)
+        return candidates is None or len(candidates) > 0
+
+    Scheduler(app, interval_minutes=desc_interval, fn=_check_and_submit_description,
+              name='Example: describe undescribed files', check_fn=_example_desc_check)

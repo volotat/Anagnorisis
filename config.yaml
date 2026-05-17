@@ -11,6 +11,36 @@ music:
   rating_update_batch_size: 3000 # Max number of files rated per background run (set to null for no limit)
   description_update_interval_minutes: 30 # How often to proactively describe undescribed files via OmniDescriptor (set to null to disable)
   description_update_batch_size: 10 # Max number of files described per background run
+  # Tags used by EmbeddingProxyGenerator for zero-shot labelling via CLAP cosine similarity.
+  # Only tags whose similarity to the audio embedding meets the threshold are included.
+  # Extend or edit this list freely — tag embeddings are recomputed and cached automatically
+  # whenever the list changes (detected by vocab hash).
+  embedding_tags_threshold: null  # null = always show top-15 tags; set a float (e.g. 0.08) to filter by cosine similarity
+  embedding_tags:
+  # Genres
+  - [jazz, blues, classical music, rock music, pop music, folk music, country music, R&B, soul music]
+  - [hip-hop, rap, electronic music, ambient music, heavy metal, punk rock, reggae, latin music]
+  - [indie rock, alternative rock, dance music, house music, techno, trance, drum and bass, dubstep]
+  - [gospel music, opera, musical theatre, world music, African music, flamenco, bossa nova, bluegrass]
+  - [new age music, lo-fi music, synthwave, grunge, progressive rock, psychedelic music, funk music]
+  - [disco, swing, bebop, smooth jazz, celtic music, k-pop, j-pop, chiptune, vaporwave]
+  # Moods & emotions
+  - [happy music, sad music, melancholic, energetic music, calm music, peaceful, intense music]
+  - [romantic music, nostalgic, aggressive music, relaxing music, uplifting music, dark atmosphere]
+  - [mysterious, playful music, dramatic music, ethereal, hypnotic, groovy, cheerful, tense]
+  - [emotional, dreamy, powerful, gentle, meditative, suspenseful, triumphant, melancholy, joyful]
+  # Instruments
+  - [guitar, electric guitar, acoustic guitar, piano, violin, drums, bass guitar, saxophone, trumpet]
+  - [cello, flute, synthesizer, organ, harp, oboe, clarinet, trombone, banjo, ukulele, mandolin]
+  - [percussion, choir, vocals, male vocals, female vocals, strings ensemble, brass section, woodwinds]
+  - [keyboard, harmonica, accordion, sitar, didgeridoo, bagpipes, turntable, theremin]
+  # Tempo & energy
+  - [fast tempo, slow tempo, medium tempo, high energy, low energy, rhythmic, syncopated rhythm]
+  - [steady beat, complex rhythm, sparse arrangement, dense arrangement, rubato, a cappella]
+  # Production & style
+  - [live recording, studio recording, orchestral, minimalist, complex composition, loud, quiet]
+  - [distorted, clean sound, heavy reverb, echo effect, atmospheric, cinematic music, acoustic]
+  - [instrumental, lo-fi recording, high production quality, experimental music, improvisation]
   media_formats:
   - .mp3
   - .flac
@@ -26,6 +56,62 @@ images:
   rating_update_batch_size: 3000 # Max number of files rated per background run (set to null for no limit)
   description_update_interval_minutes: 30 # How often to proactively describe undescribed files via OmniDescriptor (set to null to disable)
   description_update_batch_size: 10 # Max number of files described per background run
+  # Tags used by EmbeddingProxyGenerator for zero-shot labelling via SigLIP cosine similarity.
+  # Only tags whose similarity to the image embedding meets the threshold are included.
+  # Extend or edit this list freely — tag embeddings are recomputed and cached automatically
+  # whenever the list changes (detected by vocab hash).
+  embedding_tags_threshold: null  # null = always show top-15 tags; set a float (e.g. 0.05) to filter by cosine similarity
+  embedding_tags:
+  # People & body
+  - [portrait, person, people, child, baby, toddler, teenager, young adult, elderly person]
+  - [man, woman, boy, girl, crowd, group of people, selfie, face, eyes, smile, nude, topless]
+  - [muscular body, overweight, pregnant, couple, family, twins]
+  # Nudity & adult content
+  - [nudity, explicit content, nsfw, sexual content, erotic, suggestive, lingerie, bikini]
+  - [clothed, fully clothed, partially clothed, underwear, swimwear]
+  # Animals
+  - [dog, cat, bird, horse, cow, pig, sheep, rabbit, fish, reptile, insect, spider, bear, lion]
+  - [tiger, wolf, fox, deer, elephant, giraffe, monkey, dolphin, whale, shark, wildlife, pet]
+  # Nature & landscape
+  - [flower, tree, forest, grass, plant, mushroom, landscape, mountain, ocean, river, lake, beach]
+  - [sky, clouds, sunset, sunrise, storm, lightning, rainbow, snow, ice, desert, jungle, swamp]
+  - [waterfall, canyon, volcano, island, cave, field, meadow, coral reef, aurora]
+  # Urban & architecture
+  - [city, building, skyscraper, house, church, castle, bridge, road, street, alley, tunnel]
+  - [interior, room, bedroom, kitchen, office, library, corridor, stairs, window, door, ceiling]
+  - [ruins, graffiti, monument, statue, fountain, market, parking lot, airport, train station]
+  # Objects & things
+  - [food, fruit, vegetables, cake, pizza, sushi, drink, coffee, wine, beer, bottle, glass]
+  - [car, motorcycle, bicycle, airplane, boat, train, truck, bus, spaceship, tank]
+  - [gun, weapon, knife, sword, bomb, fire, explosion, smoke]
+  - [book, phone, computer, screen, keyboard, camera, microphone, television, headphones]
+  - [money, coin, trophy, gift, toy, ball, furniture, chair, table, lamp, mirror, clock, map]
+  - [clothing, shoes, hat, glasses, jewelry, bag, umbrella, flag, sign, logo]
+  # Sky & space
+  - [stars, moon, sun, planet, galaxy, nebula, meteor, satellite, rocket, space station]
+  # Style & medium
+  - [photograph, painting, drawing, sketch, illustration, digital art, 3D render, pixel art]
+  - [watercolor, oil painting, pencil drawing, ink drawing, collage, mosaic, graffiti art]
+  - [abstract art, realistic, minimalist, surreal, fantasy art, sci-fi art, horror art]
+  - [anime, manga, cartoon, comic, caricature, concept art, game art, icon, logo design]
+  - [black and white, sepia, vintage, retro, modern, futuristic, vaporwave aesthetic]
+  # Colors & lighting
+  - [colorful, monochrome, dark image, bright image, warm colors, cool colors, pastel colors]
+  - [red, orange, yellow, green, blue, purple, pink, brown, white, black, gray, gold, silver]
+  - [high contrast, low contrast, soft lighting, dramatic lighting, natural light, studio lighting]
+  - [backlit, neon lights, candlelight, sunlight, shadows, silhouette, glowing, overexposed]
+  # Composition & framing
+  - [close-up, wide shot, aerial view, macro photography, underwater, overhead view, panorama]
+  - [symmetrical composition, rule of thirds, blurred background, bokeh, sharp focus, depth of field]
+  - [split image, double exposure, long exposure, motion blur, tilt-shift]
+  # Quality & meta
+  - [high resolution, low resolution, blurry, grainy, professional photography, amateur photo]
+  - [screenshot, meme, infographic, chart, diagram, map, text in image, watermark, thumbnail]
+  - [AI generated image, CGI, product photo, stock photo, news photo, medical image, x-ray]
+  # Mood & aesthetics
+  - [beautiful, cute, funny, creepy, scary, sad, dramatic, romantic, peaceful, chaotic, cozy]
+  - [elegant, raw, aesthetic, nostalgic, mysterious, epic, serene, intense, whimsical, dark]
+  - [cheerful, melancholic, tense, dreamy, powerful, surreal, minimalistic, maximalist, grungy]
   media_formats:
   - .jpg
   - .jpeg
