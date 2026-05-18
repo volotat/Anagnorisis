@@ -387,7 +387,7 @@ class TextEmbedder:
         
         # State mirroring
         self.embedding_dim = None
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu') # Assumption until loaded
+        self.device = torch.device('cpu')  # Updated to actual device after initiate()
         self.model = "ProxyModel" # Dummy to satisfy checks
         self.tokenizer = "ProxyTokenizer" # Dummy
         self._models_folder = None # Stored for re-initiation

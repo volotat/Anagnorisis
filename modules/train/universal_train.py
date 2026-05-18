@@ -15,7 +15,7 @@ import time
 from collections import Counter
 
 from sklearn.model_selection import train_test_split
-from src.scoring_models import TransformerEvaluator
+from src.universal_evaluator import UniversalEvaluator
 from src.text_embedder import TextEmbedder
 
 
@@ -39,23 +39,10 @@ ENABLE_LOSS_WEIGHTING = False
 
 
 
-# ---------------------------------------------------------------------------
-# Singleton universal evaluator
-# ---------------------------------------------------------------------------
-class UniversalEvaluator(TransformerEvaluator):
-    """Singleton TransformerEvaluator shared across the application."""
-
-    _instance = None
-
-    def __new__(cls, *args, **kwargs):
-        if cls._instance is None:
-            cls._instance = super(UniversalEvaluator, cls).__new__(cls)
-        return cls._instance
-
-    def __init__(self, embedding_dim=1024, rate_classes=11):
-        if not hasattr(self, '_initialized'):
-            super().__init__(embedding_dim, rate_classes, name="UniversalEvaluator")
-            self._initialized = True
+# UniversalEvaluator is now a subprocess proxy defined in src/universal_evaluator.py.
+# It is re-exported here for backward-compatibility with any code that imports it
+# from this module path.
+# from src.universal_evaluator import UniversalEvaluator  # already imported above
 
 
 # ---------------------------------------------------------------------------
@@ -281,54 +268,40 @@ def train_universal_evaluator(cfg, callback=None, max_steps=None, time_budget_se
         np.abs(mean_score - np.array(y_test)) / (np.array(y_test) + evaluator.mape_bias)
     )
 
-    # 4. Training loop
-    best_train_accuracy = 0
-    best_test_accuracy = 0
-    best_epoch = 0
+    # 4. Training loop — runs entirely inside the UniversalEvaluator subprocess.
+    #    Progress messages are streamed back to the callback in real time.
     total_epochs = max_steps if max_steps is not None else 5001
     batch_size = 32
 
     model_save_path = os.path.join(cfg.main.personal_models_path, 'universal_evaluator.pt')
 
-    # pbar = tqdm(range(total_epochs), desc="Universal training")
-    training_loop_start = time.time()
-
-    # Send intial train and test accuracy (before any training) to the callback so the UI can show a baseline point on the graph.
-    if callback:
-        train_accuracy, test_accuracy = evaluator.evaluate(X_train, y_train, X_test, y_test, batch_size=batch_size)
-        callback(status, 0, baseline_accuracy, train_accuracy, test_accuracy)
-
-    print(f"[UniversalTrain] Starting training loop for up to {total_epochs} epochs...")
+    print(f"[UniversalTrain] Starting training loop for up to {total_epochs} epochs via subprocess...")
     print(f"[UniversalTrain] Training samples: {len(X_train)}, Baseline Accuracy: {baseline_accuracy * 100:.2f}%")
 
-    for epoch in range(total_epochs):
-        train_accuracy, test_accuracy = evaluator.train(
-            X_train, y_train, X_test, y_test,
-            batch_size=batch_size,
-            sample_weights=sample_weights,
-        )
+    def _progress_handler(data):
+        """Relay subprocess progress messages to the caller's callback."""
+        if callback is None:
+            return
+        if data['type'] == 'initial_eval':
+            # Epoch-0 baseline point for the UI chart
+            callback(status, 0, baseline_accuracy, data['train_acc'], data['test_acc'])
+        elif data['type'] == 'epoch':
+            percent = (data['epoch'] + 1) / total_epochs
+            callback(status, percent, baseline_accuracy, data['train_acc'], data['test_acc'])
 
-        # pbar.set_description(
-        #     f'Epoch: {epoch + 1}, '
-        #     f'Train: {train_accuracy * 100:.2f}%, '
-        #     f'Test: {test_accuracy * 100:.2f}%'
-        # )
+    result = evaluator.train_full(
+        X_train, y_train, X_test, y_test,
+        sample_weights,
+        total_epochs,
+        batch_size,
+        time_budget_seconds,
+        model_save_path,
+        progress_callback=_progress_handler,
+    )
 
-        if callback:
-            percent = (epoch + 1) / total_epochs
-            callback(status, percent, baseline_accuracy, train_accuracy, test_accuracy)
-
-        if test_accuracy > best_test_accuracy:
-            best_train_accuracy = train_accuracy
-            best_test_accuracy = test_accuracy
-            best_epoch = epoch + 1
-            evaluator.save(model_save_path)
-
-        if time_budget_seconds is not None:
-            elapsed_training = time.time() - training_loop_start
-            if elapsed_training >= time_budget_seconds:
-                print(f"[UniversalTrain] Time budget of {time_budget_seconds}s reached after epoch {epoch + 1}.")
-                break
+    best_epoch = result['best_epoch']
+    best_train_accuracy = result['best_train_accuracy']
+    best_test_accuracy = result['best_test_accuracy']
 
     status = (
         f'Best Epoch: {best_epoch}, '
@@ -339,6 +312,6 @@ def train_universal_evaluator(cfg, callback=None, max_steps=None, time_budget_se
     if callback:
         callback(status, 100, baseline_accuracy)
 
-    # Reload best checkpoint
-    evaluator.load(model_save_path)
+    # The subprocess already reloaded the best checkpoint internally.
+    # evaluator.hash is mirrored by train_full() so downstream hash checks work.
     print('[UniversalTrain] Training complete! Universal evaluator is ready.')

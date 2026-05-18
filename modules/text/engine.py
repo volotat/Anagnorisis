@@ -14,7 +14,6 @@ import numpy as np
 from tqdm import tqdm
 from omegaconf import OmegaConf
 
-import src.scoring_models
 import src.file_manager as file_manager
 import modules.text.db_models as db_models
 from src.base_search_engine import BaseSearchEngine

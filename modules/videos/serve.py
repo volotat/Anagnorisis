@@ -29,7 +29,7 @@ import src.file_manager as file_manager
 import modules.videos.db_models as db_models
 from modules.videos.engine import VideoSearch, VideoEvaluator
 from src.recommendation_engine import sort_files_by_recommendation
-from modules.train.universal_train import UniversalEvaluator
+from src.universal_evaluator import UniversalEvaluator
 
 
 from src.utils import convert_size, convert_length, time_difference

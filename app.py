@@ -107,14 +107,13 @@ cfg.main.embedding_models_path = embedding_models_path
 cfg.main.personal_models_path = personal_models_path
 cfg.main.cache_path = cache_path
 
-# Propagate the configured device to all in-process ML components so that no
-# CUDA context is ever initialised in the main Flask process when device='cpu'.
+# All heavy ML models (embedders, evaluator) now run in dedicated subprocesses
+# that detect their own device via torch.cuda.is_available().  The main Flask
+# process never touches CUDA directly, so configure_device() is no longer
+# needed here.  common_filters (compute_distances_batched) operates on CPU
+# tensors returned from subprocess proxies and defaults to 'cpu'.
 _configured_device: str = cfg.main.get('device', 'cpu')
-import src.scoring_models as _scoring_models_module
-import src.common_filters as _common_filters_module
-_scoring_models_module.configure_device(_configured_device)
-_common_filters_module.configure_device(_configured_device)
-print(f"ML device for main process: {_configured_device}")
+print(f"Configured device (used by ML subprocesses): {_configured_device}")
 
 # Ensure database path is properly set up
 # If the database path is relative, make it absolute within the data folder

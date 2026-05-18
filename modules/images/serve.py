@@ -8,7 +8,7 @@ from io import BytesIO
 
 
 from modules.images.engine import ImageSearch  # ImageEvaluator no longer used for scoring — replaced by UniversalEvaluator
-from modules.train.universal_train import UniversalEvaluator
+from src.universal_evaluator import UniversalEvaluator
 from src.embedding_proxy import EmbeddingProxyGenerator
 import torch
 import send2trash
@@ -26,7 +26,6 @@ import src.file_manager as file_manager
 
 from src.utils import convert_size, convert_length, time_difference
 
-import src.scoring_models
 from src.common_filters import CommonFilters
 from src.metadata_search import MetadataSearch
 from src.module_helpers import register_meta_handlers, make_scheduled_rating_check, make_scheduled_description_check

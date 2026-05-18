@@ -137,7 +137,8 @@ class VideoSearch(BaseSearchEngine):
         For future: Implement loading of a video embedding model.
         """
         print(f"VideoSearch: No embedding model loaded yet. Using stub.")
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        # Stub model always runs on CPU — no CUDA context in the main process.
+        self.device = torch.device('cpu')
         # Simulate an embedding dimension for consistency with BaseSearchEngine and Evaluator
         self.embedding_dim = 512 # A common default for many models, can be changed later.
         
@@ -156,7 +157,7 @@ class VideoSearch(BaseSearchEngine):
         # This will be stored in the DB as a pickled zero tensor if `process_files` is called.
         if self.embedding_dim is None:
             raise RuntimeError("Embedding dimension not set. Call initiate() first.")
-        return torch.zeros(1, self.embedding_dim).to(self.device)
+        return torch.zeros(1, self.embedding_dim)  # stub: always CPU
 
     # Public method for consistency with other search engines.
     # It will call super().process_files, which will in turn call _process_single_file.
@@ -172,8 +173,8 @@ class VideoSearch(BaseSearchEngine):
         """
         if self.embedding_dim is None:
             raise RuntimeError("Embedding dimension not set. Call initiate() first.")
-        # Return a dummy text embedding (zeros)
-        return torch.zeros(1, self.embedding_dim).to(self.device) 
+        # Return a dummy text embedding (zeros) — stub always on CPU
+        return torch.zeros(1, self.embedding_dim) 
     
     def compare(self, embeds_target, embeds_query):
         return [0.0] 

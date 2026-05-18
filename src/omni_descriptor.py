@@ -1644,7 +1644,7 @@ class OmniDescriptor:
         self._lock = threading.Lock()
 
         # State mirroring
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.device = torch.device('cpu')  # Updated to actual device after initiate()
         self.model = "ProxyModel"  # Dummy to satisfy checks
         self._models_folder = None
         self.model_hash = None

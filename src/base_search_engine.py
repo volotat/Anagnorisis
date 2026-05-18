@@ -401,13 +401,9 @@ class BaseSearchEngine(ABC):
             if outputs[i] is None:
                 outputs[i] = torch.zeros(1, self.embedding_dim)
 
-        # 5) Sanity check: move all the outputs to the same device before concatenation
-        for i in range(N):
-            outputs[i] = outputs[i].to(device=self.device)
-        
-        # 6) Concatenate and move to active device
+        # 5) Concatenate — all outputs are CPU tensors (cached as cpu above)
         out = torch.cat([t for t in outputs], dim=0)
-        return out.to(self.device)
+        return out
 
     def process_text(self, text: str, **kwargs) -> torch.Tensor:
         """
@@ -447,9 +443,10 @@ class BaseSearchEngine(ABC):
         # if type(embeds_query) is not torch.Tensor:
         #     embeds_query = torch.tensor(embeds_query) 
 
-        # Ensure embeddings are on the correct device
-        embeds_target = embeds_target.to(self.device)
-        embeds_query = embeds_query.to(self.device)
+        # Similarity is computed on CPU — the result is .numpy() anyway,
+        # and the main process has no model to justify a CUDA context.
+        embeds_target = embeds_target.cpu().float()
+        embeds_query = embeds_query.cpu().float()
 
         # Normalize features
         embeds_target = embeds_target / embeds_target.norm(p=2, dim=-1, keepdim=True)

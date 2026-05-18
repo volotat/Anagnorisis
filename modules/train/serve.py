@@ -20,7 +20,6 @@ import transformers
 from flask import request
 
 from sklearn.model_selection import train_test_split
-from src.scoring_models import Evaluator
 from tqdm import tqdm
 
 import pandas as pd

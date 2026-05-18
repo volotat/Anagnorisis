@@ -53,6 +53,24 @@ Add new downloadable module for 'Deep Research'-like functionality that uses use
 
 ## Versions History
 
+### Version 0.3.17 (19.05.2026)
+*   **Subprocess Embeddings:**
+    *   SigLIP (image embeddings) and CLAP (audio embeddings) no longer live inside the main application process. Each is now loaded on demand in its own dedicated subprocess and automatically shut down after 120 seconds of inactivity. VRAM is only occupied while a search or embedding pass is actively running.
+    *   The main process no longer initialises a CUDA context at all during idle time, eliminating the ~200 MB of baseline VRAM usage that was previously always present.
+    *   All tests for both embedders include a lifecycle check: the subprocess is confirmed to start, become idle, shut down, and transparently restart on the next request — without any change visible to callers.
+*   **UniversalEvaluator:**
+    *   `UniversalEvaluator` (the `TransformerEvaluator` used for scoring files across all modules) has been moved from `modules/train/universal_train.py` to `src/universal_evaluator.py` and converted to a subprocess proxy following the same pattern as `TextEmbedder`, `ImageEmbedder`, and `AudioEmbedder`. All torch/CUDA operations now execute exclusively in a dedicated worker process.
+    *   The worker subprocess is started lazily on first use and terminated automatically after 120 seconds of inactivity, releasing GPU memory between scoring passes.
+    *   Training (`train_universal_evaluator`) now runs the full epoch loop inside the subprocess. Progress is streamed back to the main process epoch-by-epoch via a shared queue, so the UI chart and task-manager progress bar continue to update in real time without any data being exchanged per-epoch.
+    *   All six serve modules (`images`, `music`, `videos`, `text`, `WebSearch`, `YouTube`) now import `UniversalEvaluator` from `src.universal_evaluator` directly.
+*   **Full CUDA Isolation from main process:**
+    *   Removed all `torch.cuda.is_available()` calls from the proxy `__init__` methods of `TextEmbedder`, `ImageEmbedder`, `AudioEmbedder`, and `OmniDescriptor`. Proxies now default to `device='cpu'` and update the mirrored attribute after the subprocess reports back.
+    *   Fixed `modules/videos/engine.py` stub: hardcoded `device='cpu'` (was computing it via `torch.cuda.is_available()` and returning `.to(self.device)` zero tensors that could hit CUDA).
+    *   Removed `configure_device()` calls from `app.py` — scoring models and embedders now detect their target device independently inside their respective subprocesses.
+    *   Removed stale `import src.scoring_models` from `modules/images/serve.py` and `modules/text/engine.py`, and `from src.scoring_models import Evaluator` from `modules/train/serve.py` (these were unused dead imports).
+*   **Docker Build:**
+    *   Added a `.dockerignore` file so that large runtime directories (`cache/`, `models/`, `logs/`, `project_data/`) are excluded from the Docker build context. This prevents permission errors on cached files and speeds up all image builds.
+
 ### Version 0.3.16 (17.05.2026)
 *   **Embedding Proxy:**
     *   Both the Images and Music modules now use the shared `UniversalEvaluator` for scoring files, replacing their previous module-specific evaluators. The separate "Train music evaluator" and "Train image evaluator" buttons have been removed from the Training page; only the "Train universal evaluator" button remains.

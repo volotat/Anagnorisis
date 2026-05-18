@@ -1,0 +1,17 @@
+# Runtime data — never needed in the build context
+cache/
+logs/
+models/
+project_data/
+
+# Dev/repo artefacts
+.git/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+experiments/
+research/
+old_code/
+project_info/

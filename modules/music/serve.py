@@ -12,7 +12,7 @@ import src.file_manager as file_manager
 import modules.music.db_models as db_models
 
 from modules.music.engine import MusicSearch  # MusicEvaluator no longer used for scoring — replaced by UniversalEvaluator
-from modules.train.universal_train import UniversalEvaluator
+from src.universal_evaluator import UniversalEvaluator
 from src.embedding_proxy import EmbeddingProxyGenerator
 
 from src.utils import convert_size, convert_length, time_difference

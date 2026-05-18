@@ -1,6 +1,5 @@
 from PIL import Image
 import requests
-from transformers import AutoProcessor, AutoModel #, SiglipVisionModel, SiglipTextModel - these are no longer needed directly
 import torch
 import numpy as np
 from tqdm import tqdm
@@ -10,15 +9,12 @@ import hashlib
 import datetime
 import io
 import time
-import cv2
-import imageio
-import threading
 
 import src.scoring_models
 import modules.images.db_models as db_models
 import src.file_manager as file_manager
-from src.base_search_engine import BaseSearchEngine # Import the base class
-from src.model_manager import ModelManager # Still needed for ImageEvaluator, but ModelManager is central to BaseSearchEngine
+from src.base_search_engine import BaseSearchEngine
+from src.image_embedder import ImageEmbedder
 
 
 def get_image_metadata(file_path):
@@ -80,14 +76,13 @@ def get_image_metadata(file_path):
         
     return metadata
 
+
 class ImageSearch(BaseSearchEngine):
     def __init__(self, cfg=None):
         super().__init__(cfg) # Call base class __init__ to set up singleton and flags
         self.cfg = cfg # Store cfg for reading parameters
-        self.tokenizer = None # Will be set in _load_model_and_processor
-        self._embedder_lock = threading.Lock()
-        self.is_embedder_busy = False
-  
+        self._image_embedder = None
+
     @property
     def model_name(self) -> str:
         # Use cfg.images.embedding_model for dynamic model selection
@@ -113,86 +108,42 @@ class ImageSearch(BaseSearchEngine):
             raise ValueError("Media folder not specified in config.")
         return self.cfg.images.media_directory
 
+    def initiate(self, models_folder: str, cache_folder: str = None, **kwargs):
+        """
+        Override base initiate: delegate model loading to the ImageEmbedder subprocess.
+        The SigLIP model never lives in the main process, freeing VRAM between calls.
+        """
+        if self._model_manager is not None:
+            return
+
+        self._image_embedder = ImageEmbedder(cfg=self.cfg)
+        res = self._image_embedder.initiate(models_folder=models_folder)
+
+        # Mirror attributes needed by BaseSearchEngine helpers and EmbeddingProxyGenerator.
+        self.embedding_dim = self._image_embedder.embedding_dim
+        self.model_hash    = self._image_embedder.model_hash
+        self.device        = self._image_embedder.device
+
+        # Sentinel: satisfies BaseSearchEngine.compare()'s None guard and re-init guard.
+        self._model_manager = True
+
+        print(f"ImageSearch initiated successfully (via ImageEmbedder subprocess).")
+
     def _load_model_and_processor(self, local_model_path: str):
-        """
-        Loads the SigLIP model and processor from the local path.
-        Ensures the model is loaded to CPU before being wrapped by ModelManager.
-        """
-        try:
-            self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-            print(f"ImageSearch: Loading model to CPU first...")
-            # Load from the specific local path, ensuring local_files_only=True
-            self.model = AutoModel.from_pretrained(local_model_path, local_files_only=True).cpu() # Load to CPU
-            self.processor = AutoProcessor.from_pretrained(local_model_path, local_files_only=True)
-            self.embedding_dim = self.model.config.text_config.hidden_size # Safely access config
-            print(f"ImageSearch: Model loaded to CPU. Embedding dim: {self.embedding_dim}")
+        # Never called: initiate() is fully overridden above.
+        pass
 
-        except Exception as e:
-            print(f"ERROR: Failed to load SigLIP model from '{local_model_path}'. The download might be incomplete or corrupted.")
-            print(f"Error details: {e}")
-            raise RuntimeError(f"Failed to load required model: {self.model_name}") from e
 
-            
 
     def _process_single_file(self, file_path: str, **kwargs) -> torch.Tensor:
         """
-        Reads and preprocesses a single image, then generates its embedding.
+        Generates a SigLIP image embedding via the ImageEmbedder subprocess.
+        Returns a [1, embedding_dim] tensor.
         """
-        image = self._read_image(file_path)
-        if image is None:
-            raise Exception(f"Failed to read image: {file_path}")
-        
-        if self._model_manager is None:
+        if self._image_embedder is None:
             raise RuntimeError(f"{self.__class__.__name__} not initialized. Call initiate() first.")
-
-        image_embeds = None
-        
-        with self._embedder_lock:
-            self.is_embedder_busy = True
-            try:
-                # Use the wrapped model (self.model is now ModelManager instance)
-                # Calling model_instance.get_image_features() will trigger ModelManager to load to GPU
-                model_instance = self.model 
-                
-                inputs_images = self.processor(images=[image], padding="max_length", return_tensors="pt").to(self.device) # Use managed device
-                
-                with torch.no_grad():
-                    outputs = model_instance.get_image_features(**inputs_images)
-
-                # Normalize the image embeddings (important for similarity)
-                image_embeds = outputs / outputs.norm(p=2, dim=-1, keepdim=True)
-
-                return image_embeds
-            finally:
-                self.is_embedder_busy = False
-
-
-    def _read_image(self, image_path: str):
-        """Helper method to read image files, handling various formats and conversions."""
-        try:
-            if image_path.lower().endswith('.gif'):
-                gif = imageio.mimread(image_path)
-                image = np.array(gif[0])
-            else:
-                image = cv2.imread(image_path)
-
-            if image is None:
-                return None
-
-            # Convert to RGB (OpenCV reads BGR by default, grayscale might be 2D)
-            if len(image.shape) == 2 or image.shape[2] == 1:
-                image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
-            elif image.shape[2] == 3:
-                image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-            elif image.shape[2] == 4:
-                image = cv2.cvtColor(image, cv2.COLOR_BGRA2RGB)
-            else:
-                raise ValueError("Invalid image shape")
-            return image
-        
-        except OSError as e:
-            print(f"Error reading image {image_path}: {e}")
-            return None
+        arr = self._image_embedder.embed_image(file_path)  # np.ndarray (1, D)
+        return torch.from_numpy(arr)
 
     def process_images(self, images: list[str], callback=None, media_folder: str = None) -> torch.Tensor:
         """
@@ -203,27 +154,13 @@ class ImageSearch(BaseSearchEngine):
 
     def process_text(self, text: str) -> torch.Tensor:
         """
-        Processes a text query to generate its embedding using the SigLIP text encoder.
+        Generates a SigLIP text embedding via the ImageEmbedder subprocess.
+        Returns a 1-D tensor of shape (embedding_dim,).
         """
-        if self.model is None:
+        if self._image_embedder is None:
             raise RuntimeError(f"{self.__class__.__name__} not initialized. Call initiate() first.")
-
-        with self._embedder_lock:
-            self.is_embedder_busy = True
-            try:
-                model_instance = self.model # Triggers loading to GPU if needed
-
-                inputs_text = self.processor(text=text, padding="max_length", return_tensors="pt").to(self.device)
-
-                with torch.no_grad():
-                    outputs = model_instance.get_text_features(**inputs_text)
-
-                text_embeds = outputs / outputs.norm(p=2, dim=-1, keepdim=True)
-
-                # TODO: Find out why .squeeze(0) is needed here, it was working without it before refactoring
-                return text_embeds.squeeze(0)  # Return as 1D tensor
-            finally:
-                self.is_embedder_busy = False
+        arr = self._image_embedder.embed_text(text)  # np.ndarray (D,)
+        return torch.from_numpy(arr)
 
 # Create scoring model singleton class so it easily accessible from other modules
 class ImageEvaluator(src.scoring_models.Evaluator):
@@ -283,7 +220,7 @@ if __name__ == "__main__":
         image_search_engine = ImageSearch(cfg=cfg)
         image_search_engine.initiate(models_folder=cfg.main.embedding_models_path, cache_folder=cfg.main.cache_path)
         print(f"ImageSearch engine initialized. Model hash: {image_search_engine.model_hash}")
-        print(f"Model on device: {image_search_engine.model.device}")
+        print(f"Model on device: {image_search_engine.device}")
     except Exception as e:
         print(f"FATAL: ImageSearch engine initiation failed: {e}")
         import traceback
@@ -305,8 +242,8 @@ if __name__ == "__main__":
             media_folder=test_image_dir
         )
         print(f"Generated embeddings shape: {embeddings.shape}")
-        # Expect 2 embeddings (dummy_image_path3 fails)
-        assert embeddings.shape[0] == 3, f"Expected 3 embeddings, got {embeddings.shape[0]}"
+        # Expect 4 embeddings (all dummy images should succeed)
+        assert embeddings.shape[0] == 4, f"Expected 4 embeddings, got {embeddings.shape[0]}"
         assert embeddings.shape[1] == image_search_engine.embedding_dim, f"Expected embedding dim {image_search_engine.embedding_dim}, got {embeddings.shape[1]}"
         print(f"{colorama.Fore.GREEN}First processing successful.{colorama.Style.RESET_ALL}")
 
@@ -316,7 +253,7 @@ if __name__ == "__main__":
         # The test related to caching needs to be adapted accordingly.
 
         # Clear in-memory cache to force loading from disk/DB cache
-        image_search_engine._fast_cache = {} 
+        image_search_engine._fast_cache.ram._data.clear()
         embeddings_cached = image_search_engine.process_images(
             test_files, 
             callback=test_callback, 
@@ -370,32 +307,5 @@ if __name__ == "__main__":
         import traceback
         traceback.print_exc()
 
-    # --- Test ModelManager lazy loading/unloading ---
-    print("\n--- Testing ModelManager lazy loading ---")
-    # At this point, the model should be loaded on GPU because we just used it.
-    print(f"Model manager loaded: {image_search_engine.model._loaded}")
-    print(f"Model device: {image_search_engine.model._model.device}")
-    assert image_search_engine.model._loaded and image_search_engine.model._model.device.type == 'cuda', "Model not loaded to GPU after use."
-    
-    print("Waiting for idle timeout (120 seconds + 30s cleanup check)...")
-    # Give enough time for the cleanup thread to potentially unload
-    time.sleep(160) # Wait for a bit longer than cleanup check interval
-    
-    # Check if model is unloaded
-    print(f"Model manager loaded after idle: {image_search_engine.model._loaded}")
-    assert not image_search_engine.model._loaded, "Model was not unloaded after idle period."
-    print(f"{colorama.Fore.GREEN}ModelManager unloading test successful.{colorama.Style.RESET_ALL}")
-
-    # Re-use the model to ensure it reloads
-    print("\nRe-using model to trigger reload...")
-    dummy_text = "This is a test text to trigger model reloading."
-    query_embedding = image_search_engine.process_text(dummy_text)
-
-    print(f"Model manager loaded after re-use: {image_search_engine.model._loaded}")
-    print(f"Model device after re-use: {image_search_engine.model._model.device}")
-    assert image_search_engine.model._loaded and image_search_engine.model._model.device.type == 'cuda', "Model did not reload to GPU on re-use."
-    print(f"{colorama.Fore.GREEN}ModelManager reloading test successful.{colorama.Style.RESET_ALL}")
-
-    # Shut down ModelManager gracefully at the end of tests
-    ModelManager.shutdown()
+    # NOTE: Subprocess idle/restart lifecycle is tested in src/image_embedder.py.
     print("\n--- ImageSearch Engine Test Completed ---")

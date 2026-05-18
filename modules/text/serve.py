@@ -12,7 +12,7 @@ from src.socket_events import CommonSocketEvents
 import numpy as np
 
 from modules.text.engine import TextSearch
-from modules.train.universal_train import UniversalEvaluator
+from src.universal_evaluator import UniversalEvaluator
 from src.utils import SortingProgressCallback, EmbeddingGatheringCallback
 from src.scheduler import Scheduler
 from src.module_helpers import make_scheduled_rating_check, make_scheduled_description_check
