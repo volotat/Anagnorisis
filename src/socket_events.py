@@ -40,8 +40,9 @@ class CommonSocketEvents:
             current_sid = None
 
         if current_sid is None:
-            # Broadcast mode (for initialization phase)
-            self.socketio.emit('emit_show_search_status', status)
+            # No request context (background thread) — do not broadcast to all clients.
+            # Background task progress is handled by the TaskManager UI.
+            # self.socketio.emit('emit_show_search_status', status)
             return
 
         # Existing logic for specific client throttling

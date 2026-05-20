@@ -131,7 +131,19 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
     print('Loading universal evaluator model from', os.path.join(cfg.main.personal_models_path, 'universal_evaluator.pt'))
     videos_evaluator.load(os.path.join(cfg.main.personal_models_path, 'universal_evaluator.pt'))
 
-    def update_model_ratings(files_list):
+    def update_model_ratings(files_list, ctx=None):
+        _progress = [0.0]
+
+        def _status(msg):
+            if ctx is not None:
+                ctx.update(_progress[0], msg)
+            else:
+                common_socket_events.show_search_status(msg)
+
+        def _check():
+            if ctx is not None:
+                ctx.check()
+
         # Skip if the universal evaluator has not been trained yet
         if videos_evaluator.hash is None:
             print('[Videos] Universal evaluator not trained yet. Skipping model rating update.')
@@ -140,7 +152,9 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
         # Filter out files that already have an up-to-date rating in the DB
         files_list_hash_map = {}
         for ind, file_path in enumerate(files_list):
-            common_socket_events.show_search_status(f"Computing files hashes {ind+1}/{len(files_list)}")
+            _check()
+            _progress[0] = (ind + 1) / len(files_list) * 0.15
+            _status(f"Computing files hashes {ind+1}/{len(files_list)}")
             file_hash = videos_search_engine.get_file_hash(file_path)
             files_list_hash_map[file_path] = file_hash
 
@@ -163,11 +177,14 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
         # Generate metadata descriptions and text embeddings for unrated files.
         # Uses only cached auto-descriptions (generate_desc_if_not_in_cache=False) to keep
         # browsing fast. Descriptions are populated over time via metadata search.
-        common_socket_events.show_search_status(f"Computing metadata embeddings for {len(filtered_files_list)} files...")
+        _progress[0] = 0.15
+        _status(f"Computing metadata embeddings for {len(filtered_files_list)} files...")
         all_embeddings = []
         embedding_dim = metadata_search_engine.text_embedder.embedding_dim or 1024
         for ind, full_path in enumerate(filtered_files_list):
-            common_socket_events.show_search_status(f"Computing metadata embeddings {ind+1}/{len(filtered_files_list)}")
+            _check()
+            _progress[0] = 0.15 + (ind + 1) / len(filtered_files_list) * 0.55
+            _status(f"Computing metadata embeddings {ind+1}/{len(filtered_files_list)}")
             try:
                 description = metadata_search_engine.generate_full_description(
                     full_path,
@@ -186,10 +203,12 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
         model_ratings = videos_evaluator.predict(all_embeddings)
 
         # Update the model ratings in the database
-        common_socket_events.show_search_status(f"Updating model ratings of files...")
+        _progress[0] = 0.7
+        _status(f"Updating model ratings of files...")
         new_items = []
         update_items = []
         for ind, full_path in enumerate(filtered_files_list):
+            _check()
             file_hash = files_list_hash_map[full_path]
             model_rating = float(model_ratings[ind])
 
@@ -208,7 +227,8 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
                 }
                 new_items.append(db_models.VideosLibrary(**file_data))
 
-            common_socket_events.show_search_status(f"Updated model ratings for {ind+1}/{len(filtered_files_list)} files.")
+            _progress[0] = 0.7 + (ind + 1) / len(filtered_files_list) * 0.3
+            _status(f"Updated model ratings for {ind+1}/{len(filtered_files_list)} files.")
 
         # Deduplicate new_items by hash to avoid UNIQUE constraint violations
         # when the same file (identical hash) appears more than once in the media folder.

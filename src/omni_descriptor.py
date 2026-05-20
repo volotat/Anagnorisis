@@ -1722,17 +1722,19 @@ class OmniDescriptor:
     def _send_command_internal(self, command, args, kwargs):
         """Helper to send command and wait for result. Assumes lock is held."""
         self._input_queue.put((command, args, kwargs))
-
-        try:
-            if command == 'initiate':
-                timeout = 48 * 3600  # Model download can take very long
-            else:
-                timeout = 30 * 60  # 30 minutes for inference (video can be slow)
-
-            status, result = self._output_queue.get(timeout=timeout)
-        except queue.Empty:
-            self._terminate_process()
-            raise RuntimeError("OmniDescriptor subprocess timed out.")
+        while True:
+            try:
+                status, result = self._output_queue.get(timeout=5)
+                break
+            except queue.Empty:
+                if self._process is None or not self._process.is_alive():
+                    exit_code = self._process.exitcode if self._process else None
+                    self._terminate_process()
+                    raise RuntimeError(
+                        f"OmniDescriptor subprocess died unexpectedly during "
+                        f"'{command}' (exit code: {exit_code})."
+                    )
+                # Still alive — keep waiting.
 
         if status == 'error':
             raise result

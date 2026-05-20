@@ -369,12 +369,19 @@ class AudioEmbedder:
     def _send_command_internal(self, command, args, kwargs):
         """Send a command to the worker and wait for the result. Assumes lock is held."""
         self._input_queue.put((command, args, kwargs))
-        try:
-            timeout = 48 * 3600 if command == 'initiate' else 25 * 60
-            status, result = self._output_queue.get(timeout=timeout)
-        except queue.Empty:
-            self._terminate_process()
-            raise RuntimeError("AudioEmbedder subprocess timed out.")
+        while True:
+            try:
+                status, result = self._output_queue.get(timeout=5)
+                break
+            except queue.Empty:
+                if self._process is None or not self._process.is_alive():
+                    exit_code = self._process.exitcode if self._process else None
+                    self._terminate_process()
+                    raise RuntimeError(
+                        f"AudioEmbedder subprocess died unexpectedly during "
+                        f"'{command}' (exit code: {exit_code})."
+                    )
+                # Still alive — keep waiting.
 
         if status == 'error':
             raise result

@@ -640,6 +640,64 @@ if __name__ == '__main__':
     # Start the log watcher in a background thread
     socketio.start_background_task(log_streamer.watch)
 
+    # ── Subprocess watchdog ──────────────────────────────────────────────────
+    # Logs subprocess health and process memory every 60 s so that silent
+    # failures (OOM kills, CUDA faults after suspend/resume, etc.) leave a
+    # clear timestamp trail in the app log.
+    import threading as _threading
+
+    def _subprocess_watchdog():
+        import time as _time
+        # Proxy singletons — imported lazily so the watchdog doesn't force them
+        # to be created if they were never used.
+        _proxy_modules = {
+            'TextEmbedder':       ('src.text_embedder',      'TextEmbedder'),
+            'ImageEmbedder':      ('src.image_embedder',     'ImageEmbedder'),
+            'AudioEmbedder':      ('src.audio_embedder',     'AudioEmbedder'),
+            'OmniDescriptor':     ('src.omni_descriptor',    'OmniDescriptor'),
+            'UniversalEvaluator': ('src.universal_evaluator','UniversalEvaluator'),
+        }
+        while True:
+            _time.sleep(60)
+            try:
+                # Memory: read /proc/self/status (Linux, always available)
+                mem_mb = None
+                try:
+                    with open('/proc/self/status') as _f:
+                        for _line in _f:
+                            if _line.startswith('VmRSS:'):
+                                mem_mb = int(_line.split()[1]) // 1024
+                                break
+                except Exception:
+                    pass
+
+                # Subprocess statuses
+                parts = []
+                for name, (mod_path, cls_name) in _proxy_modules.items():
+                    try:
+                        import importlib as _il
+                        mod = _il.import_module(mod_path)
+                        inst = getattr(mod, cls_name)._instance
+                        if inst is None:
+                            parts.append(f'{name}=unused')
+                        elif inst._process is None:
+                            parts.append(f'{name}=idle')
+                        elif inst._process.is_alive():
+                            parts.append(f'{name}=alive(pid={inst._process.pid})')
+                        else:
+                            parts.append(f'{name}=DEAD(exit={inst._process.exitcode})')
+                    except Exception:
+                        parts.append(f'{name}=?')
+
+                mem_str = f'  RAM={mem_mb}MB' if mem_mb is not None else ''
+                print(f'[Watchdog]{mem_str}  ' + '  '.join(parts), flush=True)
+            except Exception as _exc:
+                print(f'[Watchdog] error: {_exc}', flush=True)
+
+    _wd = _threading.Thread(target=_subprocess_watchdog, daemon=True, name='SubprocessWatchdog')
+    _wd.start()
+    # ────────────────────────────────────────────────────────────────────────
+
     # Run the application
     socketio.run(app, 
                 host=cfg.main.host, 

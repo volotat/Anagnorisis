@@ -310,14 +310,19 @@ class UniversalEvaluator:
     def _send_command_internal(self, command, args, kwargs):
         """Send a command and wait for a single reply.  Lock must be held."""
         self._input_queue.put((command, args, kwargs))
-        timeout = 48 * 3600  # 48 h — covers very long training runs
-        try:
-            status, result = self._output_queue.get(timeout=timeout)
-        except queue.Empty:
-            self._terminate_process()
-            raise RuntimeError(
-                f"UniversalEvaluator subprocess timed out on '{command}'."
-            )
+        while True:
+            try:
+                status, result = self._output_queue.get(timeout=5)
+                break
+            except queue.Empty:
+                if self._process is None or not self._process.is_alive():
+                    exit_code = self._process.exitcode if self._process else None
+                    self._terminate_process()
+                    raise RuntimeError(
+                        f"UniversalEvaluator subprocess died unexpectedly during "
+                        f"'{command}' (exit code: {exit_code})."
+                    )
+                # Still alive — keep waiting.
         if status == 'error':
             raise result
         return result
@@ -345,12 +350,16 @@ class UniversalEvaluator:
 
             while True:
                 try:
-                    status, data = self._output_queue.get(timeout=48 * 3600)
+                    status, data = self._output_queue.get(timeout=5)
                 except queue.Empty:
-                    self._terminate_process()
-                    raise RuntimeError(
-                        "UniversalEvaluator subprocess timed out during training."
-                    )
+                    if self._process is None or not self._process.is_alive():
+                        exit_code = self._process.exitcode if self._process else None
+                        self._terminate_process()
+                        raise RuntimeError(
+                            f"UniversalEvaluator subprocess died during training "
+                            f"(exit code: {exit_code})."
+                        )
+                    continue  # Still alive — keep waiting for next progress message.
 
                 if status == 'progress':
                     if progress_callback is not None:

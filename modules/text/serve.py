@@ -93,7 +93,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
     common_socket_events.show_loading_status('Loading universal evaluator model...')
     text_evaluator.load(os.path.join(cfg.main.personal_models_path, 'universal_evaluator.pt'))
 
-    embedding_gathering_callback = EmbeddingGatheringCallback(common_socket_events.show_search_status)
+    # embedding_gathering_callback = EmbeddingGatheringCallback(common_socket_events.show_search_status)
 
     common_socket_events.show_loading_status('Setting up file manager...')
     text_file_manager = file_manager.FileManager(
@@ -110,8 +110,22 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
     common_socket_events.show_loading_status('Initializing metadata search...')
     metadata_search_engine = MetadataSearch(engine=text_search_engine)
 
-    def update_model_ratings(files_list):
+    def update_model_ratings(files_list, ctx=None):
         print('update_model_ratings')
+
+        _progress = [0.0]
+
+        def _status(msg):
+            if ctx is not None:
+                ctx.update(_progress[0], msg)
+            else:
+                common_socket_events.show_search_status(msg)
+
+        def _check():
+            if ctx is not None:
+                ctx.check()
+
+        _embedding_callback = EmbeddingGatheringCallback(_status)
 
         # filter out files that already have a rating in the DB
         files_list_hash_map = {file_path: text_search_engine.get_file_hash(file_path) for file_path in files_list}
@@ -136,12 +150,14 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
         if text_embed_method == "full_text":
             # Full chunked content via TextSearch cache — consistent with universal training
             embeddings = text_search_engine.process_files(
-                filtered_files_list, callback=embedding_gathering_callback, media_folder=media_directory
+                filtered_files_list, callback=_embedding_callback, media_folder=media_directory
             )
         else:
             # Metadata/summary description path — one description per file
             embeddings = []
-            for file_path in filtered_files_list:
+            for ind, file_path in enumerate(filtered_files_list):
+                _check()
+                _progress[0] = (ind + 1) / len(filtered_files_list) * 0.7
                 description = metadata_search_engine.generate_full_description(
                     file_path,
                     media_folder=media_directory,
@@ -157,11 +173,13 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
         model_ratings = text_evaluator.predict(embeddings)
 
         # Update the model ratings in the database
-        common_socket_events.show_search_status(f"Updating model ratings of files...") 
+        _progress[0] = 0.7
+        _status(f"Updating model ratings of files...")
         new_items = []
         update_items = []
         last_shown_time = 0
         for ind, full_path in enumerate(filtered_files_list):
+            _check()
             hash = files_list_hash_map[full_path]
 
             model_rating = model_ratings[ind].item()
@@ -181,7 +199,8 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
                 }
                 new_items.append(db_models.TextLibrary(**file_data))
 
-            common_socket_events.show_search_status(f"Updated model ratings for {ind+1}/{len(filtered_files_list)} files.")   
+            _progress[0] = 0.7 + (ind + 1) / len(filtered_files_list) * 0.3
+            _status(f"Updated model ratings for {ind+1}/{len(filtered_files_list)} files.")
 
         # Deduplicate new_items by hash to avoid UNIQUE constraint violations
         # when the same file (identical hash) appears more than once in the media folder.

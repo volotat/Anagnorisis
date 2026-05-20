@@ -475,18 +475,22 @@ class TextEmbedder:
     def _send_command_internal(self, command, args, kwargs):
         """Helper to send command and wait for result. Assumes lock is held."""
         self._input_queue.put((command, args, kwargs))
-        
-        try:
-            # The worse case timeout is during model loading, so we set 48 hours here to allow the model to load
-            if command == 'initiate':
-                timeout = 48 * 3600
-            else:
-                timeout = 25 * 60 # 25 minutes for other commands
-                
-            status, result = self._output_queue.get(timeout=timeout)
-        except queue.Empty:
-            self._terminate_process()
-            raise RuntimeError("TextEmbedder subprocess timed out.")
+        # Poll every 5 s with a subprocess-liveness check so that an unexpected
+        # subprocess death (OOM kill, CUDA fault after suspend, etc.) never
+        # blocks the main thread indefinitely while holding self._lock.
+        while True:
+            try:
+                status, result = self._output_queue.get(timeout=5)
+                break
+            except queue.Empty:
+                if self._process is None or not self._process.is_alive():
+                    exit_code = self._process.exitcode if self._process else None
+                    self._terminate_process()
+                    raise RuntimeError(
+                        f"TextEmbedder subprocess died unexpectedly during "
+                        f"'{command}' (exit code: {exit_code})."
+                    )
+                # Still alive — keep waiting.
             
         if status == 'error':
             raise result

@@ -92,7 +92,7 @@ def make_scheduled_rating_check(app, label, file_manager, evaluator, cfg, cfg_ke
         def task(ctx):
             files_list = candidates[:batch_size]
             ctx.update(0.0, f'Rating {len(files_list)} of {total} files...')
-            update_model_ratings_fn(files_list)
+            update_model_ratings_fn(files_list, ctx=ctx)
 
         return app.task_manager.submit(f'{base_name} ({count_str})', task)
 

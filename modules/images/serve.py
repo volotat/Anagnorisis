@@ -142,7 +142,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
 
         return resolutions
 
-    embedding_gathering_callback = EmbeddingGatheringCallback(common_socket_events.show_search_status)
+    # embedding_gathering_callback = EmbeddingGatheringCallback(common_socket_events.show_search_status)
 
     common_socket_events.show_loading_status('Setting up file manager...')
     images_file_manager = file_manager.FileManager(
@@ -174,8 +174,22 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
     )
     metadata_search_engine.embedding_proxy = images_proxy_gen
 
-    def update_model_ratings(files_list):
+    def update_model_ratings(files_list, ctx=None):
         print(f"Updating model ratings for {len(files_list)} images...")
+
+        _progress = [0.0]
+
+        def _status(msg):
+            if ctx is not None:
+                ctx.update(_progress[0], msg)
+            else:
+                common_socket_events.show_search_status(msg)
+
+        def _check():
+            if ctx is not None:
+                ctx.check()
+
+        _embedding_callback = EmbeddingGatheringCallback(_status)
 
         # Skip if the universal evaluator has not been trained yet
         if universal_evaluator.hash is None:
@@ -184,7 +198,9 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
 
         files_list_hash_map = {}
         for ind, file_path in enumerate(files_list):
-            common_socket_events.show_search_status(f"Computing files hashes {ind+1}/{len(files_list)}")
+            _check()
+            _progress[0] = (ind + 1) / len(files_list) * 0.1
+            _status(f"Computing files hashes {ind+1}/{len(files_list)}")
             file_hash = images_search_engine.get_file_hash(file_path)
             files_list_hash_map[file_path] = file_hash
 
@@ -205,25 +221,32 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
             return
 
         # ── Step 1: Compute SigLIP embeddings (fast — results are disk-cached) ──
-        common_socket_events.show_search_status(f"Computing SigLIP embeddings for {len(filtered_files_list)} files...")
+        _progress[0] = 0.1
+        _status(f"Computing SigLIP embeddings for {len(filtered_files_list)} files...")
         embeddings = images_search_engine.process_images(
-            filtered_files_list, callback=embedding_gathering_callback, media_folder=media_directory
+            filtered_files_list, callback=_embedding_callback, media_folder=media_directory
         )  # [N, D] tensor
 
         # ── Step 2: Pre-populate proxy cache before the Jina embedding phase ───
-        common_socket_events.show_search_status("Preparing embedding proxies...")
+        _progress[0] = 0.3
+        _status("Preparing embedding proxies...")
         for i, fp in enumerate(filtered_files_list):
+            _check()
             try:
                 images_proxy_gen.compute_proxy_section(files_list_hash_map[fp], embeddings[i].cpu().numpy())
             except Exception as e:
                 print(f"[Images] Proxy generation failed for {fp}: {e}")
+            _progress[0] = 0.3 + (i + 1) / len(filtered_files_list) * 0.1
 
         # ── Step 3: Build text descriptions (includes proxy section) + Jina embed ─
-        common_socket_events.show_search_status(f"Computing metadata embeddings for {len(filtered_files_list)} files...")
+        _progress[0] = 0.4
+        _status(f"Computing metadata embeddings for {len(filtered_files_list)} files...")
         all_embeddings = []
         embedding_dim  = metadata_search_engine.text_embedder.embedding_dim or 1024
         for ind, full_path in enumerate(filtered_files_list):
-            common_socket_events.show_search_status(f"Computing metadata embeddings {ind+1}/{len(filtered_files_list)}")
+            _check()
+            _progress[0] = 0.4 + (ind + 1) / len(filtered_files_list) * 0.3
+            _status(f"Computing metadata embeddings {ind+1}/{len(filtered_files_list)}")
             try:
                 description = metadata_search_engine.generate_full_description(
                     full_path,
@@ -242,12 +265,14 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
         # ── Step 4: Predict with universal evaluator and persist ───────────────
         model_ratings = universal_evaluator.predict(all_embeddings)
 
-        common_socket_events.show_search_status("Updating model ratings of images...")
+        _progress[0] = 0.7
+        _status("Updating model ratings of images...")
         new_items       = []
         update_items    = []
         processed_hashes = set()
 
         for ind, full_path in enumerate(filtered_files_list):
+            _check()
             file_hash = files_list_hash_map[full_path]
             if file_hash in processed_hashes:
                 continue
@@ -272,7 +297,8 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
                 new_items.append(db_models.ImagesLibrary(**image_data))
                 existing_hashes.add(file_hash)
 
-            common_socket_events.show_search_status(f"Updated model ratings for {ind+1}/{len(filtered_files_list)} images.")
+            _progress[0] = 0.7 + (ind + 1) / len(filtered_files_list) * 0.3
+            _status(f"Updated model ratings for {ind+1}/{len(filtered_files_list)} images.")
 
         if update_items:
             db_models.db.session.bulk_save_objects(update_items)
