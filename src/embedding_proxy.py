@@ -28,7 +28,7 @@ Typical flow in serve.py
       tag_list=list(cfg.music.embedding_tags),
       threshold=cfg.music.embedding_tags_threshold,
       cache_path=cfg.main.cache_path,
-      model_name=cfg.music.embedding_model,
+      model_name=cfg.audio_embedder.model_name,
   )
   metadata_search_engine.embedding_proxy = proxy_gen
 

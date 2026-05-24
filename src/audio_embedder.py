@@ -32,9 +32,9 @@ class _AudioEmbedderImpl:
         if self.model is not None:
             return
 
-        model_name = self.cfg.music.embedding_model
+        model_name = self.cfg.audio_embedder.model_name
         if not model_name:
-            raise ValueError("cfg.music.embedding_model is not specified.")
+            raise ValueError("cfg.audio_embedder.model_name is not specified.")
 
         model_folder_name = model_name.replace('/', '__')
         local_model_path = os.path.join(models_folder, model_folder_name)
@@ -435,8 +435,8 @@ if __name__ == '__main__':
     os.makedirs(models_path, exist_ok=True)
 
     mock_cfg = OmegaConf.create({
-        'music': {
-            'embedding_model': 'laion/clap-htsat-fused',
+        'audio_embedder': {
+            'model_name': 'laion/clap-htsat-fused',
         },
         'main': {
             'device': 'cuda',

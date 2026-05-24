@@ -85,10 +85,10 @@ class ImageSearch(BaseSearchEngine):
 
     @property
     def model_name(self) -> str:
-        # Use cfg.images.embedding_model for dynamic model selection
-        if self.cfg is None or not hasattr(self.cfg, 'images') or not hasattr(self.cfg.images, 'embedding_model'):
-            raise ValueError("Images embedding model not specified in config.")
-        return self.cfg.images.embedding_model # e.g., "google/siglip-base-patch16-224"
+        # Use cfg.image_embedder.model_name for dynamic model selection
+        if self.cfg is None or not hasattr(self.cfg, 'image_embedder') or not hasattr(self.cfg.image_embedder, 'model_name'):
+            raise ValueError("Image embedding model not specified in config.")
+        return self.cfg.image_embedder.model_name # e.g., "google/siglip-base-patch16-224"
   
     @property
     def cache_prefix(self) -> str:
@@ -193,8 +193,10 @@ if __name__ == "__main__":
             'embedding_models_path': './models',
             'cache_path': './cache'
         },
+        'image_embedder': {
+            'model_name': "google/siglip-base-patch16-224",
+        },
         'images': {
-            'embedding_model': "google/siglip-base-patch16-224",
             'media_formats': ['.jpg', '.png', '.jpeg']
         }
     }

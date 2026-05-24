@@ -3,9 +3,7 @@ main:
   port: 5001
   flask_secret_key: secret!123 # Does not matter when Flask is run locally
   project_config_directory: /mnt/project_config
-  device: cuda # Device for embedding models loaded in the main process (cpu/cuda). TextEmbedder and OmniDescriptor always run in subprocesses and ignore this.
 music:
-  embedding_model: "laion/clap-htsat-fused" 
   media_directory: /mnt/media/music
   rating_update_interval_minutes: 10 # How often to proactively rate unrated files in the background (set to null to disable)
   rating_update_batch_size: 3000 # Max number of files rated per background run (set to null for no limit)
@@ -50,7 +48,6 @@ music:
   - .m4a
   - .opus
 images:
-  embedding_model: "google/siglip-base-patch16-224" 
   media_directory: /mnt/media/images
   rating_update_interval_minutes: 10 # How often to proactively rate unrated files in the background (set to null to disable)
   rating_update_batch_size: 3000 # Max number of files rated per background run (set to null for no limit)
@@ -121,7 +118,6 @@ images:
   - .webp
   - .tiff
 videos:
-  embedding_model: null
   media_directory: /mnt/media/videos
   rating_update_interval_minutes: 10 # How often to proactively rate unrated files in the background (set to null to disable)
   rating_update_batch_size: 3000 # Max number of files rated per background run (set to null for no limit)
@@ -149,6 +145,12 @@ text:
   - .md
   - .htm
   - .html
+audio_embedder: # Used for audio embedding in the music module.
+  model_name: "laion/clap-htsat-fused"
+  device: cuda # Device for audio embedding (cpu/cuda).
+image_embedder: # Used for image embedding in the images module.
+  model_name: "google/siglip-base-patch16-224"
+  device: cuda # Device for image embedding (cpu/cuda).
 text_embedder: # Used for embedding text in the meta-database search, the universal evaluator, and any other text-related processes. 
   model_name: "jinaai/jina-embeddings-v3" 
   device: cuda # Device for text embedding (cpu/cuda).

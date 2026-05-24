@@ -110,7 +110,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
       tag_list=_tag_list,
       threshold=_tag_threshold,
       cache_path=cfg.main.cache_path,
-      model_name=getattr(cfg.music, 'embedding_model', 'CLAP'),
+      model_name=getattr(cfg.audio_embedder, 'model_name', 'CLAP'),
   )
   metadata_search_engine.embedding_proxy = music_proxy_gen
 

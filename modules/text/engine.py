@@ -53,7 +53,7 @@ class TextSearch(BaseSearchEngine):
 
     @property
     def model_name(self) -> str:
-        if self.cfg is None or not hasattr(self.cfg, 'text_embedder') or not hasattr(self.cfg.text_embedder, 'embedding_model'):
+        if self.cfg is None or not hasattr(self.cfg, 'text_embedder') or not hasattr(self.cfg.text_embedder, 'model_name'):
             raise ValueError("Text embedding model not specified in config.")
         return self.cfg.text_embedder.model_name 
     
@@ -238,8 +238,8 @@ if __name__ == "__main__":
             'media_directory': test_text_dir
         },
         'text_embedder': {
-            'embedding_model': "jinaai/jina-embeddings-v3", 
-            'chunk_size': 128,  
+            'model_name': "jinaai/jina-embeddings-v3",
+            'chunk_size': 128,
             'chunk_overlap': 0,
             'embedding_dimension': 512
         }

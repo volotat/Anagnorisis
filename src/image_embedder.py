@@ -32,9 +32,9 @@ class _ImageEmbedderImpl:
         if self.model is not None:
             return
 
-        model_name = self.cfg.images.embedding_model
+        model_name = self.cfg.image_embedder.model_name
         if not model_name:
-            raise ValueError("cfg.images.embedding_model is not specified.")
+            raise ValueError("cfg.image_embedder.model_name is not specified.")
 
         model_folder_name = model_name.replace('/', '__')
         local_model_path = os.path.join(models_folder, model_folder_name)
@@ -421,8 +421,8 @@ if __name__ == '__main__':
     os.makedirs(models_path, exist_ok=True)
 
     mock_cfg = OmegaConf.create({
-        'images': {
-            'embedding_model': 'google/siglip-base-patch16-224',
+        'image_embedder': {
+            'model_name': 'google/siglip-base-patch16-224',
         },
         'main': {
             'device': 'cuda',

@@ -71,6 +71,14 @@ def sort_files_by_recommendation(files_list:List[str], files_data:List[dict]) ->
     return final_scores
 
 # ------------------- TESTS -------------------
+def _make_music_data():
+    return [
+        {'user_rating': 8.0, 'model_rating': None, 'full_play_count': 10, 'skip_count': 2, 'last_played': datetime.datetime.fromtimestamp(100)},
+        {'user_rating': None, 'model_rating': 6.0, 'full_play_count': 5,  'skip_count': 1, 'last_played': datetime.datetime.fromtimestamp(50)},
+        {'user_rating': 9.0, 'model_rating': None, 'full_play_count': 12, 'skip_count': 0, 'last_played': datetime.datetime.fromtimestamp(120)},
+        {'user_rating': None, 'model_rating': None, 'full_play_count': 3,  'skip_count': 3, 'last_played': None},
+    ]
+
 def test_weighted_shuffle_zero():
     # Test that weighted_shuffle works correctly when all scores are 0.
     scores = np.array([0, 0, 0, 0])
@@ -78,58 +86,65 @@ def test_weighted_shuffle_zero():
     assert sorted(order) == list(range(4)), f"Expected permutation of indices, got {order}"
     print("test_weighted_shuffle_zero PASSED")
 
-def test_strict_order():
-    # Prepare sample data with datetime objects for last_played.
-    music_list = [
-        {'user_rating': 8.0, 'model_rating': None, 'full_play_count': 10, 'skip_count': 2, 'last_played': datetime.datetime.fromtimestamp(100)},
-        {'user_rating': None, 'model_rating': 6.0, 'full_play_count': 5, 'skip_count': 1, 'last_played': datetime.datetime.fromtimestamp(50)},
-        {'user_rating': 9.0, 'model_rating': None, 'full_play_count': 12, 'skip_count': 0, 'last_played': datetime.datetime.fromtimestamp(120)},
-        {'user_rating': None, 'model_rating': None, 'full_play_count': 3, 'skip_count': 3, 'last_played': None},  # Not played yet
-    ]
-    sorted_files, sorted_scores = sort_files_by_recommendation(music_list, music_list, temperature=0)
-    # Check that scores are in descending order.
-    for i in range(len(sorted_scores) - 1):
-        assert sorted_scores[i] >= sorted_scores[i+1], "Strict order not descending"
-    print("test_strict_order PASSED")
+def test_scores_shape_and_finite():
+    # sort_files_by_recommendation returns a 1-D array with one score per file.
+    files_list = ['a.mp3', 'b.mp3', 'c.mp3', 'd.mp3']
+    music_data = _make_music_data()
+    scores = sort_files_by_recommendation(files_list, music_data)
+    assert len(scores) == len(files_list), f"Expected {len(files_list)} scores, got {len(scores)}"
+    assert np.isfinite(scores).all(), f"Scores contain non-finite values: {scores}"
+    assert (scores >= 0).all(), f"Scores must be non-negative: {scores}"
+    print("test_scores_shape_and_finite PASSED")
 
-def test_random_order():
-    # Using the same sample data, test that random order is a permutation of strict order.
-    music_list = [
-        {'user_rating': 8.0, 'model_rating': None, 'full_play_count': 10, 'skip_count': 2, 'last_played': datetime.datetime.fromtimestamp(100)},
-        {'user_rating': None, 'model_rating': 6.0, 'full_play_count': 5, 'skip_count': 1, 'last_played': datetime.datetime.fromtimestamp(50)},
-        {'user_rating': 9.0, 'model_rating': None, 'full_play_count': 12, 'skip_count': 0, 'last_played': datetime.datetime.fromtimestamp(120)},
-        {'user_rating': None, 'model_rating': None, 'full_play_count': 3, 'skip_count': 3, 'last_played': None},
+def test_higher_rating_higher_score():
+    # File with user_rating=9 should outrank file with user_rating=4 when other
+    # factors are equal (same play / skip counts, same last_played).
+    files_list = ['low.mp3', 'high.mp3']
+    music_data = [
+        {'user_rating': 4.0, 'model_rating': None, 'full_play_count': 5, 'skip_count': 0, 'last_played': datetime.datetime.fromtimestamp(50)},
+        {'user_rating': 9.0, 'model_rating': None, 'full_play_count': 5, 'skip_count': 0, 'last_played': datetime.datetime.fromtimestamp(50)},
     ]
-    # To help with reproducibility in tests.
-    np.random.seed(42)
-    sorted_files_random, sorted_scores_random = sort_files_by_recommendation(music_list, music_list, temperature=1.0)
-    np.random.seed(42)
-    # Running strict sort for comparison.
-    sorted_files_strict, sorted_scores_strict = sort_files_by_recommendation(music_list, music_list, temperature=0)
-    # They are not expected to be equal overall; however, the set of files should match.
-    assert set(tuple(m.items()) for m in sorted_files_random) == set(tuple(m.items()) for m in sorted_files_strict), "Random mode did not produce a valid permutation"
-    print("test_random_order PASSED")
+    scores = sort_files_by_recommendation(files_list, music_data)
+    assert scores[1] > scores[0], f"Higher rating should produce higher score: {scores}"
+    print("test_higher_rating_higher_score PASSED")
+
+def test_all_none_ratings_no_crash():
+    # When every file has no rating at all, function must not crash and must return
+    # valid (finite, non-negative) scores.
+    files_list = ['x.mp3', 'y.mp3']
+    music_data = [
+        {'user_rating': None, 'model_rating': None, 'full_play_count': 0, 'skip_count': 0, 'last_played': None},
+        {'user_rating': None, 'model_rating': None, 'full_play_count': 0, 'skip_count': 0, 'last_played': None},
+    ]
+    scores = sort_files_by_recommendation(files_list, music_data)
+    assert len(scores) == 2
+    assert np.isfinite(scores).all(), f"All-None case produced non-finite scores: {scores}"
+    print("test_all_none_ratings_no_crash PASSED")
+
+def test_single_file_no_crash():
+    # Edge case: single file list must not raise (e.g. division in last_played normalisation).
+    files_list = ['solo.mp3']
+    music_data = [
+        {'user_rating': 7.0, 'model_rating': None, 'full_play_count': 3, 'skip_count': 1, 'last_played': datetime.datetime.fromtimestamp(200)},
+    ]
+    scores = sort_files_by_recommendation(files_list, music_data)
+    assert len(scores) == 1
+    assert np.isfinite(scores[0]), f"Single-file score not finite: {scores[0]}"
+    print("test_single_file_no_crash PASSED")
 
 if __name__ == "__main__":
-    # Run tests.
-    print("Running tests...")
+    print("Running recommendation_engine tests...")
     test_weighted_shuffle_zero()
-    test_strict_order()
-    test_random_order()
-    
-    # Example usage.
-    _music_list = lambda: [
-        {'user_rating': 8.0, 'model_rating': None, 'full_play_count': 10, 'skip_count': 2, 'last_played': datetime.datetime.fromtimestamp(100)},
-        {'user_rating': None, 'model_rating': 6.0, 'full_play_count': 5, 'skip_count': 1, 'last_played': datetime.datetime.fromtimestamp(50)},
-        {'user_rating': 9.0, 'model_rating': None, 'full_play_count': 12, 'skip_count': 0, 'last_played': datetime.datetime.fromtimestamp(120)},
-        {'user_rating': None, 'model_rating': None, 'full_play_count': 3, 'skip_count': 3, 'last_played': None},  # Not played yet
-    ]
-    print("\nExample usage with strict mode:")
-    sorted_music, scores = sort_files_by_recommendation(_music_list(), _music_list(), temperature=0)
-    for m, s in zip(sorted_music, scores):
-        print(f"{m} => recommendation score: {s}")
+    test_scores_shape_and_finite()
+    test_higher_rating_higher_score()
+    test_all_none_ratings_no_crash()
+    test_single_file_no_crash()
+    print("\nAll tests PASSED.")
 
-    print("\nExample usage with random mode:")
-    sorted_music, scores = sort_files_by_recommendation(_music_list(), _music_list(), temperature=1.0)
-    for m, s in zip(sorted_music, scores):
-        print(f"{m} => recommendation score: {s}")
+    # Example usage.
+    files = ['a.mp3', 'b.mp3', 'c.mp3', 'd.mp3']
+    data  = _make_music_data()
+    scores = sort_files_by_recommendation(files, data)
+    print("\nExample scores (unsorted, aligned with input):")
+    for f, s in zip(files, scores):
+        print(f"  {f} => {s:.4f}")

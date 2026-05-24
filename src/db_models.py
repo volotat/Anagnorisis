@@ -132,9 +132,14 @@ def import_db_from_csv(db_session, csv_data):
                 ).first()
 
             if existing_row:
-                # Update existing row
-                for col_name, value in row_data.items():
-                    setattr(existing_row, col_name, value)
+                # Update existing row via a proper UPDATE statement.
+                # (Querying a Table object directly returns immutable Row objects,
+                # so setattr cannot be used here.)
+                db_session.execute(
+                    db_table.update()
+                    .where(or_(*query_filters))
+                    .values(**row_data)
+                )
             else:
                 # Create new row
                 insert_dict = {}

@@ -89,10 +89,10 @@ class MusicSearch(BaseSearchEngine):
 
     @property
     def model_name(self) -> str:
-        # Use cfg.music.embedding_model for dynamic model selection
-        if self.cfg is None or not hasattr(self.cfg, 'music') or not hasattr(self.cfg.music, 'embedding_model'):
-            raise ValueError("Music embedding model not specified in config.")
-        return self.cfg.music.embedding_model # e.g., "laion/clap-htsat-fused"
+        # Use cfg.audio_embedder.model_name for dynamic model selection
+        if self.cfg is None or not hasattr(self.cfg, 'audio_embedder') or not hasattr(self.cfg.audio_embedder, 'model_name'):
+            raise ValueError("Audio embedding model not specified in config.")
+        return self.cfg.audio_embedder.model_name # e.g., "laion/clap-htsat-fused"
     
     @property
     def cache_prefix(self) -> str:
@@ -198,8 +198,10 @@ if __name__ == "__main__":
             'embedding_models_path': './models',
             'cache_path': './cache'
         },
+        'audio_embedder': {
+            'model_name': "laion/clap-htsat-fused",
+        },
         'music': {
-            'embedding_model': "laion/clap-htsat-fused",
             'media_formats': ['.mp3', '.wav']
         }
     }

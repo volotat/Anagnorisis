@@ -170,7 +170,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
         tag_list=_tag_list,
         threshold=_tag_threshold,
         cache_path=cfg.main.cache_path,
-        model_name=getattr(cfg.images, 'embedding_model', 'SigLIP'),
+        model_name=getattr(cfg.image_embedder, 'model_name', 'SigLIP'),
     )
     metadata_search_engine.embedding_proxy = images_proxy_gen
 

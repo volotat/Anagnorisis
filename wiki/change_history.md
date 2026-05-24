@@ -1,5 +1,20 @@
 # Change History
 
+### Version 0.4.0 (25.05.2026)
+*   **Automated Testing:**
+    *   Added a full automated test suite covering the core logic of the application. Tests run inside Docker with no GPU or model downloads required.
+    *   The suite covers configuration loading, caching (both in-memory and on-disk), embedding quantization, file management, text search filters, task management, database import/export, and path traversal security.
+    *   A dedicated security test set verifies that path traversal attacks — including URL-encoded and double-encoded variants — are correctly blocked across query parameters, JSON bodies, and form data.
+    *   Stale inline tests in the music recommendation engine were updated to match the current API.
+    *   `tests/commands.sh` and `tests/testing_strategy.md` have been updated to document the new test tiers and how to run them.
+*   **Bug Fixes:**
+    *   Fixed a crash in the database import function where updating an existing row would fail silently or raise an error. Rows are now updated correctly when a matching entry is found by hash or file path.
+    *   Fixed a stale test configuration in the text embedder that used an outdated setting name, causing the manual model test to fail on startup.
+*   **Config style**
+    *   Migrated `music -> embedding_model` and `images -> embedding_model` out of their module sections into dedicated top-level embedder sections, consistent with the existing `text_embedder` pattern.
+*   **Release Tests**
+    *   All automatic and manual testing are performed to make sure that all of projects' features works correctly with the clean-state installation.
+
 ### Version 0.3.18 (21.05.2026)
 *   **Subprocess Deadlock Fix:**
     *   All five subprocess proxy classes (`TextEmbedder`, `ImageEmbedder`, `AudioEmbedder`, `OmniDescriptor`, `UniversalEvaluator`) were using a single `queue.get(timeout=48h)` call while holding their internal lock. If a worker process died unexpectedly (OOM kill, CUDA context invalidated after GPU suspend/resume), the queue never received a response and the main thread held the lock indefinitely, freezing the entire application silently with no error logged.
