@@ -1,5 +1,16 @@
 # Change History
 
+### Version 0.4.1 (29.05.2026)
+*   **Search & Filtering Performance:**
+    *   Searching in `metadata-based` mode no longer triggers automatic descriptions from the omni model, making searches much faster when there are undescribed files in the library. All omni-model description generation now happens exclusively in background tasks.
+    *   Removed the inline `update_model_ratings` call from the `rating` filter in `CommonFilters`. Previously, every time a user sorted files by rating, the application would synchronously compute AI model ratings for any unrated files before returning results, blocking the entire response until the model had processed every file in the folder. Now the `rating` filter simply reads whatever scores are already in the database and returns immediately. Background schedulers running in the task manager keep ratings up to date, so by the time the user browses a folder the files are typically already rated.
+    *   Removed `update_model_ratings` and `evaluator_hash` parameters from `FileManager.get_files()` and from all `get_files()` across all modules. The net effect is that all search and filtering operations, including sort-by-rating, are now free of any model inference or database writes on the hot path, making every browse and filter request noticeably faster regardless of library size.
+*   **Stale Rating Indicators:**
+    *   Each file card now shows a subtle visual hint next to the model rating when the score is out of date or missing. A faint outlined question-mark icon appears when the rating was produced by an older version of the model and is waiting to be refreshed, and the same icon appears when a file has not been rated yet at all. Hovering the icon shows a short explanation. This applies to all modules — images, music, videos, text, YouTube, and WebSearch.
+*   **Background Rating Priority:**
+    *   When the background scheduler runs its rating pass, it now always processes files that have never been rated before processing files whose rating is simply out of date. Previously both groups were mixed together, which could leave newly added files waiting behind a large backlog of re-rating work. Now a freshly added file is guaranteed to get its first rating as soon as possible, while stale re-ratings are handled afterwards.
+
+
 ### Version 0.4.0 (25.05.2026)
 *   **Automated Testing:**
     *   Added a full automated test suite covering the core logic of the application. Tests run inside Docker with no GPU or model downloads required.

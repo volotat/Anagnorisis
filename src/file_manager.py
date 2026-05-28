@@ -289,18 +289,33 @@ class FileManager:
 
         # Find which disk hashes are already rated with the current model
         rated_hashes: set[str] = set()
+        stale_hashes: set[str] = set()
         BATCH = 500
         for i in range(0, len(disk_hashes), BATCH):
             batch = disk_hashes[i:i + BATCH]
-            q = self.db_schema.query.with_entities(self.db_schema.hash).filter(
+
+            # Up-to-date: rated with the current model hash — exclude entirely
+            q_current = self.db_schema.query.with_entities(self.db_schema.hash).filter(
                 self.db_schema.hash.in_(batch),
                 self.db_schema.model_rating.isnot(None),
             )
             if evaluator_hash is not None:
-                q = q.filter(self.db_schema.model_hash == evaluator_hash)
-            rated_hashes.update(row[0] for row in q.all())
+                q_current = q_current.filter(self.db_schema.model_hash == evaluator_hash)
+            rated_hashes.update(row[0] for row in q_current.all())
 
-        return [hash_to_full[h] for h in disk_hashes if h not in rated_hashes]
+            # Stale: rated but with a different (outdated) model hash
+            if evaluator_hash is not None:
+                q_stale = self.db_schema.query.with_entities(self.db_schema.hash).filter(
+                    self.db_schema.hash.in_(batch),
+                    self.db_schema.model_rating.isnot(None),
+                    self.db_schema.model_hash != evaluator_hash,
+                )
+                stale_hashes.update(row[0] for row in q_stale.all())
+
+        # Unrated files (no rating at all) come first, stale-rated files second
+        unrated = [hash_to_full[h] for h in disk_hashes if h not in rated_hashes and h not in stale_hashes]
+        stale   = [hash_to_full[h] for h in disk_hashes if h in stale_hashes]
+        return unrated + stale
 
     def list_all_files(self) -> list[str]:
         """Return all media file paths currently on disk (no DB, no hashing)."""
@@ -395,7 +410,7 @@ class FileManager:
             all_files.extend(self._walk_files_cached(d, media_exts))
         return all_files
 
-    def get_files(self, path = "", pagination = 0, limit = 100, text_query = None, seed = None, filters: dict = {}, get_file_info = None, update_model_ratings = None, mode = 'file-name', order = 'most-relevant', temperature = 0, evaluator_hash = None):
+    def get_files(self, path = "", pagination = 0, limit = 100, text_query = None, seed = None, filters: dict = {}, get_file_info = None, mode = 'file-name', order = 'most-relevant', temperature = 0):
 
         if self.media_directory is None:
             self.show_status(f"{self.module_name} media folder is not set.")
@@ -519,24 +534,6 @@ class FileManager:
 
         if db_updated:
             db.session.commit()
-
-        # Check if there files without model rating or with stale model hash
-        no_model_rating_files = [os.path.join(self.media_directory, item.file_path) for item in db_items if item.file_path is not None and (
-            item.model_rating is None or (evaluator_hash is not None and item.model_hash != evaluator_hash)
-        )]
-        # print('no_model_rating_files size', len(no_model_rating_files))
-
-        # Add files that are not in the database yet
-        new_files_list = [file_path for file_path in page_files if self.engine.get_file_hash(file_path) not in db_items_map]
-        no_model_rating_files.extend(new_files_list)
-
-        # Remove from list files that do not exist anymore
-        no_model_rating_files = [file_path for file_path in no_model_rating_files if os.path.exists(file_path)]
-
-        self.show_status(f"Upgrade ratings of {len(no_model_rating_files)} files.")
-        if len(no_model_rating_files) > 0:
-            # Update the model ratings of all current files
-            update_model_ratings(no_model_rating_files)
 
         files_data = []
         

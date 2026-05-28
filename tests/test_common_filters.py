@@ -74,7 +74,6 @@ def _make_filters(media_directory='/media'):
         common_socket_events=_MinimalSocketEvents(),
         media_directory=media_directory,
         db_schema=None,
-        update_model_ratings_func=lambda files: None,
     )
 
 

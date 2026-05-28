@@ -75,7 +75,17 @@ import createModuleMetaEditors from '/modules/ModuleMetaEditors.js';
     // Model Rating
     const modelRatingElement = document.createElement('p');
     modelRatingElement.className = 'file-info file-model-rating';
-    modelRatingElement.innerHTML = `<b>Model rating:</b>&nbsp;${fileData.file_info.model_rating !== null ? fileData.file_info.model_rating.toFixed(1) : 'N/A'}`;
+    const _videoModelRating = fileData.file_info.model_rating !== null ? fileData.file_info.model_rating.toFixed(1) : null;
+    const staleIcon = '<i class="fa-regular fa-circle-question" style="opacity:0.6;" title="Rated by a previous model version, pending background update"></i>';
+    const pendingIcon = '<i class="fa-regular fa-circle-question" style="opacity:0.5;" title="Waiting to be rated by the model"></i>';
+    let _videoRatingHtml;
+    if (_videoModelRating !== null) {
+      const numHtml = fileData.file_info.rating_is_stale ? `<span style="opacity:0.6">${_videoModelRating}</span>` : _videoModelRating;
+      _videoRatingHtml = numHtml + (fileData.file_info.rating_is_stale ? ' ' + staleIcon : '');
+    } else {
+      _videoRatingHtml = 'N/A ' + pendingIcon;
+    }
+    modelRatingElement.innerHTML = `<b>Model rating:</b>&nbsp;${_videoRatingHtml}`;
     dataContainer.appendChild(modelRatingElement);
 
     // File Size

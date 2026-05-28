@@ -319,7 +319,6 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
         common_socket_events=common_socket_events,
         media_directory=media_directory,
         db_schema=db_models.ImagesLibrary,
-        update_model_ratings_func=update_model_ratings
     )
     
 
@@ -387,23 +386,26 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
             else:
                 raise Exception(f"File '{full_path}' with hash '{file_hash}' not found in the database.")
 
+            rating_is_stale = (
+                model_rating is not None
+                and universal_evaluator.hash is not None
+                and db_item.model_hash != universal_evaluator.hash
+            )
             return {
                 "file_path": file_path,
                 "base_name": basename,
                 "user_rating": user_rating,
                 "model_rating": model_rating,
+                "rating_is_stale": rating_is_stale,
                 "file_size": convert_size(file_size),
                 "resolution": f"{resolution[0]}x{resolution[1]}" if resolution else "N/A",
                 "file_data": file_data,
             }
 
-        # path, pagination, limit, text_query, seed, filters, get_file_info, update_model_ratings
         input_params = input_data.copy()
         input_params.update({
             "filters": filters,
             "get_file_info": get_file_info,
-            "update_model_ratings": update_model_ratings,
-            "evaluator_hash": universal_evaluator.hash,
         })
         return images_file_manager.get_files(**input_params)
 

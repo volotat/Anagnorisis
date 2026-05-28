@@ -83,7 +83,17 @@ function renderCustomData(fileData) { // Function for custom data rendering
     // Model Rating
     const modelRatingElement = document.createElement('p');
     modelRatingElement.className = 'file-info file-model-rating';
-    modelRatingElement.innerHTML = `<b>Model rating:</b>&nbsp;${fileData.file_info.model_rating !== null ? Math.round(fileData.file_info.model_rating * 100) / 100 : 'N/A'}`;
+    const _musicModelRating = fileData.file_info.model_rating !== null ? Math.round(fileData.file_info.model_rating * 100) / 100 : null;
+    const staleIcon = '<i class="fa-regular fa-circle-question" style="opacity:0.6;" title="Rated by a previous model version, pending background update"></i>';
+    const pendingIcon = '<i class="fa-regular fa-circle-question" style="opacity:0.5;" title="Waiting to be rated by the model"></i>';
+    let _musicRatingHtml;
+    if (_musicModelRating !== null) {
+      const numHtml = fileData.file_info.rating_is_stale ? `<span style="opacity:0.6">${_musicModelRating}</span>` : String(_musicModelRating);
+      _musicRatingHtml = numHtml + (fileData.file_info.rating_is_stale ? ' ' + staleIcon : '');
+    } else {
+      _musicRatingHtml = 'N/A ' + pendingIcon;
+    }
+    modelRatingElement.innerHTML = `<b>Model rating:</b>&nbsp;${_musicRatingHtml}`;
     dataContainer.appendChild(modelRatingElement);
 
     // Length

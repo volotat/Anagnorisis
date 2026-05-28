@@ -247,7 +247,6 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
       common_socket_events=common_socket_events,
       media_directory=media_directory,
       db_schema=db_models.MusicLibrary,
-      update_model_ratings_func=update_model_ratings
   )
 
   common_socket_events.show_loading_status('Setting up filters and routes...')
@@ -308,9 +307,6 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
       return durations
     
     def filter_by_recommendation(all_files, text_query):
-      # Update the model ratings of all current files
-      update_model_ratings(all_files)
-      
       all_hashes = []
       for ind, file_path in enumerate(all_files):
           common_socket_events.show_search_status(f"Filtering by recommendation: computing files hashes {ind+1}/{len(all_files)}")
@@ -373,9 +369,15 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
       else:
         raise Exception(f"File '{full_path}' with hash '{file_hash}' not found in the database.")
 
+      rating_is_stale = (
+        db_item.model_rating is not None
+        and universal_evaluator.hash is not None
+        and db_item.model_hash != universal_evaluator.hash
+      )
       return {
         "user_rating": db_item.user_rating,
         "model_rating": db_item.model_rating,
+        "rating_is_stale": rating_is_stale,
         "full_play_count": db_item.full_play_count,
         "skip_count": db_item.skip_count,
         "last_played": last_played,
@@ -383,13 +385,10 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
         "length": convert_length(audiofile_data['duration']),
       }
 
-    # path, pagination, limit, text_query, seed, filters, get_file_info, update_model_ratings, mode
     input_params = input_data.copy()
     input_params.update({
       "filters": filters,
       "get_file_info": get_file_info,
-      "update_model_ratings": update_model_ratings,
-      "evaluator_hash": universal_evaluator.hash,
     })
     return music_file_manager.get_files(**input_params)
 

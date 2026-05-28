@@ -226,7 +226,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
                     ctx.check()
                     ctx.update(i / len(batch), f'Describing file {i + 1}/{len(batch)}...')
                     try:
-                        metadata_search_engine._get_auto_description(fp)
+                        metadata_search_engine._get_auto_description(fp, generate_desc_if_not_in_cache=False)
                     except Exception as e:
                         print(f'[Example: describe] Failed for {fp}: {e}')
             finally:
@@ -240,7 +240,6 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
         common_socket_events=common_socket_events,
         media_directory=media_directory,
         db_schema=db_models.ExampleLibrary,
-        update_model_ratings_func=update_model_ratings,
     )
 
     # --- 9. Flask route to serve raw media files -------------------------
@@ -290,11 +289,18 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
                 user_rating = db_item.user_rating
                 model_rating = db_item.model_rating
 
+            rating_is_stale = (
+                model_rating is not None
+                and db_item is not None
+                and evaluator.is_loaded()
+                and db_item.model_hash != evaluator.hash
+            )
             return {
                 "file_path": file_path,
                 "base_name": os.path.basename(full_path),
                 "user_rating": user_rating,
                 "model_rating": model_rating,
+                "rating_is_stale": rating_is_stale,
                 "file_size": convert_size(file_size),
             }
 
@@ -302,8 +308,6 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
         input_params.update({
             "filters": filters,
             "get_file_info": get_file_info,
-            "update_model_ratings": update_model_ratings,
-            "evaluator_hash": evaluator.hash if evaluator.is_loaded() else None,
         })
         return example_file_manager.get_files(**input_params)
 

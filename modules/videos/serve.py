@@ -265,7 +265,6 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
         common_socket_events=common_socket_events,
         media_directory=media_directory,
         db_schema=db_models.VideosLibrary,
-        update_model_ratings_func=update_model_ratings
     )
 
     @socketio.on('emit_videos_page_get_folders')  
@@ -363,6 +362,12 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
                 pass
                 # raise Exception(f"File '{full_path}' with hash '{file_hash}' not found in the database.")
 
+            rating_is_stale = (
+                    model_rating is not None
+                    and db_item is not None
+                    and videos_evaluator.hash is not None
+                    and db_item.model_hash != videos_evaluator.hash
+            )
             return {
                     #"full_path": full_path,
                     #"file_path": os.path.relpath(full_path, media_directory), # Relative path for serving
@@ -371,19 +376,17 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
                     #"hash": file_hash,
                     "user_rating": user_rating,
                     "model_rating": model_rating,
+                    "rating_is_stale": rating_is_stale,
                     "file_size": convert_size(file_size),
                     "resolution": "N/A", # Placeholder, implement proper metadata extraction later (e.g., using ffprobe)
                     "length": "N/A",     # Placeholder, implement proper metadata extraction later (e.g., using ffprobe)
                     "last_played": last_played,
                 }
         
-        #path, pagination, limit, text_query, seed, filters, get_file_info, update_model_ratings
         input_params = input_data.copy()
         input_params.update({
             "filters": filters,
             "get_file_info": get_file_info,
-            "update_model_ratings": update_model_ratings,
-            "evaluator_hash": videos_evaluator.hash,
         })
         return videos_file_manager.get_files(**input_params)
 

@@ -403,7 +403,7 @@ class MetadataSearch:
                 )
 
             file_start = time.time()
-            self._get_auto_description(file_path)
+            self._get_auto_description(file_path, generate_desc_if_not_in_cache=False)
 
             file_elapsed = time.time() - file_start
             if file_elapsed > max_elapsed:

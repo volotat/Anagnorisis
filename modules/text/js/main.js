@@ -91,10 +91,14 @@ function renderCustomData(fileData) { // Function for custom data rendering
     }
 
     // Model Rating
+    const staleIcon = '<i class="fa-regular fa-circle-question" style="opacity:0.6;" title="Rated by a previous model version, pending background update"></i>';
+    const pendingIcon = '<i class="fa-regular fa-circle-question" style="opacity:0.5;" title="Waiting to be rated by the model"></i>';
     if (fileData.file_info.model_rating != null) {
-        $(data).append('<b>Model rating:</b>&nbsp;' + fileData.file_info.model_rating.toFixed(2) + '/10<br>');
+        const ratingVal = fileData.file_info.model_rating.toFixed(2) + '/10';
+        const numHtml = fileData.file_info.rating_is_stale ? '<span style="opacity:0.6">' + ratingVal + '</span>' : ratingVal;
+        $(data).append('<b>Model rating:</b>&nbsp;' + numHtml + (fileData.file_info.rating_is_stale ? ' ' + staleIcon : '') + '<br>');
     } else {
-        $(data).append('<b>Model rating:</b>&nbsp;N/A<br>');
+        $(data).append('<b>Model rating:</b>&nbsp;N/A ' + pendingIcon + '<br>');
     }
 
     $(data).append('<b>File size:</b>&nbsp;' + fileData.file_size + '<br>');

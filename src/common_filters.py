@@ -66,13 +66,12 @@ def _normalize_text(s: str) -> str:
     return s
 
 class CommonFilters:
-    def __init__(self, engine, metadata_engine, common_socket_events, media_directory, db_schema, update_model_ratings_func):
+    def __init__(self, engine, metadata_engine, common_socket_events, media_directory, db_schema):
         self.engine = engine
         self.metadata_engine = metadata_engine
         self.common_socket_events = common_socket_events
         self.media_directory = media_directory
         self.db_schema = db_schema
-        self.update_model_ratings_func = update_model_ratings_func
 
         self.embedding_gathering_callback = EmbeddingGatheringCallback(self.common_socket_events.show_search_status, name="")
         self.meta_embedding_gathering_callback = ArbitraryProgressCallback(self.common_socket_events.show_search_status, name="metadata")   
@@ -181,7 +180,6 @@ class CommonFilters:
         return scores
 
     def filter_by_rating(self, all_files, text_query):
-        self.update_model_ratings_func(all_files)
         all_hashes = [self.engine.get_file_hash(f) for f in all_files]
         items = self.db_schema.query.filter(self.db_schema.hash.in_(all_hashes)).all()
         hash_to_rating = {item.hash: item.user_rating if item.user_rating is not None else item.model_rating for item in items}

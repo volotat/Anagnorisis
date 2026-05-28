@@ -236,7 +236,6 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
         common_socket_events=common_socket_events,
         media_directory=media_directory,
         db_schema=db_models.TextLibrary,
-        update_model_ratings_func=update_model_ratings
     )
 
     @socketio.on('emit_text_page_get_folders')  
@@ -267,20 +266,23 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
             else:
                 raise Exception(f"File '{full_path}' with hash '{file_hash}' not found in the database.")
             
+            rating_is_stale = (
+                    db_item.model_rating is not None
+                    and text_evaluator.hash is not None
+                    and db_item.model_hash != text_evaluator.hash
+            )
             return {
                     "user_rating": db_item.user_rating,
                     "model_rating": db_item.model_rating,
+                    "rating_is_stale": rating_is_stale,
                     "preview_text": get_text_preview(full_path),    
                     "file_data": file_data,
                 }
 
-        # path, pagination, limit, text_query, seed, filters, get_file_info, update_model_ratings
         input_params = input_data.copy()
         input_params.update({
             "filters": filters,
             "get_file_info": get_file_info,
-            "update_model_ratings": update_model_ratings,
-            "evaluator_hash": text_evaluator.hash,
         })
         return text_file_manager.get_files(**input_params)
 
