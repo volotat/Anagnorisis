@@ -193,7 +193,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
                 file_data = {
                         "hash": hash,
                         "hash_algorithm": text_search_engine.get_hash_algorithm(),
-                        "file_path": os.path.relpath(full_path, media_directory),
+                        "file_path": full_path,
                         "model_rating": model_rating,
                         "model_hash": text_evaluator.hash
                 }
@@ -281,8 +281,8 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
 
         input_params = input_data.copy()
         input_params.update({
-            "filters": filters,
-            "get_file_info": get_file_info,
+        "filters": filters,
+        "get_file_info": get_file_info,
         })
         return text_file_manager.get_files(**input_params)
 

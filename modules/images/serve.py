@@ -79,44 +79,45 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
         '/mnt/project_config': os.environ.get('PROJECT_CONFIG_FOLDER_PATH', './project_config')
     }
     
-    def convert_host_path_to_container(host_path):
-        """Convert a host path to its equivalent Docker container path."""
-        if not is_docker:
-            return host_path  # No conversion needed if not in Docker
+    # TODO: Need a complete rework for both `convert_host_path_to_container` and `convert_container_path_to_host` functions as it no longer support current multi-volume setup.
+    # def convert_host_path_to_container(host_path):
+    #     """Convert a host path to its equivalent Docker container path."""
+    #     if not is_docker:
+    #         return host_path  # No conversion needed if not in Docker
         
-        # Normalize the host path
-        host_path = os.path.abspath(host_path)
+    #     # Normalize the host path
+    #     host_path = os.path.abspath(host_path)
         
-        # Check each volume mapping
-        for container_path, host_volume in docker_volume_mappings.items():
-            host_volume = os.path.abspath(host_volume)
+    #     # Check each volume mapping
+    #     for container_path, host_volume in docker_volume_mappings.items():
+    #         host_volume = os.path.abspath(host_volume)
             
-            # Check if the host path is within this volume
-            if host_path.startswith(host_volume + os.sep) or host_path == host_volume:
-                # Convert to container path
-                relative_path = os.path.relpath(host_path, host_volume)
-                if relative_path == '.':
-                    return container_path
-                return os.path.join(container_path, relative_path)
+    #         # Check if the host path is within this volume
+    #         if host_path.startswith(host_volume + os.sep) or host_path == host_volume:
+    #             # Convert to container path
+    #             relative_path = os.path.relpath(host_path, host_volume)
+    #             if relative_path == '.':
+    #                 return container_path
+    #             return os.path.join(container_path, relative_path)
         
-        # Path is not in any shared volume
-        raise ValueError(f"Path '{host_path}' is not accessible from Docker container. Only paths within shared volumes are allowed.")
+    #     # Path is not in any shared volume
+    #     raise ValueError(f"Path '{host_path}' is not accessible from Docker container. Only paths within shared volumes are allowed.")
     
-    def convert_container_path_to_host(container_path):
-        """Convert a container path to its equivalent host path (for informational purposes)."""
-        if not is_docker:
-            return container_path
+    # def convert_container_path_to_host(container_path):
+    #     """Convert a container path to its equivalent host path (for informational purposes)."""
+    #     if not is_docker:
+    #         return container_path
         
-        container_path = os.path.abspath(container_path)
+    #     container_path = os.path.abspath(container_path)
         
-        for container_volume, host_path in docker_volume_mappings.items():
-            if container_path.startswith(container_volume + os.sep) or container_path == container_volume:
-                relative_path = os.path.relpath(container_path, container_volume)
-                if relative_path == '.':
-                    return os.path.abspath(host_path)
-                return os.path.join(os.path.abspath(host_path), relative_path)
+    #     for container_volume, host_path in docker_volume_mappings.items():
+    #         if container_path.startswith(container_volume + os.sep) or container_path == container_volume:
+    #             relative_path = os.path.relpath(container_path, container_volume)
+    #             if relative_path == '.':
+    #                 return os.path.abspath(host_path)
+    #             return os.path.join(os.path.abspath(host_path), relative_path)
         
-        return container_path
+    #     return container_path
     
     common_socket_events.show_loading_status('Initializing image search engine...')
     images_search_engine = ImageSearch(cfg=cfg)
@@ -136,7 +137,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
         for ind, full_path in enumerate(all_files):
             file_path = os.path.relpath(full_path, media_directory)
 
-            
+            # TODO: WTF is this?
             resolutions[full_path] = image_metadata['resolution']
             progress_callback(ind + 1, len(all_files)) # Update progress
 
@@ -290,7 +291,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
                 image_data = {
                     "hash":           file_hash,
                     "hash_algorithm": images_search_engine.get_hash_algorithm(),
-                    "file_path":      os.path.relpath(full_path, media_directory),
+                    "file_path":      full_path,
                     "model_rating":   model_rating,
                     "model_hash":     universal_evaluator.hash,
                 }
@@ -320,13 +321,6 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
         media_directory=media_directory,
         db_schema=db_models.ImagesLibrary,
     )
-    
-
-    # necessary to allow web application access to image files
-    @app.route('/image_files/<path:filename>')
-    def serve_image_files(filename):
-        nonlocal media_directory
-        return send_from_directory(media_directory, filename)
     
     @socketio.on('emit_images_page_get_folders')    
     def get_folders(data):
@@ -367,7 +361,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
 
         # Define a method to gather domain specific file information
         def get_file_info(full_path, file_hash):
-            file_path = os.path.relpath(full_path, media_directory)
+            file_path = full_path
             basename = os.path.basename(full_path)
             file_size = os.path.getsize(full_path)
 
@@ -536,7 +530,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
                     file_hash = images_search_engine.get_file_hash(target_path)
                     db_item = db_models.ImagesLibrary.query.filter_by(hash=file_hash).first()
                     if db_item:
-                        db_item.file_path = os.path.relpath(target_path, media_directory)
+                        db_item.file_path = target_path
                         db_models.db.session.commit()
                     
                 except Exception as e:

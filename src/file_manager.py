@@ -527,9 +527,8 @@ class FileManager:
             file_hash = page_hashes[ind]
             if file_hash in db_items_map:
                 db_item = db_items_map[file_hash]
-                rel_path = os.path.relpath(full_path, self.media_directory)
-                if db_item.file_path != rel_path:
-                    db_item.file_path = rel_path
+                if db_item.file_path != full_path:
+                    db_item.file_path = full_path
                     db_updated = True
 
         if db_updated:
@@ -542,10 +541,7 @@ class FileManager:
         for ind, full_path in enumerate(page_files):
             self.show_status(f"Extracting metadata for {ind+1}/{len(page_files)} files.")
 
-            # page_hashes = self._get_hashes_with_progress(page_files)
-            page_hashes = [self.engine.get_file_hash(file_path) for file_path in page_files]
-
-            file_path = os.path.relpath(full_path, self.media_directory)
+            file_path = full_path 
             basename = os.path.basename(full_path)
             file_size = os.path.getsize(full_path)
             file_hash = page_hashes[ind]
@@ -591,8 +587,6 @@ class FileManager:
         # Save all extracted metadata to the cache
         # self.cached_metadata.save_metadata_cache()
 
-        sorted_files_paths = [os.path.relpath(file_path, self.media_directory) for file_path in sorted_files]
-
         self.show_status(f'{len(sorted_files)} files processed in {time.time() - start_time:.4f} seconds.')
 
         print(f'get_files returning {len(files_data)} files data.')
@@ -608,6 +602,6 @@ class FileManager:
             "files_data": files_data, 
             "folder_path": folder_path, 
             "total_files": len(sorted_files), 
-            "all_files_paths": sorted_files_paths
+            "all_files_paths": sorted_files
             }
 

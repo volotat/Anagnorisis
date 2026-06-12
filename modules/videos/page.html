@@ -4,6 +4,10 @@
 <!-- PAGE MAIN CONTENT -->
 <div class="container is-fluid columns is-centered py-6">
   <aside class="column is-2 menu">
+    <button class="button is-light mt-2 mb-5 is-fullwidth" id="open_servers_modal_btn">
+      <span class="icon"><i class="fas fa-server"></i></span>
+      <span>Remote Servers</span>
+    </button>
   </aside>
 
   <div class="column">
@@ -69,5 +73,31 @@
     
     <!-- Close button -->
     <button class="modal-close is-large" aria-label="close"></button>
+  </div>
+
+  <!-- Modal for remote server subscriptions -->
+  <div class="modal" id="servers_modal">
+    <div class="modal-background modal-close-action"></div>
+    <div class="modal-card" style="width:640px">
+      <header class="modal-card-head">
+        <p class="modal-card-title">Remote Servers</p>
+        <button class="delete modal-close-action" aria-label="close"></button>
+      </header>
+      <section class="modal-card-body">
+        <div id="servers_list"></div>
+        <hr>
+        <h5 class="title is-5">Connect to a new server</h5>
+        <div class="field">
+          <label class="label">Server URL</label>
+          <input class="input" id="server_url_input" type="text" placeholder="http://192.168.1.100:6001">
+        </div>
+        <div class="field">
+          <label class="label">Remote path (leave empty for all files)</label>
+          <input class="input" id="server_remote_path_input" type="text" placeholder="Videos/Movies">
+        </div>
+        <div id="servers_modal_status" class="has-text-danger mt-2"></div>
+        <button class="button is-primary mt-2" id="subscribe_server_btn">Connect</button>
+      </section>
+    </div>
   </div>
 <div>

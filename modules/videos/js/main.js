@@ -33,7 +33,7 @@ import createModuleMetaEditors from '/modules/ModuleMetaEditors.js';
     videoPreviewContainer.style.overflow = 'hidden'; // Ensure image doesn't overflow
 
     const image = document.createElement('img');
-    image.src = '/video_files/' + fileData.file_info.preview_path; // Use preview_path
+    image.src = '/files/' + fileData.file_info.preview_path; // Use preview_path
     image.style.maxWidth = '100%';
     image.style.maxHeight = '100%';
     image.style.objectFit = 'contain';
@@ -118,7 +118,7 @@ import createModuleMetaEditors from '/modules/ModuleMetaEditors.js';
       {
         label: 'Open in new tab',
         action: () => {
-          window.open('video_files/'+fileData.file_path, '_blank');
+          window.open('files/'+fileData.file_path, '_blank');
         }
       },
       {
@@ -388,6 +388,52 @@ import createModuleMetaEditors from '/modules/ModuleMetaEditors.js';
     // Display current search status
     socket.on('emit_show_search_status', (status) => {
       $('.image-search-status').html(status);
+    });
+
+    // Servers modal
+    $('#open_servers_modal_btn').click(() => {
+      $('#servers_modal').addClass('is-active');
+      socket.emit('emit_videos_page_get_server_subscriptions');
+    });
+    $(document).on('click', '.modal-close-action', function() {
+      $(this).closest('.modal').removeClass('is-active');
+    });
+    $('#subscribe_server_btn').click(() => {
+      const url = $('#server_url_input').val().trim();
+      const remote_path = $('#server_remote_path_input').val().trim();
+      if (!url) { $('#servers_modal_status').text('Please enter a server URL.'); return; }
+      $('#servers_modal_status').text('Connecting...');
+      socket.emit('emit_videos_page_subscribe_to_server', { url, remote_path }, (resp) => {
+        if (resp && resp.error) {
+          $('#servers_modal_status').text('Error: ' + resp.error);
+        } else {
+          $('#servers_modal_status').text('Connected! Syncing...');
+          socket.emit('emit_videos_page_get_server_subscriptions');
+        }
+      });
+    });
+    socket.on('emit_videos_page_show_server_subscriptions', (subs) => {
+      const container = $('#servers_list');
+      container.empty();
+      if (!subs || subs.length === 0) {
+        container.append('<p class="has-text-grey">No servers connected.</p>');
+        return;
+      }
+      subs.forEach(s => {
+        const lastSynced = s.last_synced ? new Date(s.last_synced * 1000).toLocaleString() : 'Never';
+        container.append(`<div class="box mb-2"><b>${s.folder_name}</b> &mdash; ${s.url}<br><small>Paths: ${(s.remote_paths||[]).join(', ')||'/'} &bull; Files: ${s.total_files} &bull; Last synced: ${lastSynced}</small><br><button class="button is-small is-info mt-1 mr-1" data-sync-folder="${s.folder_name}">Sync now</button><button class="button is-small is-danger mt-1" data-unsub-folder="${s.folder_name}">Disconnect</button></div>`);
+      });
+    });
+    $(document).on('click', '[data-sync-folder]', function() {
+      socket.emit('emit_videos_page_sync_server', { folder_name: $(this).data('sync-folder') });
+    });
+    $(document).on('click', '[data-unsub-folder]', function() {
+      const fn = $(this).data('unsub-folder');
+      if (confirm('Disconnect from ' + fn + '?')) {
+        socket.emit('emit_videos_page_unsubscribe_server', { folder_name: fn }, () => {
+          socket.emit('emit_videos_page_get_server_subscriptions');
+        });
+      }
     });
   })
 

@@ -79,7 +79,7 @@ class PlaylistManager {
     playSongAtIndex(index = 0) {
         this.currentSongIndex = index;
         const currentSong = this.playlist[this.currentSongIndex];
-        this.audioPlayer.src = '/music_files/' + currentSong.file_path;
+        this.audioPlayer.src = '/files/' + currentSong.file_path;
         this.audioPlayer.play();
         this.isPlaying = true;
         this.songControlPanel.updateSongInfo(currentSong);

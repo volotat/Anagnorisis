@@ -221,7 +221,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
         file_data = {
           "hash":           file_hash,
           "hash_algorithm": music_search_engine.get_hash_algorithm(),
-          "file_path":      os.path.relpath(full_path, media_directory),
+          "file_path":      full_path,
           "model_rating":   model_rating,
           "model_hash":     universal_evaluator.hash,
         }
@@ -250,12 +250,6 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
   )
 
   common_socket_events.show_loading_status('Setting up filters and routes...')
-
-  # necessary to allow web application access to music files
-  @app.route('/music_files/<path:filename>')
-  def serve_media(filename):
-    nonlocal media_directory
-    return send_from_directory(media_directory, filename)
 
   @socketio.on('emit_music_page_get_folders')  
   def get_folders(data):
@@ -289,7 +283,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
       durations = {}
       progress_callback = SortingProgressCallback(common_socket_events.show_search_status, operation_name="Gathering music duration ") # Create callback
       for ind, full_path in enumerate(all_files):
-        file_path = os.path.relpath(full_path, media_directory)
+        file_path = full_path
         # file_hash = all_hashes[ind]
 
         file_metadata = music_search_engine.get_metadata(full_path)
@@ -390,13 +384,14 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
       "filters": filters,
       "get_file_info": get_file_info,
     })
+
     return music_file_manager.get_files(**input_params)
 
   @socketio.on('emit_music_page_get_song_details')
   def get_song_details(data):
     file_path = data.get('file_path', '')
 
-    full_path = os.path.join(media_directory, file_path)
+    full_path = file_path # os.path.join(media_directory, file_path)
     audiofile_data = music_search_engine.get_metadata(full_path)
     audiofile_data['hash'] = music_search_engine.get_file_hash(full_path)
     db_item = db_models.MusicLibrary.query.filter_by(hash=audiofile_data['hash']).first()

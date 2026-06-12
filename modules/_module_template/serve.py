@@ -164,7 +164,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
                         db_item = db_models.ExampleLibrary(
                             hash=file_hash,
                             hash_algorithm=search_engine.get_hash_algorithm(),
-                            file_path=os.path.relpath(file_path, media_directory),
+                            file_path=file_path,
                         )
                         new_items.append(db_item)
                     else:
@@ -278,7 +278,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
             Return a dict of module-specific metadata for a single file.
             This is sent to the frontend for display in the file grid.
             """
-            file_path = os.path.relpath(full_path, media_directory)
+            file_path = full_path
             file_size = os.path.getsize(full_path)
 
             user_rating = None

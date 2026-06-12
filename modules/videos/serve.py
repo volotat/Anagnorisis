@@ -98,13 +98,6 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
             print(f"Warning: Videos media directory '{os.path.join(data_folder, cfg.videos.media_directory)}' does not exist. Setting media folder to None.")
             media_directory = None
 
-    common_socket_events.show_loading_status('Setting up video file routes...')
-    # necessary to allow web application access to music files
-    @app.route('/video_files/<path:filename>')
-    def serve_video_files(filename):
-        nonlocal media_directory
-        return send_from_directory(media_directory, filename)
-  
     common_socket_events.show_loading_status('Initializing video search engine...')
     videos_search_engine = VideoSearch(cfg=cfg)
 
@@ -221,7 +214,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
                 file_data = {
                     "hash": file_hash,
                     "hash_algorithm": videos_search_engine.get_hash_algorithm(),
-                    "file_path": os.path.relpath(full_path, media_directory),
+                    "file_path": full_path,
                     "model_rating": model_rating,
                     "model_hash": videos_evaluator.hash,
                 }
@@ -266,7 +259,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
         media_directory=media_directory,
         db_schema=db_models.VideosLibrary,
     )
-
+    
     @socketio.on('emit_videos_page_get_folders')  
     def get_folders(data):
         path = data.get('path', '')
@@ -371,7 +364,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
             return {
                     #"full_path": full_path,
                     #"file_path": os.path.relpath(full_path, media_directory), # Relative path for serving
-                    "preview_path": os.path.relpath(preview_path, media_directory), # Relative path for serving preview
+                    "preview_path": preview_path, # Relative path for serving preview
                     "base_name": basename,
                     #"hash": file_hash,
                     "user_rating": user_rating,
@@ -385,8 +378,8 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
         
         input_params = input_data.copy()
         input_params.update({
-            "filters": filters,
-            "get_file_info": get_file_info,
+        "filters": filters,
+        "get_file_info": get_file_info,
         })
         return videos_file_manager.get_files(**input_params)
 
@@ -465,7 +458,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
             new_video = db_models.VideosLibrary(
                 hash=video_hash,
                 hash_algorithm=videos_search_engine.get_hash_algorithm(),
-                file_path=os.path.relpath(full_path, media_directory),
+                file_path=full_path,
                 last_played=datetime.datetime.now()
             )
             db_models.db.session.add(new_video)

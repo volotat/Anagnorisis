@@ -264,7 +264,7 @@ class MetadataSearch:
                 generation for files not already in cache (fast mode for training).
         """
         media_folder = media_folder or ''
-        relative_path = os.path.relpath(file_path, media_folder) if media_folder else os.path.basename(file_path)
+        relative_path = file_path
         file_name = os.path.basename(file_path)
         
         full_description = f"File Name: {file_name}\nFile Path: {relative_path}\n"

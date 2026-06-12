@@ -39,6 +39,41 @@ music:
   - [live recording, studio recording, orchestral, minimalist, complex composition, loud, quiet]
   - [distorted, clean sound, heavy reverb, echo effect, atmospheric, cinematic music, acoustic]
   - [instrumental, lo-fi recording, high production quality, experimental music, improvisation]
+  # Era & decade
+  - [1950s music, 1960s music, 1970s music, 1980s music, 1990s music, 2000s music, 2010s music, 2020s music]
+  - [vintage sound, retro style, classic recording, golden age of music, modern production, contemporary music]
+  # Use case & context
+  - [workout music, gym music, study music, focus music, sleep music, relaxation music, meditation music, spa music]
+  - [party music, club music, dance floor, background music, driving music, road trip, dinner music, elevator music]
+  - [film score, movie soundtrack, video game music, commercial jingle, wedding music, church music, concert music]
+  - [love song, breakup song, protest song, drinking song, lullaby, children's music, holiday music, battle anthem]
+  # Vocal style
+  - [clean vocals, raspy vocals, breathy vocals, powerful vocals, delicate vocals, operatic singing, nasal vocals]
+  - [rap vocals, sung rap, spoken word, beatboxing, scatting, yodeling, throat singing, overtone singing, humming]
+  - [soprano, alto, tenor, baritone, bass voice, falsetto, head voice, chest voice, mixed voice, whistle register]
+  - [duet, trio, full choir, backing vocals, call and response, harmonizing, layered vocals, a cappella, unison]
+  # Extended subgenres
+  - [trap music, drill music, cloud rap, conscious rap, mumble rap, old school hip-hop, boom bap, lo-fi hip-hop, phonk]
+  - [deep house, tech house, progressive house, nu-disco, tropical house, acid house, UK garage, grime, jungle, drum and bass]
+  - [death metal, black metal, doom metal, power metal, thrash metal, metalcore, djent, post-metal, sludge metal, grindcore]
+  - [shoegaze, post-rock, math rock, noise rock, stoner rock, emo, post-hardcore, screamo, indie pop, dream pop, slowcore]
+  - [americana, outlaw country, bluegrass, contemporary country, honky tonk, country pop, folk rock, alt-country, western swing]
+  - [cumbia, salsa, merengue, bachata, tango, samba, mambo, cha-cha, reggaeton, dembow, moombahton]
+  - [afrobeats, afropop, highlife, amapiano, dancehall, soca, calypso, zouk, fado, chanson, musette]
+  - [hindustani classical, carnatic music, qawwali, bollywood, city pop, j-rock, mandopop, k-indie, anatolian rock]
+  # Sound characteristics
+  - [bass heavy, bass light, treble dominant, midrange focused, sub bass, punchy bass, deep rumble, boomy]
+  - [warm tone, cold tone, bright sound, dark sound, thin sound, full bodied, wide soundstage, intimate sound]
+  - [heavily compressed, wide dynamic range, stereo wide, mono recording, spatial audio, binaural, 8D audio]
+  - [dry mix, heavy reverb, long decay, short reverb, spring reverb, plate reverb, room sound, cave reverb]
+  - [chorus effect, flanger, phaser, tremolo effect, vibrato, pitch modulation, ring modulation, bit crusher, glitch]
+  # Specific instruments & sounds
+  - [808 bass, synthesizer bass, electric piano, Rhodes piano, Fender Rhodes, Wurlitzer, clavinet, Mellotron, theremin]
+  - [drum machine, programmed beats, live drums, brushed drums, jazz brushes, electronic percussion, breakbeat, amen break]
+  - [slide guitar, wah pedal, distorted guitar, clean guitar, fingerpicking, arpeggios, power chords, tremolo picking, tapping]
+  - [string quartet, chamber music, symphony orchestra, big band, jazz combo, brass band, marching band, gamelan, steel band]
+  - [vocoder, talk box, pitch shifted vocals, auto-tuned, looped sample, vinyl crackle, tape hiss, lo-fi cassette, field recording]
+  - [banjo picking, dobro, lap steel, pedal steel, dulcimer, hammered dulcimer, hurdy-gurdy, zither, mbira, handpan]
   media_formats:
   - .mp3
   - .flac
@@ -84,6 +119,29 @@ images:
   - [book, phone, computer, screen, keyboard, camera, microphone, television, headphones]
   - [money, coin, trophy, gift, toy, ball, furniture, chair, table, lamp, mirror, clock, map]
   - [clothing, shoes, hat, glasses, jewelry, bag, umbrella, flag, sign, logo]
+  # Musical instruments
+  - [guitar, acoustic guitar, electric guitar, bass guitar, ukulele, banjo, mandolin, lute, resonator guitar]
+  - [piano, grand piano, upright piano, keyboard instrument, synthesizer, organ, harpsichord, accordion, melodica]
+  - [violin, cello, viola, double bass, harp, fiddle, string instrument]
+  - [trumpet, trombone, French horn, tuba, cornet, flugelhorn, bugle, brass instrument]
+  - [flute, clarinet, oboe, saxophone, bassoon, recorder, pan flute, woodwind instrument]
+  - [drum kit, snare drum, bass drum, cymbal, hi-hat, bongo drums, conga, djembe, tambourine, cajon]
+  - [xylophone, marimba, vibraphone, glockenspiel, steel drum, handpan, hang drum, kalimba]
+  - [sitar, oud, erhu, shamisen, pipa, balalaika, bouzouki, kora, traditional instrument]
+  - [harmonica, bagpipes, didgeridoo, theremin, hurdy-gurdy, music stand, sheet music, vinyl record, turntable, mixing console]
+  # Sports & activities
+  - [running, jogging, cycling, swimming, hiking, rock climbing, skateboarding, surfing, skiing, snowboarding]
+  - [soccer, football, basketball, tennis, baseball, volleyball, golf, rugby, cricket, ice hockey, handball]
+  - [boxing, martial arts, karate, judo, taekwondo, wrestling, gymnastics, yoga, weightlifting, crossfit]
+  - [dancing, ballet, ballroom dancing, breakdancing, figure skating, horse riding, cheerleading, pole dancing]
+  - [fishing, archery, hunting, camping, kayaking, canoeing, sailing, rowing, skydiving, paragliding, bungee jumping]
+  - [stadium, sports field, gym, swimming pool, ski slope, basketball court, tennis court, golf course, boxing ring]
+  # Food & drink details
+  - [breakfast, brunch, lunch, dinner, dessert, snack, street food, fast food, fine dining, buffet]
+  - [soup, salad, sandwich, burger, steak, grilled meat, seafood, sushi, pizza, pasta, noodles, risotto]
+  - [bread, croissant, pastry, cake, chocolate, ice cream, candy, cookies, pie, tart, donut, muffin, macaron]
+  - [tacos, burrito, curry, stew, dumplings, ramen, kebab, hot dog, waffle, pancake, spring roll, falafel]
+  - [cooking, baking, barbecue, picnic, food market, cafe interior, restaurant table, kitchen scene, food preparation]
   # Sky & space
   - [stars, moon, sun, planet, galaxy, nebula, meteor, satellite, rocket, space station]
   # Style & medium
@@ -109,6 +167,26 @@ images:
   - [beautiful, cute, funny, creepy, scary, sad, dramatic, romantic, peaceful, chaotic, cozy]
   - [elegant, raw, aesthetic, nostalgic, mysterious, epic, serene, intense, whimsical, dark]
   - [cheerful, melancholic, tense, dreamy, powerful, surreal, minimalistic, maximalist, grungy]
+  # Materials & textures
+  - [wood texture, stone texture, metal surface, glass surface, fabric texture, leather texture, rubber surface]
+  - [concrete wall, brick wall, marble surface, ceramic tile, plastic surface, paper texture, sand texture, gravel]
+  - [smooth surface, rough texture, shiny surface, matte finish, translucent material, reflective surface, frosted glass]
+  - [cracked surface, worn texture, polished surface, woven fabric, knitted texture, lace, velvet, silk, denim]
+  # Human activities & emotions
+  - [reading, writing, working on computer, sleeping, eating, drinking, laughing, crying, meditating, thinking]
+  - [hugging, kissing, celebrating, praying, waving, pointing, jumping, climbing, stretching, running away]
+  - [happy expression, sad expression, angry expression, surprised face, scared face, confused, focused, bored]
+  - [child playing, elderly person, wedding ceremony, birthday party, graduation, concert crowd, festival crowd, protest]
+  # Science & technology
+  - [laboratory, microscope, telescope, robot, drone, circuit board, satellite dish, solar panel, wind turbine, antenna]
+  - [medical equipment, stethoscope, surgery, hospital room, X-ray scan, MRI machine, blood sample, DNA helix, pill]
+  - [astronaut, rocket launch, moon surface, planet surface, observatory, space station, spacewalk, comet, asteroid]
+  - [factory, industrial machinery, construction site, power plant, server room, data center, control panel, conveyor belt]
+  # Nature details
+  - [mushroom, moss, lichen, fern, cactus, succulent, tropical plant, bonsai, ivy, seaweed, coral, kelp, mangrove]
+  - [butterfly, bee, ant, dragonfly, ladybug, caterpillar, snail, scorpion, firefly, praying mantis, beetle, moth]
+  - [rock formation, cliff face, glacier, salt flat, hot spring, geyser, sand dune, tundra, swamp, cave interior]
+  - [autumn leaves, cherry blossom, spring flowers, frost on leaves, morning dew, fog over water, pollen, spores]
   media_formats:
   - .jpg
   - .jpeg
