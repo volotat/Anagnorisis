@@ -481,7 +481,6 @@ import createModuleMetaEditors from '/modules/ModuleMetaEditors.js';
           renderCustomData: renderCustomData, // Pass the custom data rendering function
           renderActions: renderActions, // Pass the actions rendering function
           handleFileClick: (fileData) => {},
-          numColumns: num_files_in_row, 
           minTileWidth: "18rem",
           onContextMenu: createContextMenuForFile,
           onMetaOpen: openMetaEditorForFile,

@@ -16,10 +16,13 @@ from omegaconf import OmegaConf
 
 import src.file_manager as file_manager
 import modules.text.db_models as db_models
+import src.db_models as main_db_models
 from src.base_search_engine import BaseSearchEngine
 from src.text_embedder import TextEmbedder 
 
 from scipy.spatial.distance import cosine
+import src.virtual_file_system as vfs
+import fs
 
 
 def get_text_metadata(file_path: str):
@@ -65,7 +68,7 @@ class TextSearch(BaseSearchEngine):
         return get_text_metadata(file_path)
 
     def _get_db_model_class(self):
-        return db_models.TextLibrary
+        return main_db_models.FilesLibrary
     
     def _get_model_hash_postfix(self):
         return "_v1.1.0"
@@ -113,8 +116,16 @@ class TextSearch(BaseSearchEngine):
             raise RuntimeError(f"{self.__class__.__name__} not initialized. Call initiate() first.")
 
         try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                content = f.read()
+            # with open(file_path, 'r', encoding='utf-8') as f:
+            #     content = f.read()
+
+            base_url, path_in_fs = vfs.resolve_base_and_path_from_url(file_path)
+            with fs.open_fs(base_url) as my_fs:
+                # Open as binary 'rb' (fully compatible with all remote/WebDAV providers)
+                with my_fs.open(path_in_fs, 'rb') as f:
+                    content_bytes = f.read()
+                    # Decode manually to string, ignoring any invalid bytes safely
+                    content = content_bytes.decode('utf-8', errors='ignore')
 
             with self._embedder_lock:
                 # embed_text returns np.ndarray [chunks, dim] or empty list

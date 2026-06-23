@@ -18,6 +18,20 @@ naming_convention = {
 # Initialize SQLAlchemy to make a reference object for main application and extensions to use
 db = SQLAlchemy(metadata=MetaData(naming_convention=naming_convention))
 
+# General purpose table for storing information about files and their respective ratings.
+class FilesLibrary(db.Model):
+  id = db.Column(db.Integer, unique=True, primary_key=True)
+  hash = db.Column(db.String, nullable=True, default=None) # place for soft hash derived with blake2 from parts of the file. Could be None if we don't need it.
+  hash_algorithm = db.Column(db.String, nullable=True, default=None) # blake2 most of the time or None
+  file_path = db.Column(db.String, nullable=True, index=True) # Full url path like this: osfs:///mnt/media/Movies/SomeMovie.mp4
+  user_rating = db.Column(db.Float, nullable=True, index=True) # Place for fast lookup that would be synchronized with project_config/memory/ folder
+  user_rating_date = db.Column(db.DateTime, nullable=True) # Necessary for training in the future, to know when the user rated the file
+  model_rating = db.Column(db.Float, nullable=True, index=True) # Current prediction of the model for this file, based on the all data available to gather (path, metadata, .meta files, etc.)
+  model_hash = db.Column(db.String, nullable=True) # Current prediction model hash to know when to update the score
+
+  def as_dict(self):
+    return {column.name: getattr(self, column.name) for column in self.__table__.columns}
+
 def export_db_to_csv(db_session, excluded_columns=None):
     """
     Exports all data from all tables in the database to a CSV string,

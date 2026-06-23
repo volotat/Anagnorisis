@@ -1,30 +1,62 @@
 // Example folder structure
-const folders_dict = {
-  name: 'root',
-  num_files: 10,
-  total_files: 30,
-  subfolders: {
-    folder1: {
-      name: 'folder1',
-      num_files: 5,
-      total_files: 15,
-      subfolders: {
-        subfolder1: {
-          name: 'subfolder1',
-          num_files: 3,
-          total_files: 3,
-          subfolders: {}
+/*
+{
+  "display_name": "All Files",
+  "full_path": "/",
+  "type": "root",
+  "subfolders": [
+    {
+      "display_name": "Local",
+      "full_path": "osfs:///mnt/media/",
+      "base_url": "osfs://",
+      "path_in_fs": "/mnt/media/",
+      "type": "server",
+      "num_files": 10,
+      "total_files": 30,
+      "subfolders": [
+        {
+          "display_name": "Folder 1",
+          "full_path": "osfs:///mnt/media/Folder 1/",
+          "base_url": "osfs://",
+          "path_in_fs": "/mnt/media/Folder 1/",
+          "type": "folder",
+          "num_files": 5,
+          "total_files": 15,
+          "subfolders": []
+        },
+        {
+          "display_name": "Folder 2",
+          "full_path": "osfs:///mnt/media/Folder 2/",
+          "base_url": "osfs://",
+          "path_in_fs": "/mnt/media/Folder 2/",
+          "type": "folder",
+          "num_files": 5,
+          "total_files": 15,
+          "subfolders": [
+             // Deeper nested folders...
+          ]
         }
-      }
+      ]
     },
-    folder2: {
-      name: 'folder2',
-      num_files: 5,
-      total_files: 15,
-      subfolders: {}
+    {
+      "display_name": "My Home Server (192.168.0.19:5002)",
+      "full_path": "webdav://192.168.0.19:5002/",
+      "base_url": "webdav://192.168.0.19:5002/",
+      "path_in_fs": "/",
+      "type": "server",
+      "subfolders": []
+    },
+    {
+      "display_name": "Friend's Images (frends.server.fr)",
+      "full_path": "ftp://frends.server.fr/images/",
+      "base_url": "ftp://frends.server.fr/",
+      "path_in_fs": "/images/",
+      "type": "server",
+      "subfolders": []
     }
-  }
-};
+  ]
+}
+*/
 
 /**
  * Class representing a folder view component.
@@ -85,52 +117,56 @@ class FolderViewComponent {
    * @param {string} [current_path=''] - The current path being processed.
    * @returns {HTMLElement} The DOM element representing the folder.
    */
-  createFolderRepresentation(folders_dict, active_path = '', current_path = '') {
+  createFolderRepresentation(folder_node, active_path = '') {
     const folderRepresentation = document.createElement('li');
 
-    const folderName = folders_dict.name;
-    const numFiles = folders_dict.num_files;
-    const totalFiles = folders_dict.total_files;
-    let current_path_ = current_path + folderName + '/';
-    const isActive = active_path === current_path_ ? 'is-active' : '';
-    let encoded_link = `path=${encodeURIComponent(current_path_)}`;
-    let color = this.isSubfolder(active_path, current_path_) ? 'has-text-strong' : 'has-text-grey-light';
-    if (active_path === current_path_) color = '';
+    // 1. Read explicitly from the new JSON structure
+    const displayName = folder_node.display_name || folder_node.name;
+    const currentPath = folder_node.full_path; // No more string concatenation!
+    const numFiles = folder_node.num_files;
+    const totalFiles = folder_node.total_files;
 
-    // Conditional check for displaying image counts
-    let imageCountDisplay = numFiles === totalFiles ? `[${numFiles}]` : `[${numFiles} | ${totalFiles}]`;
+    // 2. Determine UI active state and colors
+    const isActive = active_path === currentPath ? 'is-active' : '';
+    let color = this.isSubfolder(active_path, currentPath) ? 'has-text-strong' : 'has-text-grey-light';
+    if (active_path === currentPath) color = '';
 
+    // 3. Optional: File counts (hide them if they aren't provided for remote servers)
+    let imageCountDisplay = '';
+    if (numFiles !== undefined && totalFiles !== undefined) {
+      imageCountDisplay = numFiles === totalFiles ? `[${numFiles}]` : `[${numFiles} | ${totalFiles}]`;
+    }
+
+    // 4. Create the anchor tag
     const a = document.createElement('a');
     a.className = `${isActive} ${color}`;
-    a.href = `?${encoded_link}`;
-    a.textContent = `${folderName} ${imageCountDisplay}`;
+    a.href = `?path=${encodeURIComponent(currentPath)}`;
+    a.textContent = `${displayName} ${imageCountDisplay}`.trim();
 
-    // Add right-click context menu only if enabled
+    // Context Menu logic (unchanged)
     if (this.enableContextMenu && this.contextMenu) {
       a.addEventListener('contextmenu', (e) => {
         e.preventDefault();
-        this.showContextMenu(e, current_path_);
+        this.showContextMenu(e, currentPath);
       });
     }
 
     folderRepresentation.appendChild(a);
 
-    // Use the server-provided order 
-    const sortedFolders = Object.keys(folders_dict.subfolders);
+    // 5. Recursively render subfolders
+    // Now we can just iterate over the array securely instead of Object.keys()
+    if (folder_node.subfolders && folder_node.subfolders.length > 0) {
+      const ul = document.createElement('ul');
 
-    const ul = document.createElement('ul');
-
-    // Create a new folder representation for each subfolder
-    for (const folderKey of sortedFolders) {
-      const folder = folders_dict.subfolders[folderKey];
-      let current_path_ = current_path + folderName + '/';
-
-      if (this.isSubfolder(current_path_, active_path)) {
-        ul.appendChild(this.createFolderRepresentation(folder, active_path, current_path_));
+      for (const childFolder of folder_node.subfolders) {
+        // Only render children if they are in the active path expansion
+        // if (this.isSubfolder(childFolder.full_path, active_path)) {
+          ul.appendChild(this.createFolderRepresentation(childFolder, active_path));
+        //}
       }
+      folderRepresentation.appendChild(ul);
     }
 
-    folderRepresentation.appendChild(ul);
     return folderRepresentation;
   }
 

@@ -45,3 +45,8 @@ onnx
 hyperpyyaml
 diffusers
 onnxruntime
+fs
+fs-s3fs
+fs.smbfs
+fs.sshfs
+fs.webdavfs

@@ -109,6 +109,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
     # --- 6. File manager -------------------------------------------------
     common_socket_events.show_loading_status('Setting up file manager...')
     example_file_manager = file_manager.FileManager(
+        app=app,
         cfg=cfg,
         media_directory=media_directory,
         engine=search_engine,

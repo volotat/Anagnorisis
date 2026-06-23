@@ -306,7 +306,6 @@ function renderCustomData(fileData) { // Function for custom data rendering
           renderCustomData: renderCustomData, // Pass the custom data rendering function
           // renderActions: renderActions, // Pass the actions rendering function
           handleFileClick: (fileData) => {},
-          numColumns: num_files_in_row, 
           onContextMenu: createContextMenuForFile,
           onMetaOpen: openExternalMetaEditorForFile,
       });

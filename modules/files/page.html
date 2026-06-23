@@ -1,0 +1,155 @@
+<script type="module" type="text/javascript" src="modules/files/js/main.js"></script>
+
+<!-- PAGE MAIN CONTENT -->
+<div class="container is-fluid columns is-centered py-6">
+  <aside class="column is-2 menu">
+    <button class="button is-light mt-2 mb-5 is-fullwidth" id="open_servers_modal_btn">
+      <span class="icon"><i class="fas fa-server"></i></span>
+      <span>Remote Servers</span>
+    </button>
+  </aside>
+
+  <div class="column">
+    <!-- Search bar component mount point -->
+    <div id="search_bar_container" class="mb-4"></div>
+
+    <!-- Pagination and status on top-->
+    <nav class="level mt-6">
+      <nav class="pagination is-rounded level-left mb-0" role="navigation" aria-label="pagination">    
+        <ul class="pagination-list">
+          <li>
+            <span class="pagination-ellipsis">&hellip;</span>
+          </li>
+        </ul>
+      </nav>
+      <div class="level-right">
+        <p class="files-search-status">...</p>
+      </div>
+    </nav>
+
+    <!-- Grid with previews of files -->
+    <div id="files_grid_container">
+    </div>
+
+    <!-- Pagination and status on bottom-->
+    <nav class="pagination is-rounded mt-6" role="navigation" aria-label="pagination">
+      <nav class="pagination is-rounded level-left mb-0" role="navigation" aria-label="pagination">    
+        <ul class="pagination-list">
+          <li>
+            <span class="pagination-ellipsis">&hellip;</span>
+          </li>
+        </ul>
+      </nav>
+      <div class="level-right">
+        <p class="files-search-status">...</p>
+      </div>
+    </nav>
+  </div>
+
+  <!-- Small window in the left bottom side of the screen with actions that could be performed on the selected files -->
+  <div class="box block mb-0" id="files_actions" style="position: fixed; bottom: 1rem; left: 1rem; display: none;">
+    <!-- Show how much files are selected-->
+    <div class="field">
+      <div class="control">
+        <p class=" has-text-centered" id="selected_files_counter">0 files selected</p>
+      </div>
+    </div>
+    <!-- Move all selected files into another folder button -->
+    <div class="field">
+      <div class="control">
+        <button class="button is-info is-fullwidth" id="move_selected_files">Move</button>
+      </div>
+    </div>
+    <!-- Delete all selected files button -->
+    <div class="field">
+      <div class="control">
+        <button class="button is-danger is-fullwidth" id="delete_selected_files">Delete</button>
+      </div>
+    </div>
+    <!-- Undo all selections-->
+    <div class="field">
+      <div class="control">
+        <button class="button is-light is-fullwidth" id="unselect_all_files">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal for moving files to a folder -->
+  <div class="modal" id="move_files_modal">
+    <div class="modal-background modal-close-action"></div>
+    <div class="modal-card">
+      <header class="modal-card-head">
+        <p class="modal-card-title">Move files</p>
+        <button class="delete modal-close is-large modal-close-action" aria-label="close"></button>
+      </header>
+      <section class="modal-card-body">
+        <div class="field">
+          <label class="label">Path to the folder</label>
+          <div class="control">
+            <input class="input" type="text" placeholder="Write folder path here">
+          </div>
+        </div>
+        <!-- Added note -->
+        <p class="has-text-info mt-4">
+          If there already exists a file with the same name in the destination folder, copied file will be given a new name.
+        </p>
+      </section>
+      <footer class="modal-card-foot">
+        <button class="button is-info mr-2 modal-confirm-action">Move</button>
+        <button class="button modal-close-action">Cancel</button>
+      </footer>
+    </div>
+  </div>
+
+  <!-- Modal for Metadata Editor -->
+  <div class="modal" id="metadata_editor_modal">
+    <div class="modal-background modal-close-action"></div>
+    <div class="modal-card" style="width: 80%; max-width: 960px; height: 90vh; display: flex; flex-direction: column;">
+      <header class="modal-card-head">
+        <p class="modal-card-title" id="metadata_modal_title">Edit Image Metadata</p>
+        <button class="delete modal-close is-large modal-close-action" aria-label="close"></button>
+      </header>
+      <section class="modal-card-body" style="flex: 1; display: flex; flex-direction: column; padding-bottom: 0;">
+        <textarea class="textarea" id="metadata_content_textarea" placeholder="Metadata content..." 
+          style="flex-grow: 1;
+                 min-height: 0;
+                 font-family: 'Courier New', monospace;
+                 resize: none;
+                 max-height: -webkit-fill-available;
+                 background: var(--bulma-scheme-main);
+                 border: 1px solid var(--bulma-border-weak);
+                 padding: 1rem;"></textarea>
+      </section>
+      <footer class="modal-card-foot">
+        <button class="button is-success modal-save-action">Save changes</button>
+        <button class="button modal-close-action">Cancel</button>
+      </footer>
+    </div>
+  </div>
+
+  <!-- Modal for remote server subscriptions -->
+  <div class="modal" id="servers_modal">
+    <div class="modal-background modal-close-action"></div>
+    <div class="modal-card" style="width:640px">
+      <header class="modal-card-head">
+        <p class="modal-card-title">Remote Servers</p>
+        <button class="delete modal-close-action" aria-label="close"></button>
+      </header>
+      <section class="modal-card-body">
+        <div id="servers_list"></div>
+        <hr>
+        <h5 class="title is-5">Connect to a new server</h5>
+        <div class="field">
+          <label class="label">Server URL</label>
+          <input class="input" id="server_url_input" type="text" placeholder="http://192.168.1.100:6001">
+        </div>
+        <div class="field">
+          <label class="label">Remote path (leave empty for all files)</label>
+          <input class="input" id="server_remote_path_input" type="text" placeholder="Images/Photos">
+        </div>
+        <div id="servers_modal_status" class="has-text-danger mt-2"></div>
+        <button class="button is-primary mt-2" id="subscribe_server_btn">Connect</button>
+      </section>
+    </div>
+  </div>
+<div>

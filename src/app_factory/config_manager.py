@@ -56,5 +56,19 @@ class ConfigManager:
         cfg.main.personal_models_path = paths["personal_models"]
         cfg.main.cache_path = paths["cache"]
 
+        # Load the user-specific configuration as a clean, isolated object
+        user_config_path = os.path.join(project_config_folder_path, 'config.yaml')
+        user_cfg = OmegaConf.create()  # Default to empty config if not present on disk
+        user_cfg.servers = [{
+            "name": "Local",
+            "url": "osfs:///mnt/media/"
+        }]
+        if os.path.exists(user_config_path):
+            user_cfg = OmegaConf.load(user_config_path)
+            print(f"Loaded local user config: {user_config_path}")
+        else:
+            OmegaConf.save(user_cfg, user_config_path)
+            print(f"Created default user config: {user_config_path}")
+
         print(f"Database path set to: {paths['database']}")
-        return cfg, paths
+        return cfg, user_cfg, paths

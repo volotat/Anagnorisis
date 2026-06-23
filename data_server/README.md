@@ -1,3 +1,23 @@
+# RClone WebDAV Server for Anagnorisis Data Sharing
+
+Host files via `rclone`
+
+```
+rclone serve webdav "/path/to/your/files/you/want/to/share" --addr 0.0.0.0:6001 --read-only
+```
+
+It might be the case the ufw firewall is enabled on your system. Because the main application is running inside a docker container, the local network and particularly port 6001 might not be accessible from its the network. To fix this you would have to allow access to this port via ufw on your host machine. You can do that by running the following command in the terminal:
+
+```
+sudo ufw allow proto tcp from 172.16.0.0/12 to any port 6001
+```
+
+The `172.16.0.0/12` is the default docker network range.
+This will allow the main application to access the files shared with `rclone` via webdav protocol. Use the IP address of the your host machine to connect to the server from the main application.
+
+
+# Introduction
+
 There are only two responsibilities of the data server:
 1. To provide read access to files via network, so that other users in the network could see and download them.
 2. Generate and provide concise yet meaningful generic descriptions in .meta files, so that the files could be searched, filtered and recommended to other users in the network. 

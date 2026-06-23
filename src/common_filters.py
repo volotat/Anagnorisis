@@ -9,6 +9,10 @@ import rapidfuzz
 import unicodedata
 import re
 
+import fs
+import src.virtual_file_system as vfs
+from src.caching import TwoLevelCache
+
 # Module-level device setting. Defaults to 'cpu'. Call configure_device() at app startup.
 _inference_device: str = 'cpu'
 
@@ -75,6 +79,8 @@ class CommonFilters:
 
         self.embedding_gathering_callback = EmbeddingGatheringCallback(self.common_socket_events.show_search_status, name="")
         self.meta_embedding_gathering_callback = ArbitraryProgressCallback(self.common_socket_events.show_search_status, name="metadata")   
+
+        self._fast_cache = TwoLevelCache(cache_dir=None) # Short lived RAM-only cache
 
     def filter_by_file(self, all_files, text_query):
         target_path = text_query
@@ -172,21 +178,68 @@ class CommonFilters:
         return scores
 
     def filter_by_file_size(self, all_files, text_query):
-        scores = np.array([os.path.getsize(f) for f in all_files], dtype=np.float32)
-        return scores
+        """
+        Calculates a float32 numpy array of file sizes across all local and remote sources.
+        Uses connection pooling to minimize network handshakes, and caches results 
+        for instant subsequent sorting.
+        """
+        sizes = []
+        opened_fses = {}
+        
+        try:
+            for f in all_files:
+                # 1. Check your existing fast cache first to avoid Disk/Network I/O
+                cache_key = f"FILE_SIZE_OF:{f}"
+                cached_size = self._fast_cache.get(cache_key)
+                
+                if cached_size is not None:
+                    sizes.append(cached_size)
+                    continue
+                
+                # 2. Cache Miss: Fetch the size securely via PyFilesystem2
+                try:
+                    base_url, path_in_fs = vfs.resolve_base_and_path_from_url(f)
+                    
+                    # Open or reuse the filesystem connection
+                    if base_url not in opened_fses:
+                        opened_fses[base_url] = fs.open_fs(base_url)
+                    my_fs = opened_fses[base_url]
+                    
+                    info = my_fs.getinfo(path_in_fs, namespaces=['details'])
+                    size = info.size if info.size is not None else 0
+                    
+                    # Store in TwoLevelCache for instant future sorting
+                    self._fast_cache.set(cache_key, size)
+                    sizes.append(size)
+                except Exception as e:
+                    print(f"[FileManager] Error getting size for {f}: {e}")
+                    sizes.append(0)
+        finally:
+            # 3. Cleanly close all opened connection pools
+            for opened_fs in opened_fses.values():
+                try:
+                    opened_fs.close()
+                except Exception:
+                    pass
+                    
+        return sizes
 
     def filter_by_random(self, all_files, text_query):
         scores = np.random.rand(len(all_files)).astype(np.float32)
         return scores
 
     def filter_by_rating(self, all_files, text_query):
-        all_hashes = [self.engine.get_file_hash(f) for f in all_files]
-        items = self.db_schema.query.filter(self.db_schema.hash.in_(all_hashes)).all()
-        hash_to_rating = {item.hash: item.user_rating if item.user_rating is not None else item.model_rating for item in items}
+        # all_hashes = [self.engine.get_file_hash(f) for f in all_files]
+        # items = self.db_schema.query.filter(self.db_schema.hash.in_(all_hashes)).all()
+        # hash_to_rating = {item.hash: item.user_rating if item.user_rating is not None else item.model_rating for item in items}
         
-        all_ratings = [hash_to_rating.get(h) for h in all_hashes]
-        mean_score = np.mean([r for r in all_ratings if r is not None]) if any(r is not None for r in all_ratings) else 0
-        all_ratings = [r if r is not None else mean_score for r in all_ratings]
+        # all_ratings = [hash_to_rating.get(h) for h in all_hashes]
+        # mean_score = np.mean([r for r in all_ratings if r is not None]) if any(r is not None for r in all_ratings) else 0
+        # all_ratings = [r if r is not None else mean_score for r in all_ratings]
+
+        items = self.db_schema.query.with_entities(self.db_schema.file_path, self.db_schema.user_rating, self.db_schema.model_rating).filter(self.db_schema.file_path.in_(all_files)).all()
+        path_to_rating = {item.file_path: item.user_rating if item.user_rating is not None else item.model_rating for item in items}
+        all_ratings = [path_to_rating.get(f) for f in all_files]
         
         return all_ratings
 

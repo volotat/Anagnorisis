@@ -444,19 +444,23 @@ class TwoLevelCache:
     ):
         self.ram = RAMCache(ram_ttl_seconds)
 
-        # When DiskCache loads a shard, push all its values into RAM (one-hot timestamps).
-        def _on_shard_loaded(mapping: Dict[str, Any]):
-            for k, v in mapping.items():
-                self.ram.set(k, v)
+        if cache_dir is None:
+            # None is used to indicate a RAM-only cache (no disk persistence)
+            self.disk = None
+        else:
+            # When DiskCache loads a shard, push all its values into RAM (one-hot timestamps).
+            def _on_shard_loaded(mapping: Dict[str, Any]):
+                for k, v in mapping.items():
+                    self.ram.set(k, v)
 
-        self.disk = DiskCache(
-            cache_dir=cache_dir,
-            ttl_seconds=disk_ttl_seconds,
-            on_shard_loaded=_on_shard_loaded,
-            warm_interval_seconds=warm_interval_seconds,
-            refresh_after_seconds=refresh_after_seconds,
-            name=name,
-        )
+            self.disk = DiskCache(
+                cache_dir=cache_dir,
+                ttl_seconds=disk_ttl_seconds,
+                on_shard_loaded=_on_shard_loaded,
+                warm_interval_seconds=warm_interval_seconds,
+                refresh_after_seconds=refresh_after_seconds,
+                name=name,
+            )
 
     def get(self, key: str) -> Optional[Any]:
         # RAM first
@@ -465,14 +469,17 @@ class TwoLevelCache:
             return val
 
         # Disk next. Disk will warm RAM with the whole shard.
-        val = self.disk.get(key)
-        if val is not None:
-            # Ensure RAM TTL is refreshed for the accessed key as well.
-            self.ram.set(key, val)
-        return val
+        if self.disk is not None:
+            val = self.disk.get(key)
+            if val is not None:
+                # Ensure RAM TTL is refreshed for the accessed key as well.
+                self.ram.set(key, val)
+            return val
+        
+        return None
 
     def set(self, key: str, value: Any, save_to_disk: bool = True) -> None:
         # Write-through both tiers
         self.ram.set(key, value)
-        if save_to_disk:
+        if save_to_disk and self.disk is not None:
             self.disk.set(key, value)

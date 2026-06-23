@@ -1,117 +1,171 @@
 import os
-import time
-import datetime
-
-
-
-import src.utils
-import src.file_manager as file_manager 
-import modules.text.db_models as db_models
-from src.socket_events import CommonSocketEvents
-
-import numpy as np
-
+from pathlib import Path
 from modules.text.engine import TextSearch
-from src.universal_evaluator import UniversalEvaluator
-from src.utils import SortingProgressCallback, EmbeddingGatheringCallback
-from src.scheduler import Scheduler
-from src.module_helpers import make_scheduled_rating_check, make_scheduled_description_check
-
-
-from omegaconf import OmegaConf
-
+from src.socket_events import CommonSocketEvents
+from src.file_manager import FileManager 
 from src.common_filters import CommonFilters
 from src.metadata_search import MetadataSearch
 
-# EVENTS:
+import modules.text.db_models as db_models
+from src.universal_evaluator import UniversalEvaluator
 
-# Incoming (handled with @socketio.on):
+from src.scheduler import Scheduler
+from omegaconf import OmegaConf
+import src.db_models as main_db_models
+import fs
+import src.virtual_file_system as vfs
+# from src.module_helpers import make_scheduled_rating_check, make_scheduled_description_check
 
-# emit_text_page_get_folders
-# emit_text_page_get_files
-# emit_text_page_get_file_content
-# emit_text_page_save_file_content
-# emit_text_page_get_path_to_media_folder
-# emit_text_page_update_path_to_media_folder
+from src.utils import SortingProgressCallback, EmbeddingGatheringCallback
 
-# Outgoing (explicit socketio.emit calls):
-
-# emit_text_page_show_folders
-# emit_text_page_show_files
-# emit_text_page_show_file_content
-# emit_text_page_show_path_to_media_folder
-
-# Outgoing (indirect via CommonSocketEvents):
-
-# show_search_status (emits a “search status” event from CommonSocketEvents)
+# -------------------------------------------------------------------------
+# MODULE-SPECIFIC HELPER FUNCTIONS
+# -------------------------------------------------------------------------
 
 def get_text_preview(file_path):
+    base_url, path_in_fs = vfs.resolve_base_and_path_from_url(file_path)
+
     preview_text = '' # Default no preview
     try:
-        with open(file_path, 'r', encoding='utf-8') as f:
-            # Get the first few lines as preview, or adjust as needed
-            preview_text = '\n'.join(f.readlines()[:25])  # First 3 lines
-            if len(preview_text) > 400: # Limit preview length
-                preview_text = preview_text[:400] + '...'
+        with fs.open_fs(base_url) as my_fs:
+            # Read as binary and decode manually
+            with my_fs.open(path_in_fs, 'rb') as f:
+                content_bytes = f.read()
+                content = content_bytes.decode('utf-8', errors='ignore')
+                preview_text = '\n'.join(content.splitlines()[:25])  # First 25 lines
+                if len(preview_text) > 400: # Limit preview length
+                    preview_text = preview_text[:400] + '...'
     except Exception as e:
-        print(f"Error reading preview from {file_path}: {e}")
+        print(f"[TextModuleServer] Error reading preview from {file_path}: {e}")
         preview_text = 'Error loading preview!'
 
     return preview_text
 
-def resolve_media_path(media_directory, path):
-    """Return the absolute path for the given media directory and relative path."""
-    if path == "":
-        return media_directory
-    return os.path.abspath(os.path.join(media_directory, '..', path))
-
-def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data'):
-    # Create CommonSocketEvents first for status reporting
-    common_socket_events = CommonSocketEvents(socketio, module_name="text")
+class TextModuleServer:
+    """
+    Class-Based Module Controller for the 'Text' extension.
+    """
     
-    common_socket_events.show_loading_status('Checking media directory configuration...')
+    def __init__(self, app, socketio, cfg, app_root_folder):
+        # 1. Store core dependencies
+        self.app = app
+        self.socketio = socketio
+        self.cfg = cfg
+        self.app_root_folder = app_root_folder
+        self.cse = CommonSocketEvents(socketio, module_name="text")
+        self.media_directory = cfg.text.media_directory
 
-    if cfg.text.media_directory is None:
-        print("Text media folder is not set.")
-        media_directory = None
-    else:
-        # media_directory = os.path.join(data_folder, cfg.text.media_directory)
-        media_directory = cfg.text.media_directory
+        if self.media_directory is None:
+            raise ValueError("[TextModuleServer] Text media folder is not set.")
 
-    common_socket_events.show_loading_status('Initializing text search engine...')
-    text_search_engine = TextSearch(cfg=cfg)
+    def initialize(self):
+        """Main lifecycle hook to boot up the module."""
 
-    common_socket_events.show_loading_status('Loading embedding models...')
-    text_search_engine.initiate(models_folder=cfg.main.embedding_models_path, cache_folder=cfg.main.cache_path)
+        self.cse.show_loading_status('Initializing text search engine...')
+        self.text_search_engine = TextSearch(cfg=self.cfg)
 
-    # cached_file_hash = text_search_engine.cached_file_hash
-    # cached_metadata = text_search_engine.cached_metadata
+        self.cse.show_loading_status('Loading embedding models...')
+        self.text_search_engine.initiate(models_folder=self.cfg.main.embedding_models_path, cache_folder=self.cfg.main.cache_path)
 
-    common_socket_events.show_loading_status('Initializing universal evaluator for text module...')
-    text_evaluator = UniversalEvaluator()
+        self.cse.show_loading_status('Initializing universal evaluator for text module...')
+        self.text_evaluator = UniversalEvaluator()
 
-    common_socket_events.show_loading_status('Loading universal evaluator model...')
-    text_evaluator.load(os.path.join(cfg.main.personal_models_path, 'universal_evaluator.pt'))
+        self.cse.show_loading_status('Loading universal evaluator model...')
+        self.text_evaluator.load(os.path.join(self.cfg.main.personal_models_path, 'universal_evaluator.pt'))
 
-    # embedding_gathering_callback = EmbeddingGatheringCallback(common_socket_events.show_search_status)
+        self.cse.show_loading_status('Setting up file manager...')
+        self.file_manager = FileManager(
+            app=self.app,
+            cfg=self.cfg,
+            media_directory=self.media_directory,
+            engine=self.text_search_engine,
+            module_name="text",
+            media_formats=self.cfg.text.media_formats,
+            socketio=self.socketio,
+            db_schema=main_db_models.FilesLibrary,
+        )
 
-    common_socket_events.show_loading_status('Setting up file manager...')
-    text_file_manager = file_manager.FileManager(
-        cfg=cfg,
-        media_directory=media_directory,
-        engine=text_search_engine,
-        module_name="text",
-        media_formats=cfg.text.media_formats,
-        socketio=socketio,
-        db_schema=db_models.TextLibrary,
-    )
+        # Create metadata search engine
+        self.cse.show_loading_status('Initializing metadata search...')
+        self.metadata_search_engine = MetadataSearch(engine=self.text_search_engine)
 
-    # Create metadata search engine
-    common_socket_events.show_loading_status('Initializing metadata search...')
-    metadata_search_engine = MetadataSearch(engine=text_search_engine)
+        # Create common filters instance
+        self.cse.show_loading_status('Setting up filters...')
+        self.common_filters = CommonFilters(
+            engine=self.text_search_engine,
+            metadata_engine=self.metadata_search_engine,
+            common_socket_events=self.cse,
+            media_directory=self.media_directory,
+            db_schema=main_db_models.FilesLibrary,
+        )
 
-    def update_model_ratings(files_list, ctx=None):
-        print('update_model_ratings')
+        # _check_and_submit_description = make_scheduled_description_check(
+        #     app, 'Text', self.file_manager, metadata_search_engine, cfg, 'text'
+        # )
+
+        # Bind all Socket.IO events to their respective class methods
+        self.cse.show_loading_status('Registering socket events...')
+        self._register_socket_events()
+        self._register_schedulers()
+        
+        self.cse.show_loading_status('Text module ready!')
+
+    def _register_socket_events(self):
+        """Maps Socket.IO event strings directly to class methods."""
+        # Note: on_event is much cleaner than using nested @socketio.on decorators
+        self.socketio.on_event('emit_text_page_get_folders', self.handle_get_folders)
+        self.socketio.on_event('emit_text_page_get_files', self.handle_get_files)
+        self.socketio.on_event('emit_text_page_get_file_content', self.handle_open_file)
+        self.socketio.on_event('emit_text_page_save_file_content', self.handle_save_file)
+
+    def _register_schedulers(self):
+        """Registers background tasks for the module."""
+       
+        app = self.app
+        cfg = self.cfg
+
+        rating_update_interval = OmegaConf.select(cfg, 'text.rating_update_interval_minutes', default=None)
+
+        def _check_if_model_rating_needed():
+            unrated_files = self.file_manager.get_unrated_files(self.text_evaluator.hash)
+            return self.text_evaluator.hash is not None and len(unrated_files) > 0
+
+        Scheduler(app, interval_minutes=rating_update_interval, fn=self.update_model_ratings_schedule,
+                name='Text: rate unrated files',
+                check_fn=_check_if_model_rating_needed, start_immediately=True)
+
+        # desc_interval = OmegaConf.select(cfg, 'text.description_update_interval_minutes', default=None)
+        # Scheduler(app, interval_minutes=desc_interval, fn=_check_and_submit_description,
+        #         name='Text: describe undescribed files')
+    
+        # TODO: Create scheduler that takes data (user ratings needs to be preserved)from the old DB (TextLibrary) and for each rated file create appropriate entry in project_config/memory/ with all available metadata about the file.
+
+    def update_model_ratings_schedule(self):
+        # TODO:
+        # Instead of updating all the files in the text media directory, we want to build a list of files we encounter (both locally and remotely) and
+        # store them in some list with the priority score, and the more time we encounter a file, the more priority it gets to be rated and described. 
+        # This way we can focus on the most relevant files first.
+
+        print('[TextModuleServer] update_model_ratings_schedule')
+
+        if self.text_evaluator.hash is None:
+            return
+        candidates = self.file_manager.get_unrated_files(self.text_evaluator.hash)
+        total = len(candidates)
+        batch_size = self.cfg.text.rating_update_batch_size
+        batch_size = min(batch_size, total) if batch_size else total
+        count_str = f"{batch_size} of {total}" if batch_size < total else f"{total}"
+        print(f"[TextModuleServer] Rating {count_str} files...")
+
+        def task(ctx):    
+            files_list = candidates[:batch_size]
+            ctx.update(0.0, f'Rating {len(files_list)} of {total} files...')
+            self.update_model_ratings(files_list, ctx=ctx)
+
+        return self.app.task_manager.submit(f'[TextModuleServer] rate unrated files: ({count_str})', task)
+
+    def update_model_ratings(self, files_list, ctx=None):
+        print('[TextModuleServer] update_model_ratings')
 
         _progress = [0.0]
 
@@ -119,58 +173,40 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
             if ctx is not None:
                 ctx.update(_progress[0], msg)
             else:
-                common_socket_events.show_search_status(msg)
+                self.cse.show_search_status(msg)
 
-        def _check():
+        def _check_if_paused():
             if ctx is not None:
                 ctx.check()
 
         _embedding_callback = EmbeddingGatheringCallback(_status)
 
-        # filter out files that already have a rating in the DB
-        files_list_hash_map = {file_path: text_search_engine.get_file_hash(file_path) for file_path in files_list}
-        hash_list = list(files_list_hash_map.values())
-
-        # Fetch rated files from the database in a single query
-        rated_files_db_items = db_models.TextLibrary.query.filter(
-            db_models.TextLibrary.hash.in_(hash_list),
-            db_models.TextLibrary.model_rating.isnot(None),
-            db_models.TextLibrary.model_hash.is_(text_evaluator.hash)
-        ).all()
-
-        # Create a list of hashes for rated files
-        rated_files_hashes = {item.hash for item in rated_files_db_items}
-
-        # Filter out files that already have a rating in the database
-        filtered_files_list = [file_path for file_path, file_hash in files_list_hash_map.items() if file_hash not in rated_files_hashes]
-        if not filtered_files_list: return
-
         # Choose embedding strategy from config (mirrors universal training)
-        text_embed_method = OmegaConf.select(cfg, "evaluator.text_embedding_method", default="full_text")
+        text_embed_method = OmegaConf.select(self.cfg, "evaluator.text_embedding_method", default="full_text")
         if text_embed_method == "full_text":
             # Full chunked content via TextSearch cache — consistent with universal training
-            embeddings = text_search_engine.process_files(
-                filtered_files_list, callback=_embedding_callback, media_folder=media_directory
+            embeddings = self.text_search_engine.process_files(
+                files_list, callback=_embedding_callback, media_folder=self.media_directory
             )
         else:
             # Metadata/summary description path — one description per file
             embeddings = []
-            for ind, file_path in enumerate(filtered_files_list):
-                _check()
-                _progress[0] = (ind + 1) / len(filtered_files_list) * 0.7
-                description = metadata_search_engine.generate_full_description(
+            for ind, file_path in enumerate(files_list):
+                _check_if_paused()
+                _progress[0] = (ind + 1) / len(files_list) * 0.7
+                description = self.metadata_search_engine.generate_full_description(
                     file_path,
-                    media_folder=media_directory,
+                    media_folder=self.media_directory,
                     generate_desc_if_not_in_cache=False,
                 )
-                metadata_search_engine.omni_descriptor.unload()
+                self.metadata_search_engine.omni_descriptor.unload()
                 if description and len(description.strip()) >= 10:
-                    chunk_embs = metadata_search_engine.text_embedder.embed_text(description)
+                    chunk_embs = self.metadata_search_engine.text_embedder.embed_text(description)
                     embeddings.append(chunk_embs if chunk_embs is not None else [])
                 else:
                     embeddings.append([])
 
-        model_ratings = text_evaluator.predict(embeddings)
+        model_ratings = self.text_evaluator.predict(embeddings)
 
         # Update the model ratings in the database
         _progress[0] = 0.7
@@ -178,195 +214,144 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
         new_items = []
         update_items = []
         last_shown_time = 0
-        for ind, full_path in enumerate(filtered_files_list):
-            _check()
-            hash = files_list_hash_map[full_path]
-
+        for ind, full_path in enumerate(files_list):
+            _check_if_paused()
             model_rating = model_ratings[ind].item()
 
-            music_db_item = db_models.TextLibrary.query.filter_by(hash=hash).first()
-            if music_db_item:
-                music_db_item.model_rating = model_rating
-                music_db_item.model_hash = text_evaluator.hash
-                update_items.append(music_db_item)
+            db_item = main_db_models.FilesLibrary.query.filter_by(file_path=full_path).first()
+            if db_item:
+                db_item.model_rating = model_rating
+                db_item.model_hash = self.text_evaluator.hash
+                update_items.append(db_item)
             else:
                 file_data = {
-                        "hash": hash,
-                        "hash_algorithm": text_search_engine.get_hash_algorithm(),
-                        "file_path": full_path,
-                        "model_rating": model_rating,
-                        "model_hash": text_evaluator.hash
+                    # "hash": hash,
+                    # "hash_algorithm": self.text_search_engine.get_hash_algorithm(),
+                    "file_path": full_path,
+                    "model_rating": model_rating,
+                    "model_hash": self.text_evaluator.hash
                 }
-                new_items.append(db_models.TextLibrary(**file_data))
+                new_items.append(main_db_models.FilesLibrary(**file_data))
 
-            _progress[0] = 0.7 + (ind + 1) / len(filtered_files_list) * 0.3
-            _status(f"Updated model ratings for {ind+1}/{len(filtered_files_list)} files.")
-
-        # Deduplicate new_items by hash to avoid UNIQUE constraint violations
-        # when the same file (identical hash) appears more than once in the media folder.
-        seen_hashes = set()
-        deduped_new_items = []
-        for item in new_items:
-            if item.hash not in seen_hashes:
-                seen_hashes.add(item.hash)
-                deduped_new_items.append(item)
+            _progress[0] = 0.7 + (ind + 1) / len(files_list) * 0.3
+            _status(f"Updated model ratings for {ind+1}/{len(files_list)} files.")
 
         # Bulk update and insert
         if update_items:
-                db_models.db.session.bulk_save_objects(update_items)
-        if deduped_new_items:
-                db_models.db.session.bulk_save_objects(deduped_new_items)
+            main_db_models.db.session.bulk_save_objects(update_items)
+        if new_items:
+            main_db_models.db.session.bulk_save_objects(new_items)
 
         # Commit the transaction
         db_models.db.session.commit()
 
-    _check_and_submit_rating = make_scheduled_rating_check(
-        app, 'Text', text_file_manager, text_evaluator, cfg, 'text', update_model_ratings
-    )
+    # -------------------------------------------------------------------------
+    # SOCKET EVENT HANDLERS
+    # -------------------------------------------------------------------------
 
-    _check_and_submit_description = make_scheduled_description_check(
-        app, 'Text', text_file_manager, metadata_search_engine, cfg, 'text'
-    )
-
-    common_socket_events.show_loading_status('Setting up filters and routes...')
-    # Create common filters instance
-    common_filters = CommonFilters(
-        engine=text_search_engine,
-        metadata_engine=metadata_search_engine,
-        common_socket_events=common_socket_events,
-        media_directory=media_directory,
-        db_schema=db_models.TextLibrary,
-    )
-
-    @socketio.on('emit_text_page_get_folders')  
-    def get_folders(data):
+    def handle_get_folders(self, data):
+        """Returns a list of folders in the specified path."""
         path = data.get('path', '')
-        return text_file_manager.get_folders(path)
+        return self.file_manager.get_folders(path)
 
-    @socketio.on('emit_text_page_get_files')
-    def get_files(input_data):
+    def handle_get_files(self, data):
+        """Scans the requested path and returns module-related files."""
         # Define available filters
         filters = {
             # "by_file": filter_by_file, # special sorting case when file path used as query
-            "by_text": common_filters.filter_by_text, # special sorting case when text used as query, i.e. all other cases wasn't triggered
-            # "file_size": filter_by_file_size,
-            # "length": filter_by_length,
-            # "similarity": filter_by_similarity, 
-            # "random": filter_by_random, 
-            "rating": common_filters.filter_by_rating,
+            "by_text": self.common_filters.filter_by_text, # special sorting case when text used as query, i.e. all other cases wasn't triggered
+            "file_size": self.common_filters.filter_by_file_size,
+            # "length": self.common_filters.filter_by_length,
+            # "similarity": self.common_filters.filter_by_similarity, 
+            # "random": self.common_filters.filter_by_random, 
+            "rating": self.common_filters.filter_by_rating,
             # "recommendation": filter_by_recommendation
         }
 
         # Define a method to gather domain specific file information
-        def get_file_info(full_path, file_hash):
-            db_item = db_models.TextLibrary.query.filter_by(hash=file_hash).first()
+        def get_file_info(full_path):
+            db_item = main_db_models.FilesLibrary.query.filter_by(file_path=full_path).first()
                     
+            user_rating = None
+            model_rating = None
+            rating_is_stale = None
+            file_data = None
+
             if db_item:
-                file_data = text_search_engine.get_metadata(full_path)     
-            else:
-                raise Exception(f"File '{full_path}' with hash '{file_hash}' not found in the database.")
-            
-            rating_is_stale = (
+                user_rating = db_item.user_rating
+                model_rating = db_item.model_rating
+                rating_is_stale = (
                     db_item.model_rating is not None
-                    and text_evaluator.hash is not None
-                    and db_item.model_hash != text_evaluator.hash
-            )
+                    and self.text_evaluator.hash is not None
+                    and db_item.model_hash != self.text_evaluator.hash
+                )
+                file_data = self.text_search_engine.get_metadata(full_path)  
+            else:
+                print(f"[TextModule:Serve] File '{full_path}' not found in the database.")
+
             return {
-                    "user_rating": db_item.user_rating,
-                    "model_rating": db_item.model_rating,
+                    "user_rating": user_rating,
+                    "model_rating": model_rating,
                     "rating_is_stale": rating_is_stale,
                     "preview_text": get_text_preview(full_path),    
                     "file_data": file_data,
                 }
 
-        input_params = input_data.copy()
+        input_params = data.copy()
         input_params.update({
-        "filters": filters,
-        "get_file_info": get_file_info,
+            "filters": filters,
+            "get_file_info": get_file_info,
         })
-        return text_file_manager.get_files(**input_params)
+        return self.file_manager.get_files(**input_params)
 
-    @socketio.on('emit_text_page_get_file_content')
-    def get_file_content(data):
+    def handle_open_file(self, data):
+        """Reads the content of a text file and sends it back to the frontend."""
+
         file_path = data.get('file_path')
-        full_path = os.path.join(media_directory, file_path)
+        full_path = file_path
+
+        base_url, path_in_fs = vfs.resolve_base_and_path_from_url(file_path)
         try:
-            with open(full_path, 'r', encoding='utf-8') as f: 
-                content = f.read()
-            socketio.emit('emit_text_page_show_file_content', {"content": content, "file_path": file_path})
+            with fs.open_fs(base_url) as my_fs:
+                # Read as binary and decode manually
+                with my_fs.open(path_in_fs, 'rb') as f:
+                    content_bytes = f.read()
+                    content = content_bytes.decode('utf-8', errors='ignore')
+            self.socketio.emit('emit_text_page_show_file_content', {"content": content, "file_path": file_path})
         except Exception as e:
-            print(f"Error reading file: {full_path}: {e}")
-            socketio.emit('emit_text_page_show_file_content', {"content": "Error loading file.", "file_path": file_path}) # Error to frontend
+            print(f"[TextModuleServer] Error reading file: {full_path}: {e}")
+            self.socketio.emit('emit_text_page_show_file_content', {"content": "Error loading file.", "file_path": file_path}) # Error to frontend
 
+    def handle_save_file(self, data):
+        """Saves the content of a text file sent from the frontend."""
+        # TODO: Check if the file is writable and locally accessible before attempting to write.
+        # Otherwise, emit an error event back to the frontend.
 
-    @socketio.on('emit_text_page_save_file_content')
-    def save_file_content(data):
         file_path = data.get('file_path')
         text_content = data.get('text_content')
-        full_path = os.path.join(media_directory, file_path)
+        full_path = file_path
+
+        base_url, path_in_fs = vfs.resolve_base_and_path_from_url(file_path)
         try:
-            with open(full_path, 'w', encoding='utf-8') as f: 
-                f.write(text_content)
-            print(f"File saved: {full_path}") # Log success
+            with fs.open_fs(base_url) as my_fs:
+                # Open as binary 'wb' to write encoded text bytes safely
+                with my_fs.open(path_in_fs, 'wb') as f:
+                    f.write(text_content.encode('utf-8'))
+            print(f"[TextModuleServer] File saved: {full_path}") # Log success
             # Optionally emit success event to frontend
         except Exception as e:
-            print(f"Error saving file: {full_path}: {e}") # Log error
+            print(f"[TextModuleServer] Error saving file: {full_path}: {e}") # Log error
             # Optionally emit error event to frontend
 
-    @socketio.on('emit_text_page_set_text_rating')
-    def set_text_rating(data):
-        text_hash = data['hash']
-        text_rating = data['rating']
-        text_path = data['file_path']
 
-        print('Set text rating:', text_hash, text_rating)
-
-        text_db_item = db_models.TextLibrary.query.filter_by(hash=text_hash).first()
-
-        if text_db_item is None:
-            # Create new instance if there is no entry in the database
-            text_data = {
-                "hash": text_hash,
-                "hash_algorithm": text_search_engine.get_hash_algorithm(),
-                "file_path": text_path,
-                "user_rating": float(text_rating),
-                "user_rating_date": datetime.datetime.now()
-            }
-            text_db_item = db_models.TextLibrary(**text_data)
-            db_models.db.session.add(text_db_item)
-            db_models.db.session.commit()
-        else:
-            # Update the existing instance
-            text_db_item.file_path = text_path  # in case the file was moved
-            text_db_item.user_rating = float(text_rating)
-            text_db_item.user_rating_date = datetime.datetime.now()
-            db_models.db.session.commit()
-
-    @socketio.on('emit_text_page_get_path_to_media_folder')
-    def get_path_to_media_folder():
-        nonlocal media_directory
-        socketio.emit('emit_text_page_show_path_to_media_folder', cfg.text.media_directory)
-
-    @socketio.on('emit_text_page_update_path_to_media_folder')
-    def update_path_to_media_folder(new_path):
-        nonlocal media_directory
-        cfg.text.media_directory = new_path
-
-        # Update the configuration file
-        with open(os.path.join(data_folder, 'Anagnorisis-app', 'config.yaml'), 'w') as file:
-            OmegaConf.save(cfg, file)
-
-        media_directory = os.path.join(data_folder, cfg.text.media_directory)
-        socketio.emit('emit_text_page_show_path_to_media_folder', cfg.text.media_directory)
-
-
-    common_socket_events.show_loading_status('Text module ready!')
-
-    rating_update_interval = OmegaConf.select(cfg, 'text.rating_update_interval_minutes', default=None)
-    Scheduler(app, interval_minutes=rating_update_interval, fn=_check_and_submit_rating,
-              name='Text: rate unrated files',
-              check_fn=lambda: text_evaluator.hash is not None and len(text_file_manager.get_unrated_files(text_evaluator.hash)) > 0)
-
-    desc_interval = OmegaConf.select(cfg, 'text.description_update_interval_minutes', default=None)
-    Scheduler(app, interval_minutes=desc_interval, fn=_check_and_submit_description,
-             name='Text: describe undescribed files')
+# -------------------------------------------------------------------------
+# MODULE FACTORY ENTRY POINT
+# -------------------------------------------------------------------------
+def register_module(app, socketio, cfg, data_folder):
+    """
+    Standardized entry point called by the ExtensionManager.
+    It instantiates the controller and boots it up.
+    """
+    module_server = TextModuleServer(app, socketio, cfg, data_folder)
+    module_server.initialize()
+    return module_server

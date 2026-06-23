@@ -137,13 +137,20 @@ class ExtensionManager:
                 })
                 
                 module = import_module(serve_module_path)
-                if hasattr(module, 'init_socket_events') and callable(module.init_socket_events):
-                    # This is the heavy blocking call.
-                    # We wrap it to allow it to register routes even though the app is running.
-                    with ExtensionManager._allow_route_modifications(app):
+
+                # This is the heavy blocking call.
+                # We wrap it to allow it to register routes even though the app is running.
+                with ExtensionManager._allow_route_modifications(app):
+                    # NEW ARCHITECTURE: Look for the clean factory hook
+                    if hasattr(module, 'register_module') and callable(module.register_module):
+                        module.register_module(app, socketio, cfg, data_folder)
+                    
+                    # OLD ARCHITECTURE: Fallback for legacy modules
+                    elif hasattr(module, 'init_socket_events') and callable(module.init_socket_events):
                         module.init_socket_events(socketio, app=app, cfg=cfg, data_folder=data_folder)
-                else:
-                    print(f"[{ext_name}] Warning: No init_socket_events found.")
+                    
+                    else:
+                        print(f"[{ext_name}] Warning: No register_module or init_socket_events found.")
                 
             print(f"[{ext_name}] Initialization complete.")
             MODULE_STATUS[ext_name] = True

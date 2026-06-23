@@ -14,7 +14,37 @@ import src.file_manager as file_manager
 import numpy as np
 from src.caching import TwoLevelCache
 from src.model_manager import ModelManager # Assuming ModelManager is already implemented and works
+import src.virtual_file_system as vfs
 from typing import List
+import fs
+
+import logging
+
+# --- LOGGING CONFIGURATION FOR THIS MODULE ---
+# Choose verbosity: 
+#   - logging.DEBUG    (Show all logs, including path resolution and cache hits)
+#   - logging.INFO     (Show standard initialization and milestones)
+#   - logging.WARNING  (Hide standard info, show only warnings/errors)
+#   - logging.CRITICAL (Virtually disable all logging)
+LOG_LEVEL = logging.INFO 
+
+# Create a scoped logger specifically for this module
+logger = logging.getLogger("BaseSearchEngine")
+logger.setLevel(LOG_LEVEL)
+
+# Prevent double-logging if your main Flask app has a root logger
+logger.propagate = False
+
+# Configure the console handler specifically for this logger
+if not logger.handlers:
+    console_handler = logging.StreamHandler()
+    
+    # Set a simple formatter for console output
+    formatter = logging.Formatter('%(levelname)-5s [%(name)s] %(message)s')
+    console_handler.setFormatter(formatter)
+    
+    logger.addHandler(console_handler)
+# ---------------------------------------------
 
 class BaseSearchEngine(ABC):
     """
@@ -154,44 +184,18 @@ class BaseSearchEngine(ABC):
         #     torch.backends.cuda.matmul.allow_tf32 = True
         #     torch.backends.cudnn.allow_tf32 = True
         
-        print(f"{self.__class__.__name__} initiated successfully.")
+        logger.info(f"{self.__class__.__name__} initiated successfully.")
 
         # Force unload after wrapping as this usually cause the model to be loaded to GPU
         self._model_manager.unload_model()
     
-    # def _ensure_model_downloaded(self, local_model_path: str):
-    #     """
-    #     Checks if the model exists locally; if not, downloads it from Hugging Face.
-    #     """
-    #     # Check for a common file like 'config.json' to indicate a potentially complete download
-    #     # Different models might have different definitive files. 'config.json' is a good general one.
-    #     config_file_path = os.path.join(local_model_path, 'config.json') 
-    #     if not os.path.exists(config_file_path):
-    #         print(f"Model '{self.model_name}' not found locally or incomplete at '{local_model_path}'. Downloading...")
-    #         if self.model_name is None:
-    #             print("ERROR: Model name is not set. Cannot download model.")
-    #         else:    
-    #             try:
-    #                 snapshot_download(
-    #                     repo_id=self.model_name,
-    #                     local_dir=local_model_path,
-    #                     local_dir_use_symlinks=False # Download actual files
-    #                 )
-    #                 print(f"Model '{self.model_name}' downloaded successfully.")
-    #             except Exception as e:
-    #                 print(f"ERROR: Failed to download model '{self.model_name}'. Please check your internet connection and permissions.")
-    #                 print(f"Error details: {e}")
-    #                 #raise RuntimeError(f"Failed to download required model: {self.model_name}") from e
-    #     else:
-    #         print(f"Found existing model '{self.model_name}' at '{local_model_path}'.")
-
     def _ensure_model_downloaded(self, local_model_path: str):
         """
         Checks if the model exists locally; if not, downloads it from Hugging Face.
         Retries with force_download=True if the local model is corrupted.
         """
         if self.model_name is None:
-            print("ERROR: Model name is not set. Cannot download model.")
+            logger.error("Model name is not set. Cannot download model.")
             return
 
         # 1. Check for basic existence (e.g., config.json)
@@ -199,7 +203,7 @@ class BaseSearchEngine(ABC):
         
         # Helper to perform the download
         def download(force=False):
-            print(f"{'Re-downloading' if force else 'Downloading'} model '{self.model_name}' to '{local_model_path}'...")
+            logger.info(f"{'Re-downloading' if force else 'Downloading'} model '{self.model_name}' to '{local_model_path}'...")
             snapshot_download(
                 repo_id=self.model_name,
                 local_dir=local_model_path,
@@ -207,17 +211,17 @@ class BaseSearchEngine(ABC):
                 force_download=force,         # Force re-download if requested
                 resume_download=True          # Resume if possible (unless forced)
             )
-            print(f"Model '{self.model_name}' downloaded successfully.")
+            logger.info(f"Model '{self.model_name}' downloaded successfully.")
 
         if not os.path.exists(config_file_path):
             try:
                 download(force=False)
             except Exception as e:
-                print(f"ERROR: Failed to download model '{self.model_name}'.")
-                print(f"Error details: {e}")
+                logger.error(f"Failed to download model '{self.model_name}'.")
+                logger.error(f"Error details: {e}")
                 # raise RuntimeError(...) # Optional: re-raise if critical
         else:
-            print(f"Found existing model '{self.model_name}' at '{local_model_path}'. Verifying integrity...")
+            logger.info(f"Found existing model '{self.model_name}' at '{local_model_path}'. Verifying integrity...")
             # 2. Verify integrity by attempting a dry-run load (or just trust it until it fails)
             # Since we can't easily "dry-run" without loading the whole model, we rely on the
             # calling code (initiate) to catch loading errors.
@@ -228,15 +232,15 @@ class BaseSearchEngine(ABC):
                 model = AutoConfig.from_pretrained(local_model_path, trust_remote_code=True)
                 # Unload immediately
                 del model
-                print(f"Model '{self.model_name}' integrity check passed.")
+                logger.info(f"Model '{self.model_name}' integrity check passed.")
             except Exception as e:
-                print(f"WARNING: Local model at '{local_model_path}' seems corrupted. Re-downloading...")
-                print(f"Integrity check error: {e}")
+                logger.warning(f"Local model at '{local_model_path}' seems corrupted. Re-downloading...")
+                logger.warning(f"Integrity check error: {e}")
                 try:
                     download(force=True)
                 except Exception as download_e:
-                    print(f"ERROR: Failed to re-download model '{self.model_name}'.")
-                    print(f"Error details: {download_e}")
+                    logger.error(f"Failed to re-download model '{self.model_name}'.")
+                    logger.error(f"Error details: {download_e}")
     
     def _get_model_hash_from_instance(self) -> str:
         """
@@ -259,40 +263,39 @@ class BaseSearchEngine(ABC):
         Returns the current hashing algorithm identifier used by this engine.
         This is useful for storing in the DB alongside file hashes.
         """
-        return "md5:v1" # Currently only md5 is implemented; can be extended in subclasses
+        return "md5:v2" # Currently only md5 is implemented; can be extended in subclasses
     
     def get_file_hash(self, file_path: str) -> str:
-        """Returns the cached hash for a given file."""
-        if not os.path.exists(file_path):
-            raise FileNotFoundError(f"File not found: {file_path}")
+        logger.debug(f"get_file_hash called with file_path: {file_path}")
 
-        # We expect file_path to be absolute not a relative one to preserve consistency across different callers
-        # Check if file_path is not started from the media_folder path and log a warning in this case
-        if not os.path.abspath(file_path).startswith(os.path.abspath(self._get_media_folder())):
-            traceback.print_stack()
-            print(f"WARNING: File '{file_path}' is not located within the media folder or not an absolute path.")
+        # Parse and open the target filesystem
+        base_url, path_in_fs = vfs.resolve_base_and_path_from_url(file_path)
+        logger.debug(f"Resolved base_url: {base_url}, path_in_fs: {path_in_fs}")
 
-        # Get the last modified time of the file
-        st = os.stat(file_path, follow_symlinks=False)
-        size = st.st_size
-        mtime_ns = getattr(st, "st_mtime_ns", int(st.st_mtime * 1e9))
+        with fs.open_fs(base_url) as my_fs:
+            # Get Size and modification timestamp (ns)
+            info = my_fs.getinfo(path_in_fs, namespaces=['details'])
+            size = info.size
+            modified_sec = info.get('details', 'modified')
+            mtime_ns = int(modified_sec * 1e9) if modified_sec is not None else 0
 
-        cache_key = f"HASH_OF_FILE::{file_path}::{size}::{mtime_ns}::{self.get_hash_algorithm()}"
-        file_hash = self._fast_cache.get(cache_key)
+            cache_key = f"HASH_OF_FILE::{file_path}::{size}::{mtime_ns}::{self.get_hash_algorithm()}"
+            file_hash = self._fast_cache.get(cache_key)
 
-        if file_hash is not None:
-            return file_hash
-        
-        # If not in cache or file has been modified, calculate the hash
-        with open(file_path, "rb") as f:
-            bytes = f.read()  # Read the entire file as bytes
-            file_hash = hashlib.md5(bytes).hexdigest()
-        
-        # Update the cache
-        self._fast_cache.set(cache_key, file_hash)
+            if file_hash is not None:
+                return file_hash
+            
+            # Calculate file hash safely without high memory usage
+            file_hash = vfs.calculate_file_hash(my_fs, path_in_fs)
+            
+            # Update the cache
+            self._fast_cache.set(cache_key, file_hash)
+
         return file_hash
 
     def get_metadata(self, file_path, file_hash=None) -> dict:
+        return {}
+        
         if not os.path.exists(file_path):
             raise FileNotFoundError(f"File not found: {file_path}")
 
@@ -324,7 +327,7 @@ class BaseSearchEngine(ABC):
             try:
                 emb = self._process_single_file(p, **kwargs)
             except Exception:
-                print(f"ERROR: Failed to process file '{p}'.")
+                logger.error(f"Failed to process file '{p}'.")
                 traceback.print_exc()
                 emb = None
             results.append(emb)
@@ -422,15 +425,15 @@ class BaseSearchEngine(ABC):
         if self._model_manager is None:
             raise RuntimeError(f"{self.__class__.__name__} not initialized. Call initiate() first.")
         
-        # print("Warning: Converting embeds_target to torch.Tensor")
-        # print(f"Type of embeds_target: {type(embeds_target)}")
-        # print(f"Shape of embeds_target[0]: {np.shape(embeds_target)}")
+        # logger.debug("Warning: Converting embeds_target to torch.Tensor")
+        # logger.debug(f"Type of embeds_target: {type(embeds_target)}")
+        # logger.debug(f"Shape of embeds_target[0]: {np.shape(embeds_target)}")
 
         # # Ensure embeddings are torch tensors
         # if type(embeds_target) is not torch.Tensor:
         #     embeds_target = torch.tensor(embeds_target)
-        #     print(f"New type of embeds_target: {type(embeds_target)}")
-        #     print(f"New shape of embeds_target: {embeds_target.shape}")
+        #     logger.debug(f"New type of embeds_target: {type(embeds_target)}")
+        #     logger.debug(f"New shape of embeds_target: {embeds_target.shape}")
         # if type(embeds_query) is not torch.Tensor:
         #     embeds_query = torch.tensor(embeds_query) 
 

@@ -14,7 +14,7 @@ class RouteManager:
         extension_names = ExtensionManager.get_extension_names(app.root_folder)
         
         # Core pages shown first in a fixed order; auto-discovered extras go after a divider
-        CORE_PAGE_ORDER = ['images', 'music', 'text', 'videos', 'train']
+        CORE_PAGE_ORDER = ['files', 'images', 'music', 'text', 'videos', 'train']
         core_pages = [p for p in CORE_PAGE_ORDER if p in extension_names]
         extra_pages = [p for p in extension_names if p not in CORE_PAGE_ORDER]
 

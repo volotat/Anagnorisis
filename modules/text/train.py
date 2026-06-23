@@ -6,10 +6,11 @@ Exposes get_training_pairs() so that universal_train.py can collect
 """
 
 import os
+from importlib_metadata import Deprecated
 import numpy as np
 from omegaconf import OmegaConf
 
-
+@Deprecated("As all user's ratings are now stored in the single database table 'FilesLibrary', this function is no longer needed. Use get_training_pairs() from src/universal_train.py instead.")
 def get_training_pairs(cfg, text_embedder, status_callback=None):
     """
     Yield (chunk_embeddings, user_rating) pairs from user-rated text files.
