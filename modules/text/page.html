@@ -32,6 +32,27 @@
       90%  { transform: translateX(calc(-100% + 200px)); }
       100% { transform: translateX(calc(-100% + 200px)); }
   }
+
+  /* Server availability dots in folder tree */
+  .server-dot {
+    display: inline-block;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    margin-right: 0.5em;
+    vertical-align: middle;
+    position: relative;
+    top: -1px;
+  }
+  .server-dot.is-available {
+    background-color: #48c774;
+  }
+  .server-dot.is-unavailable {
+    background-color: #f14668;
+  }
+  .server-dot.is-pending {
+    background-color: #b5b5b5;
+  }
 </style>
 
 <div class="container is-fluid columns is-centered py-6 mb-6">

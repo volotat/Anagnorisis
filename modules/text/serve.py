@@ -107,6 +107,7 @@ class TextModuleServer:
         self.cse.show_loading_status('Registering socket events...')
         self._register_socket_events()
         self._register_schedulers()
+        self._register_background_tasks()
         
         self.cse.show_loading_status('Text module ready!')
 
@@ -138,7 +139,72 @@ class TextModuleServer:
         # Scheduler(app, interval_minutes=desc_interval, fn=_check_and_submit_description,
         #         name='Text: describe undescribed files')
     
-        # TODO: Create scheduler that takes data (user ratings needs to be preserved)from the old DB (TextLibrary) and for each rated file create appropriate entry in project_config/memory/ with all available metadata about the file.
+    def _register_background_tasks(self):
+        """Registers background tasks for the module."""
+
+        # Task that takes data (old user ratings needs to be preserved)from the old TextLibrary table and for each rated file create appropriate entry in new FilesLibrary table with the same user rating. This is a one-time migration task.
+
+        def _check_if_migration_needed():
+            # Check if there are any entries in the old TextLibrary table with user ratings
+            # and these files do not exists or are not rated in the new FilesLibrary table.
+            try:
+                old_entries = db_models.TextLibrary.query.filter(
+                    db_models.TextLibrary.user_rating.isnot(None)
+                ).all()
+            except Exception as exc:
+                print(f"[TextModuleServer] DB query failed: {exc}")
+                return False
+            
+            for old_entry in old_entries:
+                new_path = fs.path.join(self.cfg.text.media_directory, old_entry.file_path)
+                new_entry = main_db_models.FilesLibrary.query.filter_by(file_path=new_path).first()
+                if not new_entry or new_entry.user_rating is None:
+                    return True  # Migration needed for at least one file
+
+        def _copy_ratings_from_old_table(ctx):
+            """Task: Copy user ratings from the old TextLibrary table to the new FilesLibrary table."""
+            try:
+                old_entries = db_models.TextLibrary.query.filter(
+                    db_models.TextLibrary.user_rating.isnot(None)
+                ).all()
+            except Exception as exc:
+                print(f"[TextModuleServer] DB query failed: {exc}")
+                return
+
+            total = len(old_entries)
+            if total == 0:
+                print("[TextModuleServer] No user-rated text files found in old table.")
+                return
+
+            print(f"[TextModuleServer] {total} user-rated text files found in old table.")
+            for i, old_entry in enumerate(old_entries):
+                ctx.check()
+                ctx.update((i + 1) / total, f'Copying rating for {i + 1}/{total}: {old_entry.file_path}')
+
+                new_path = vfs.join_fs_url(self.cfg.text.media_directory, old_entry.file_path)
+                
+                # Check if the file already exists in the new table
+                new_entry = main_db_models.FilesLibrary.query.filter_by(file_path=new_path).first()
+                if new_entry:
+                    # If user rating exists, ignore it; otherwise, update the existing entry
+                    if new_entry.user_rating is None:
+                        new_entry.user_rating = old_entry.user_rating
+                        new_entry.user_rating_date = old_entry.user_rating_date
+                else:
+                    new_entry = main_db_models.FilesLibrary(
+                        file_path=new_path,
+                        user_rating=old_entry.user_rating,
+                        user_rating_date=old_entry.user_rating_date
+                    )
+                    main_db_models.db.session.add(new_entry)
+
+            # Commit all changes at once
+            main_db_models.db.session.commit()
+            print("[TextModuleServer] User ratings copied successfully.")
+
+        if _check_if_migration_needed():
+            self.app.task_manager.submit('TextModuleServer: Copy ratings from old table', _copy_ratings_from_old_table)
+
 
     def update_model_ratings_schedule(self):
         # TODO:

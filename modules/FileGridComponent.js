@@ -89,12 +89,13 @@ class FileGridComponent {
 
     // ── Preview container (identical in both modes) ──────────────────
     const previewContainer = document.createElement('div');
-    previewContainer.className = 'file-preview-container';
+    previewContainer.className = 'file-preview-container p-2';
     previewContainer.style.aspectRatio = '1';
     previewContainer.style.display = 'flex';
     previewContainer.style.justifyContent = 'center';
     previewContainer.style.alignItems = 'center';
     previewContainer.style.position = 'relative';
+    previewContainer.style.border = "2px solid #bbb";
 
     if (this.renderPreviewContent) {
       const previewContent = this.renderPreviewContent(fileData);

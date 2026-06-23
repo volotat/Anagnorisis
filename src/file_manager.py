@@ -4,6 +4,7 @@ import pickle
 import hashlib
 import datetime
 import traceback
+import concurrent.futures
 import torch
 
 import src.virtual_file_system as vfs
@@ -133,21 +134,13 @@ from src.utils import convert_size, weighted_shuffle
 from src.caching import TwoLevelCache 
 import src.db_models as db_models
 import threading
-from typing import Dict
+from typing import Dict, Optional
 from src.db_models import FilesLibrary
 
 import fs
 
 _TLC_SINGLETONS: Dict[str, "TwoLevelCache"] = {}
 _TLC_LOCK = threading.Lock()
-
-# List allowed roots
-# TODO: Move to some settings/configuration file for easier management
-# roots = [
-#     'osfs:///mnt/media/',
-#     'osfs:///mnt/project_config/modules/',
-#     'webdav://192.168.0.19:6001/',
-# ]
 
 def get_two_level_cache(cache_dir: str, **kwargs) -> "TwoLevelCache":
     """
@@ -184,6 +177,8 @@ class FileManager:
         
         self.servers = app.user_cfg.servers
 
+
+
         # self.cached_file_list = engine.cached_file_list
         # self.cached_file_hash = engine.cached_file_hash
         # self.cached_metadata = engine.cached_metadata
@@ -191,6 +186,13 @@ class FileManager:
         # Folder tree cache (persisted across many instances of FileManager as a singleton object)
         cache_folder = os.path.join(cfg.main.cache_path, "file_manager")
         self._fast_cache = get_two_level_cache(cache_dir=cache_folder, name="file_manager")
+
+        self._server_availability: Dict[str, Optional[bool]] = {}
+        self._server_availability_lock = threading.Lock()
+
+        # Start a single, lightweight background monitor loop
+        t = threading.Thread(target=self._monitor_servers_loop, daemon=True, name="ServerMonitor")
+        t.start()
 
     def show_status(self, message):
         self.common_socket_events.show_search_status(message)
@@ -392,30 +394,47 @@ class FileManager:
 
     #     return {"folders": folders, "folder_path": folder_path}
 
-    
+    def _resolve_server_from_path(self, path: str):
+        for server in self.servers:
+            if path.startswith(server.url):
+                return server
+        return None
+        
+    def _check_server_availability(self, url: str) -> bool:
+        """Attempts to open the filesystem at url and execute a quick read to verify connection."""
+        if url.startswith("osfs://"):
+            return True
+        try:
+            base_url, path_in_fs = vfs.resolve_base_and_path_from_url(url)
+            # logger.info(f"[DEBUG] Checking server: {url} -> Resolved Base: {base_url}")
+            
+            with fs.open_fs(base_url) as f:
+                # Force a network round-trip handshake
+                list(f.listdir(path_in_fs))
+            
+            #logger.info(f"[DEBUG] Connection SUCCESS for {url}")
+            return True
+        except Exception as e:
+            # logger.error(f"[DEBUG] Connection FAILED for {url}. Error: {e}")
+            return False
+
+    def _monitor_servers_loop(self):
+        """Standard Polling Heartbeat: Periodically checks all servers in the background."""
+        while True:
+            for server in self.servers:
+                url = server.url
+                available = self._check_server_availability(url)
+                
+                with self._server_availability_lock:
+                    self._server_availability[url] = available
+            
+            # Check all servers every 10 minutes (600 seconds)
+            time.sleep(600.0)
+
     def get_folders(self, path = ""):
         # Determine the active folder path
         active_path = self.resolve_media_path(path)
         media_exts = set(self.media_formats)
-
-        # def _get_display_name(url: str) -> str:
-        #     """Generates a clean display name from a root URL."""
-        #     if "mnt/media" in url:
-        #         return "Local"
-        #     if "project_config" in url:
-        #         return "Project Config Modules"
-            
-        #     try:
-        #         parsed = fs.opener.parse(url)
-        #         if parsed.protocol in ('webdav', 'webdavs', 'ftp', 'sftp'):
-        #             protocol_name = "Home Server" if parsed.protocol.startswith('webdav') else "Remote Server"
-        #             # Match custom remote names like 'Friend's Images'
-        #             if "images" in (parsed.path or "").lower():
-        #                 protocol_name = "Friend's Images"
-        #             return f"{protocol_name} ({parsed.resource})"
-        #     except Exception:
-        #         pass
-        #     return os.path.basename(url.rstrip('/')) or url
 
         # def _get_file_counts(dir_path: str):
         #     """Returns (num_files, total_files) using the cached filesystem scanners."""
@@ -483,8 +502,13 @@ class FileManager:
 
         # Populate the first level (servers) dynamically using allowed roots
         for server in self.servers:
-            display_name = server.name #_get_display_name(root_url)
+            display_name = server.name
             server_node = _build_tree_node(display_name, server.url, "server")
+
+            with self._server_availability_lock:
+                cached = self._server_availability.get(server.url)
+            server_node["is_available"] = cached
+
             root_node["subfolders"].append(server_node)
 
         return {"folders": root_node, "folder_path": active_path}
@@ -523,7 +547,6 @@ class FileManager:
             return [], []
         
         # 2. Resolve base_url and path_in_fs to avoid PyFilesystem's greedy URL parser
-        # splitting on '!' (subfs separator) or '@' (credentials separator) in folder names.
         try:
             base_url, path_in_fs = vfs.resolve_base_and_path_from_url(path)
         except Exception as e:
@@ -532,15 +555,10 @@ class FileManager:
         
         # Internal helper to perform the actual directory scanning on an open FS
         def _scan_fs(media_fs):
-            modified_dt_timestamp = None
-            try:
-                info = media_fs.getinfo(path_in_fs, namespaces=['details'])
-                if info.modified:
-                    modified_dt_timestamp = info.modified.timestamp()
-            except Exception as e:
-                logger.error(f"Error fetching metadata for \"{path}\": {e}")
+            # Let any network exceptions propagate so they can be caught by the outer block
+            info = media_fs.getinfo(path_in_fs, namespaces=['details'])
+            modified_dt_timestamp = info.modified.timestamp() if info.modified else None
 
-            # Build a cache key based on path, modified timestamp, and media extensions
             if modified_dt_timestamp is None:
                 # Fallback: Cache directory structure for 10 seconds to make rapid UI sorting instant
                 modified_dt_timestamp = int(time.time() / 10) * 10
@@ -551,30 +569,33 @@ class FileManager:
             ext_sig = ",".join(sorted(media_exts)) if media_exts else "-"
             key = f"MEDIAFILES_OF:{path}|{modified_dt_timestamp}|{ext_sig}"
 
-            # ACTIVE CACHE CHECK (Now fully operational!)
+            # 1. CACHE HIT: Return immediately. Do NOT update server availability 
+            # because we did not perform any network operations.
             cached = self._fast_cache.get(key)
             if cached is not None:
                 return cached
 
+            # 2. CACHE MISS: Perform the actual network directory scan
             files: list[str] = []
             subdirs: list[str] = []
-            try:
-                for e in media_fs.scandir(path_in_fs, namespaces=['details']):
-                    try:
-                        if e.is_file:
-                            ext = os.path.splitext(e.name)[1].lower()
-                            if not media_exts or ext in media_exts:
-                                files.append(os.path.join(path, e.name))
-                        elif e.is_dir:
-                            subdirs.append(os.path.join(path, e.name))
-                    except Exception as inner_e:
-                        traceback.print_exc()
-                        logger.error(f"Error processing entry \"{e.name}\" in \"{path}\": {inner_e}")
-                        continue
-            except Exception as e:
-                traceback.print_exc()
-                logger.error(f"Error scanning directory: \"{path}\", Exception: {e}")
-                return [], []
+            for e in media_fs.scandir(path_in_fs, namespaces=['details']):
+                try:
+                    if e.is_file:
+                        ext = os.path.splitext(e.name)[1].lower()
+                        if not media_exts or ext in media_exts:
+                            files.append(os.path.join(path, e.name))
+                    elif e.is_dir:
+                        subdirs.append(os.path.join(path, e.name))
+                except Exception as inner_e:
+                    traceback.print_exc()
+                    logger.error(f"Error processing entry \"{e.name}\" in \"{path}\": {inner_e}")
+                    continue
+
+            # 3. SUCCESS: The network scan succeeded! We can now safely promote the server to online.
+            srv = self._resolve_server_from_path(path)
+            if srv:
+                with self._server_availability_lock:
+                    self._server_availability[srv.url] = True
 
             # Cache the result for this directory
             self._fast_cache.set(key, (files, subdirs))
@@ -582,12 +603,25 @@ class FileManager:
         
         # 3. Open or Reuse FS Connection
         if active_fs is not None:
-            return _scan_fs(active_fs)
+            try:
+                return _scan_fs(active_fs)
+            except Exception as e:
+                srv = self._resolve_server_from_path(path)
+                if srv:
+                    with self._server_availability_lock:
+                        self._server_availability[srv.url] = False
+                logger.error(f"Error scanning active filesystem: \"{path}\", Exception: {e}")
+                return [], []
 
         try:
             with fs.open_fs(base_url) as media_fs:
                 return _scan_fs(media_fs)
         except Exception as e:
+            # FAILURE: Connection or scan failed. Instantly demote the server (Red Dot) [1]
+            srv = self._resolve_server_from_path(path)
+            if srv:
+                with self._server_availability_lock:
+                    self._server_availability[srv.url] = False
             logger.error(f"Error opening filesystem: \"{path}\", Exception: {e}")
             return [], []
 
@@ -605,6 +639,7 @@ class FileManager:
                     files = self._walk_files_cached(server.url, media_exts, progress)
                     all_files.extend(files)
                 except Exception as e:
+                    self._update_availability(server.url, False)
                     logger.error(f"Error walking root {server.url}: {e}")
             return all_files
 
@@ -621,6 +656,9 @@ class FileManager:
                 with fs.open_fs(base_url) as media_fs:
                     return self._walk_files_cached(path, media_exts, progress, active_fs=media_fs)
             except Exception as e:
+                srv = self._resolve_server_from_path(path)
+                if srv:
+                    self._update_availability(srv.url, False)
                 logger.error(f"Error opening filesystem connection for {path}: {e}")
                 return []
 

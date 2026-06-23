@@ -56,3 +56,22 @@ def calculate_file_hash(my_fs, path_in_fs, chunk_size=65536, hash_algorithm=hash
             hasher.update(chunk)
             
     return hasher.hexdigest()
+
+def join_fs_url(base_url: str, relative_path: str) -> str:
+    """
+    Safely joins a PyFilesystem2 URL with a relative path.
+    Preserves protocols and trailing slashes (e.g., osfs:/// or webdav://).
+    """
+    if '://' in base_url:
+        # Split into 'osfs' and '/mnt/media/'
+        protocol, path_segment = base_url.split('://', 1)
+        
+        # Perform the standard path-join only on the directory part
+        joined_path = fs.path.join(path_segment, relative_path)
+        
+        # Reconstruct the URL. Since joined_path is absolute (starts with /),
+        # this naturally restores the correct number of slashes (e.g., osfs:///...)
+        return f"{protocol}://{joined_path}"
+    else:
+        # Fallback if it is already a plain local path
+        return fs.path.join(base_url, relative_path)

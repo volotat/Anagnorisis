@@ -141,7 +141,21 @@ class FolderViewComponent {
     const a = document.createElement('a');
     a.className = `${isActive} ${color}`;
     a.href = `?path=${encodeURIComponent(currentPath)}`;
-    a.textContent = `${displayName} ${imageCountDisplay}`.trim();
+
+    if (folder_node.type === 'server') {
+        const dot = document.createElement('span');
+        dot.className = 'server-dot';
+        if (folder_node.is_available === true) {
+            dot.classList.add('is-available');
+        } else if (folder_node.is_available === false) {
+            dot.classList.add('is-unavailable');
+        } else {
+            dot.classList.add('is-pending');
+        }
+        a.appendChild(dot);
+    }
+
+    a.appendChild(document.createTextNode(`${displayName} ${imageCountDisplay}`.trim()));
 
     // Context Menu logic (unchanged)
     if (this.enableContextMenu && this.contextMenu) {
