@@ -37,6 +37,10 @@ def get_training_pairs(cfg, text_embedder, status_callback=None):
     via MetadataSearch (filename + cached OmniDescriptor summary + internal
     metadata tags) and embeds it with the shared text_embedder.
 
+    User ratings now live in the shared FilesLibrary table (keyed by file_path,
+    stored as a full VFS URL), consistent with modules/text and the rest of the
+    framework.
+
     Parameters
     ----------
     cfg : OmegaConf DictConfig
@@ -48,18 +52,20 @@ def get_training_pairs(cfg, text_embedder, status_callback=None):
     ------
     (np.ndarray of shape [chunks, dim], float)
     """
-    import modules.music.db_models as db_models
+    import src.db_models as main_db_models
     from modules.music.engine import MusicSearch
     from src.metadata_search import MetadataSearch
+    import fs
+    import src.virtual_file_system as vfs
 
     media_dir = getattr(cfg.music, 'media_directory', None)
-    if not media_dir or not os.path.isdir(media_dir):
-        print("[music/train] media_directory not configured or missing, skipping.")
+    if not media_dir:
+        print("[music/train] media_directory not configured, skipping.")
         return
 
     try:
-        entries = db_models.MusicLibrary.query.filter(
-            db_models.MusicLibrary.user_rating.isnot(None)
+        entries = main_db_models.FilesLibrary.query.filter(
+            main_db_models.FilesLibrary.user_rating.isnot(None)
         ).all()
     except Exception as exc:
         print(f"[music/train] DB query failed: {exc}")
@@ -82,14 +88,20 @@ def get_training_pairs(cfg, text_embedder, status_callback=None):
     meta_search = MetadataSearch(engine=engine)
 
     for i, entry in enumerate(entries):
-        if entry.file_path is None:
+        if not entry.file_path:
             continue
-        fp = os.path.join(media_dir, entry.file_path)
-        if not os.path.isfile(fp):
+        # entry.file_path is a full VFS URL (e.g. osfs:///mnt/media/music/song.mp3)
+        try:
+            base_url, path_in_fs = vfs.resolve_base_and_path_from_url(entry.file_path)
+            with fs.open_fs(base_url) as probe_fs:
+                if not probe_fs.exists(path_in_fs):
+                    continue
+        except Exception:
             continue
+
         try:
             description = meta_search.generate_full_description(
-                fp, media_folder=media_dir, generate_desc_if_not_in_cache=False
+                entry.file_path, media_folder=media_dir, generate_desc_if_not_in_cache=False
             )
             # With the embedding proxy, generate_full_description() always includes at
             # least a fingerprint + tag section for files whose CLAP embedding is cached,

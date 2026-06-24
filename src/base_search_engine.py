@@ -294,26 +294,35 @@ class BaseSearchEngine(ABC):
         return file_hash
 
     def get_metadata(self, file_path, file_hash=None) -> dict:
-        return {}
-        
-        if not os.path.exists(file_path):
-            raise FileNotFoundError(f"File not found: {file_path}")
+        """
+        Returns the metadata of a file, using caching to avoid redundant extraction.
+        If file_hash is provided, it can be used to optimize cache key generation.
+        """
 
-        # Get the last modified time of the file (still used for time-based invalidation)
-        last_modified_time = os.path.getmtime(file_path)
+        base_url, path_in_fs = vfs.resolve_base_and_path_from_url(file_path)
 
-        cache_key = f"METADATA_OF_FILE::{file_path}::{last_modified_time}"
-        file_metadata = self._fast_cache.get(cache_key)
+        with fs.open_fs(base_url) as my_fs:
+            if not my_fs.isfile(path_in_fs):
+                raise FileNotFoundError(f"File not found: {file_path}")
 
-        if file_metadata is not None:
-            return file_metadata
+            # Get the last modified time of the file (still used for time-based invalidation)
+            info = my_fs.getinfo(path_in_fs, namespaces=['details'])
+            modified_sec = info.get('details', 'modified')
+            mtime_ns = int(modified_sec * 1e9) if modified_sec is not None else 0
 
-        # If not in cache or file has been modified, extract metadata using _get_metadata_function
-        metadata = self._get_metadata(file_path) # Method expected to return a dictionary of metadata attributes
-        metadata['file_path'] = file_path
+            cache_key = f"METADATA_OF_FILE::{file_path}::{mtime_ns}"
+            file_metadata = self._fast_cache.get(cache_key)
 
-        # Update the cache 
-        self._fast_cache.set(cache_key, metadata)
+            if file_metadata is not None:
+                return file_metadata
+
+            # If not in cache or file has been modified, extract metadata using _get_metadata_function
+            metadata = self._get_metadata(file_path) # Method expected to return a dictionary of metadata attributes
+            metadata['file_path'] = file_path
+
+            # Update the cache 
+            self._fast_cache.set(cache_key, metadata)
+
         return metadata
 
     def _process_batch_files(self, file_paths: List[str], **kwargs) -> List[torch.Tensor]:

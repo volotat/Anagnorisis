@@ -1,5 +1,5 @@
 from src.socket_events import CommonSocketEvents
-from .vfs import VFSManager
+# from .vfs import VFSManager
 
 class FilesModuleServer:
     """Controller for the Native Files extension."""
@@ -9,11 +9,11 @@ class FilesModuleServer:
         self.socketio = socketio
         self.cfg = cfg
         self.events = CommonSocketEvents(socketio, module_name="files")
-        self.vfs = VFSManager()
+        # self.vfs = VFSManager()
 
     def initialize(self):
         self.events.show_loading_status('Initializing Virtual File System...')
-        self.vfs.load_user_servers()
+        # self.vfs.load_user_servers()
         self._register_socket_events()
         self.events.show_loading_status('Files module ready!')
 

@@ -4,7 +4,7 @@ main:
   flask_secret_key: secret!123 # Does not matter when Flask is run locally
   project_config_directory: /mnt/project_config
 music:
-  media_directory: /mnt/media/music
+  media_directory: osfs:///mnt/media/music/
   rating_update_interval_minutes: 10 # How often to proactively rate unrated files in the background (set to null to disable)
   rating_update_batch_size: 3000 # Max number of files rated per background run (set to null for no limit)
   description_update_interval_minutes: 30 # How often to proactively describe undescribed files via OmniDescriptor (set to null to disable)

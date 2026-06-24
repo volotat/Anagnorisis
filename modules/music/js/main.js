@@ -22,7 +22,7 @@ function renderImagePreview(fileData) { // Function for Images module preview
     imageContainer.style.display = 'flex';
     imageContainer.style.justifyContent = 'center'; 
     imageContainer.style.alignItems = 'center';
-    $(imageContainer).addClass('mb-2');
+    // $(imageContainer).addClass('mb-2');
 
 
     imageDataDiv.append(imageContainer);
