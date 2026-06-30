@@ -15,6 +15,7 @@ from src.universal_evaluator import UniversalEvaluator
 from src.embedding_proxy import EmbeddingProxyGenerator
 
 import src.db_models as main_db_models
+import src.virtual_file_system as vfs
 
 from src.utils import convert_length, time_difference, SortingProgressCallback, EmbeddingGatheringCallback
 from src.recommendation_engine import sort_files_by_recommendation
@@ -194,16 +195,76 @@ class MusicModuleServer:
     def _register_background_tasks(self):
         """One-time migration task.
 
-        Previously user/model ratings for music were stored in MusicLibrary.
-        They now belong in the shared FilesLibrary table (keyed by file_path)
-        so they are consistent with the rest of the framework. This task copies
-        any user rating that exists in MusicLibrary but is missing (or unrated)
-        in FilesLibrary. It is a no-op once everything has been migrated.
+        Previously user/model ratings for music were stored in MusicLibrary using
+        RELATIVE file paths (e.g. 'Artist/Album/track.mp3'). The new system keys
+        everything by full VFS URLs in the shared FilesLibrary table. This task:
+
+          1. Normalizes every MusicLibrary.file_path to a full VFS URL (prepends
+             the music media directory) — committing that fix first so MusicLibrary
+             itself becomes consistent with the new path scheme.
+          2. Copies user/model ratings from MusicLibrary into FilesLibrary, keyed
+             by the now-normalized file_path.
+
+        It is a no-op once everything has been migrated (paths already absolute,
+        and ratings already present in FilesLibrary).
         """
 
-        def _check_if_migration_needed():
+        def _normalize_path(raw_path):
+            """Convert a legacy relative path into a full VFS URL.
+
+            Legacy rows stored paths relative to the music media directory
+            (e.g. 'Artist/Album/track.mp3'); new code expects full VFS URLs
+            (e.g. 'osfs:///mnt/media/music/Artist/Album/track.mp3'). If the path
+            already contains '://' it is already a VFS URL and is returned as-is.
+            """
+            if not raw_path:
+                return raw_path
+            if '://' in raw_path:
+                return raw_path
+            # Prepend the configured music media directory.
+            return vfs.join_fs_url(self.media_directory, raw_path)
+
+        def _normalize_old_paths(ctx):
+            """Pass 1: rewrite MusicLibrary.file_path values to full VFS URLs."""
             try:
-                # Any old row that carries a user OR model rating is a migration candidate.
+                candidates = db_models.MusicLibrary.query.filter(
+                    db_models.MusicLibrary.file_path.isnot(None)
+                ).all()
+            except Exception as exc:
+                print(f"[MusicModuleServer] DB query failed: {exc}")
+                return 0
+
+            to_fix = [row for row in candidates if '://' not in (row.file_path or '')]
+            total = len(to_fix)
+            if total == 0:
+                return 0
+
+            print(f"[MusicModuleServer] Normalizing {total} legacy file_path values to VFS URLs.")
+            for i, row in enumerate(to_fix):
+                ctx.check()
+                ctx.update((i + 1) / total, f'Normalizing path {i + 1}/{total}')
+                row.file_path = _normalize_path(row.file_path)
+
+            db_models.db.session.commit()
+            print(f"[MusicModuleServer] Normalized {total} paths.")
+            return total
+
+        def _check_if_migration_needed():
+            # Path normalization is needed if any MusicLibrary row still has a
+            # relative (non-VFS-URL) file_path.
+            try:
+                rel_count = db_models.MusicLibrary.query.filter(
+                    db_models.MusicLibrary.file_path.isnot(None),
+                    ~db_models.MusicLibrary.file_path.like('%://%')
+                ).count()
+            except Exception as exc:
+                print(f"[MusicModuleServer] DB query failed: {exc}")
+                rel_count = 0
+            if rel_count > 0:
+                return True
+
+            # Otherwise, check whether any rating still needs copying.
+            try:
                 old_entries = db_models.MusicLibrary.query.filter(
                     db_models.MusicLibrary.user_rating.isnot(None)
                     | db_models.MusicLibrary.model_rating.isnot(None)
@@ -221,14 +282,18 @@ class MusicModuleServer:
                 needs_user = old_entry.user_rating is not None and (
                     not new_entry or new_entry.user_rating is None
                 )
-                needs_model = old_entry.model_rating is not None and (
+                needs_model = old_entry.model_rating.isnot(None) and (
                     not new_entry or new_entry.model_rating is None
                 )
                 if needs_user or needs_model:
-                    return True  # Migration needed for at least one file/rating
+                    return True
             return False
 
         def _copy_ratings_from_old_table(ctx):
+            # Pass 1: normalize MusicLibrary paths first (so lookups below match).
+            _normalize_old_paths(ctx)
+
+            # Pass 2: copy ratings into FilesLibrary, keyed by the normalized path.
             try:
                 old_entries = db_models.MusicLibrary.query.filter(
                     db_models.MusicLibrary.user_rating.isnot(None)
@@ -251,6 +316,7 @@ class MusicModuleServer:
                 if not old_entry.file_path:
                     continue
 
+                # file_path is now normalized (full VFS URL) after Pass 1.
                 new_entry = main_db_models.FilesLibrary.query.filter_by(
                     file_path=old_entry.file_path
                 ).first()
@@ -275,7 +341,7 @@ class MusicModuleServer:
                     main_db_models.db.session.add(new_entry)
 
             main_db_models.db.session.commit()
-            print("[MusicModuleServer] User ratings copied successfully.")
+            print("[MusicModuleServer] Ratings copied successfully.")
 
         if _check_if_migration_needed():
             self.app.task_manager.submit(
