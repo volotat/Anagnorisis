@@ -1,0 +1,35 @@
+/* =====================================================================
+   folder_view.css — Shared styles for FolderViewComponent.js
+
+   Loaded once from modules/base.html so every module that renders a
+   folder tree (music, text, images, videos, files, ...) gets these
+   styles automatically. FolderViewComponent emits the markup; this
+   file paints it.
+
+   The server availability dots reflect the `is_available` field that
+   FileManager.get_folders() attaches to each server-type node:
+     true  → is-available   (green, online)
+     false → is-unavailable (red,   offline)
+     null  → is-pending     (grey,  not yet polled)
+   See src/file_manager.py `_monitor_servers_loop` / `_server_availability`.
+   ===================================================================== */
+
+.server-dot {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  margin-right: 0.5em;
+  vertical-align: middle;
+  position: relative;
+  top: -1px;
+}
+.server-dot.is-available {
+  background-color: #48c774;
+}
+.server-dot.is-unavailable {
+  background-color: #f14668;
+}
+.server-dot.is-pending {
+  background-color: #b5b5b5;
+}

@@ -60,17 +60,29 @@ def calculate_file_hash(my_fs, path_in_fs, chunk_size=65536, hash_algorithm=hash
 def join_fs_url(base_url: str, relative_path: str) -> str:
     """
     Safely joins a PyFilesystem2 URL with a relative path.
-    Preserves protocols and trailing slashes (e.g., osfs:/// or webdav://).
+    Preserves protocols, authorities, and trailing slashes (e.g., osfs:/// or
+    webdav://host:port/).
+
+    NOTE: ``relative_path`` is usually an absolute POSIX path (e.g. ``/Music/song.mp3``).
+    For remote backends (webdav/sftp/ftp/...) the base URL carries a non-empty
+    authority (``host:port/``); blindly ``fs.path.join``-ing an absolute path onto it
+    would discard the authority and yield a broken URL (e.g. ``webdav:///Music/...``).
+    We therefore make the path relative before joining whenever an authority is present,
+    and keep it absolute for authority-less URLs such as ``osfs:///``.
     """
     if '://' in base_url:
-        # Split into 'osfs' and '/mnt/media/'
+        # Split into 'osfs' and '/mnt/media/' or 'webdav' and 'host:port/'
         protocol, path_segment = base_url.split('://', 1)
-        
-        # Perform the standard path-join only on the directory part
-        joined_path = fs.path.join(path_segment, relative_path)
-        
-        # Reconstruct the URL. Since joined_path is absolute (starts with /),
-        # this naturally restores the correct number of slashes (e.g., osfs:///...)
+
+        if path_segment:
+            # Remote: path_segment is the authority (host:port[/]); append the path
+            # relatively so posixpath doesn't discard the authority.
+            joined_path = fs.path.join(path_segment, relative_path.lstrip('/'))
+        else:
+            # Local osfs: no authority — keep the absolute path so the triple-slash
+            # form (osfs:///mnt/...) is preserved.
+            joined_path = relative_path if relative_path.startswith('/') else '/' + relative_path
+
         return f"{protocol}://{joined_path}"
     else:
         # Fallback if it is already a plain local path

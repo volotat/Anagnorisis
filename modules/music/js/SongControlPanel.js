@@ -105,6 +105,12 @@ class SongControlPanel {
         const clickPercentage = (clickX / progressBarWidth) * 100;
         this.songProgressElement.val(clickPercentage);
         const audioDuration = this.audioPlayer.duration;
+        // Guard against seeking before the media has loaded (duration is NaN),
+        // e.g. when the source failed to load — setting currentTime to a
+        // non-finite value throws an uncaught TypeError.
+        if (!isFinite(audioDuration)) {
+            return;
+        }
         this.audioPlayer.currentTime = (clickPercentage / 100) * audioDuration;
     }
 

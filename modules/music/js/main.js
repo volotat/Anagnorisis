@@ -62,12 +62,6 @@ function renderCustomData(fileData) { // Function for custom data rendering
     filePathElement.innerHTML = `<b>Path:</b>&nbsp;${fileData.file_path}`;
     dataContainer.appendChild(filePathElement);
 
-    // Hash
-    const hashElement = document.createElement('p');
-    hashElement.className = 'file-info file-hash';
-    hashElement.innerHTML = `<b>Hash:</b>&nbsp;${fileData.hash}`;
-    dataContainer.appendChild(hashElement);
-
     // File Size
     const fileSizeElement = document.createElement('p');
     fileSizeElement.className = 'file-info file-size';

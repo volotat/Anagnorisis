@@ -203,8 +203,10 @@ class MusicModuleServer:
 
         def _check_if_migration_needed():
             try:
+                # Any old row that carries a user OR model rating is a migration candidate.
                 old_entries = db_models.MusicLibrary.query.filter(
                     db_models.MusicLibrary.user_rating.isnot(None)
+                    | db_models.MusicLibrary.model_rating.isnot(None)
                 ).all()
             except Exception as exc:
                 print(f"[MusicModuleServer] DB query failed: {exc}")
@@ -216,14 +218,21 @@ class MusicModuleServer:
                 new_entry = main_db_models.FilesLibrary.query.filter_by(
                     file_path=old_entry.file_path
                 ).first()
-                if not new_entry or new_entry.user_rating is None:
-                    return True  # Migration needed for at least one file
+                needs_user = old_entry.user_rating is not None and (
+                    not new_entry or new_entry.user_rating is None
+                )
+                needs_model = old_entry.model_rating is not None and (
+                    not new_entry or new_entry.model_rating is None
+                )
+                if needs_user or needs_model:
+                    return True  # Migration needed for at least one file/rating
             return False
 
         def _copy_ratings_from_old_table(ctx):
             try:
                 old_entries = db_models.MusicLibrary.query.filter(
                     db_models.MusicLibrary.user_rating.isnot(None)
+                    | db_models.MusicLibrary.model_rating.isnot(None)
                 ).all()
             except Exception as exc:
                 print(f"[MusicModuleServer] DB query failed: {exc}")
@@ -231,10 +240,10 @@ class MusicModuleServer:
 
             total = len(old_entries)
             if total == 0:
-                print("[MusicModuleServer] No user-rated tracks found in old table.")
+                print("[MusicModuleServer] No rated tracks found in old table.")
                 return
 
-            print(f"[MusicModuleServer] {total} user-rated tracks found in old table.")
+            print(f"[MusicModuleServer] {total} rated tracks found in old table.")
             for i, old_entry in enumerate(old_entries):
                 ctx.check()
                 ctx.update((i + 1) / total, f'Copying rating for {i + 1}/{total}: {old_entry.file_path}')
@@ -246,10 +255,13 @@ class MusicModuleServer:
                     file_path=old_entry.file_path
                 ).first()
                 if new_entry:
-                    # Don't overwrite an existing user rating
+                    # Don't overwrite existing ratings — only fill in missing ones
                     if new_entry.user_rating is None:
                         new_entry.user_rating = old_entry.user_rating
                         new_entry.user_rating_date = old_entry.user_rating_date
+                    if new_entry.model_rating is None:
+                        new_entry.model_rating = old_entry.model_rating
+                        new_entry.model_hash = old_entry.model_hash
                 else:
                     new_entry = main_db_models.FilesLibrary(
                         file_path=old_entry.file_path,
@@ -257,6 +269,8 @@ class MusicModuleServer:
                         hash_algorithm=old_entry.hash_algorithm,
                         user_rating=old_entry.user_rating,
                         user_rating_date=old_entry.user_rating_date,
+                        model_rating=old_entry.model_rating,
+                        model_hash=old_entry.model_hash,
                     )
                     main_db_models.db.session.add(new_entry)
 
@@ -398,9 +412,21 @@ class MusicModuleServer:
     # ------------------------------------------------------------------
 
     def _get_or_create_play_record(self, file_path, file_hash):
-        """Return the MusicLibrary play-tracking row for file_path, creating a
-        minimal one if it does not exist yet."""
+        """Return the MusicLibrary play-tracking row for file_path, reclaiming a
+        legacy hash-keyed row if one exists, or creating a minimal one.
+
+        Legacy rows (written by the pre-refactor code) were keyed by ``hash``
+        and may have a NULL/stale ``file_path``, so a plain ``filter_by(file_path=...)``
+        would miss them — resetting play counters and risking an IntegrityError on the
+        unique ``hash`` constraint when a duplicate row is inserted. We therefore fall
+        back to a hash lookup and backfill the new ``file_path`` key in place.
+        """
         record = db_models.MusicLibrary.query.filter_by(file_path=file_path).first()
+        if record is None and file_hash is not None:
+            record = db_models.MusicLibrary.query.filter_by(hash=file_hash).first()
+            if record is not None:
+                record.file_path = file_path  # reclaim legacy row under the new key
+
         if record is None:
             record = db_models.MusicLibrary(
                 hash=file_hash,
@@ -410,7 +436,8 @@ class MusicModuleServer:
                 skip_count=0,
             )
             db_models.db.session.add(record)
-            db_models.db.session.commit()
+
+        db_models.db.session.commit()
         return record
 
     # -------------------------------------------------------------------------
@@ -452,12 +479,40 @@ class MusicModuleServer:
             self.cse.show_search_status("Filtering by recommendation: loading play data from DB")
             music_data = db_models.MusicLibrary.query.with_entities(
                 db_models.MusicLibrary.file_path,
+                db_models.MusicLibrary.hash,
                 db_models.MusicLibrary.user_rating,
                 db_models.MusicLibrary.model_rating,
                 db_models.MusicLibrary.full_play_count,
                 db_models.MusicLibrary.skip_count,
                 db_models.MusicLibrary.last_played,
             ).filter(db_models.MusicLibrary.file_path.in_(all_paths)).all()
+
+            # Reclaim legacy hash-keyed rows (stale/NULL file_path) so their play data
+            # participates in the recommendation sort. Compute hashes only for the paths
+            # that the file_path query did NOT already cover.
+            covered_paths = {row.file_path for row in music_data}
+            missing_paths = [p for p in all_paths if p not in covered_paths]
+            legacy_rows = []
+            if missing_paths:
+                hash_to_path = {}
+                for p in missing_paths:
+                    h = self.music_search_engine.get_file_hash(p)
+                    if h is not None:
+                        hash_to_path[h] = p
+                if hash_to_path:
+                    legacy_rows = db_models.MusicLibrary.query.with_entities(
+                        db_models.MusicLibrary.file_path,
+                        db_models.MusicLibrary.hash,
+                        db_models.MusicLibrary.user_rating,
+                        db_models.MusicLibrary.model_rating,
+                        db_models.MusicLibrary.full_play_count,
+                        db_models.MusicLibrary.skip_count,
+                        db_models.MusicLibrary.last_played,
+                    ).filter(db_models.MusicLibrary.hash.in_(list(hash_to_path.keys()))).all()
+                    # Re-key legacy rows by their canonical path so they merge below.
+                    legacy_rows = [
+                        (hash_to_path[r.hash], r) for r in legacy_rows if r.hash in hash_to_path
+                    ]
 
             # Ratings live in FilesLibrary; merge them onto the play-tracking rows.
             rating_data = main_db_models.FilesLibrary.query.with_entities(
@@ -466,8 +521,6 @@ class MusicModuleServer:
                 main_db_models.FilesLibrary.model_rating,
             ).filter(main_db_models.FilesLibrary.file_path.in_(all_paths)).all()
 
-            keys = ['file_path', 'user_rating', 'model_rating',
-                    'full_play_count', 'skip_count', 'last_played']
             # Start from play-tracking rows (carry full_play_count / skip_count / last_played)
             path_to_data = {
                 row.file_path: {
@@ -480,6 +533,16 @@ class MusicModuleServer:
                 }
                 for row in music_data
             }
+            # Merge in reclaimed legacy hash-keyed rows under their canonical path.
+            for canonical_path, row in legacy_rows:
+                path_to_data[canonical_path] = {
+                    'file_path': canonical_path,
+                    'user_rating': row.user_rating,
+                    'model_rating': row.model_rating,
+                    'full_play_count': row.full_play_count,
+                    'skip_count': row.skip_count,
+                    'last_played': row.last_played,
+                }
             # Overlay authoritative ratings from FilesLibrary
             for row in rating_data:
                 entry = path_to_data.setdefault(row.file_path, {
@@ -526,8 +589,15 @@ class MusicModuleServer:
                 and files_item.model_hash != self.music_evaluator.hash
             )
 
-            # Play-tracking comes from MusicLibrary
+            # Play-tracking comes from MusicLibrary. Prefer the file_path key; fall back
+            # to a hash lookup so legacy hash-keyed rows (with a stale/NULL file_path)
+            # still surface their play data in the grid.
             play_item = db_models.MusicLibrary.query.filter_by(file_path=full_path).first()
+            if play_item is None:
+                file_hash = self.music_search_engine.get_file_hash(full_path)
+                if file_hash is not None:
+                    play_item = db_models.MusicLibrary.query.filter_by(hash=file_hash).first()
+
             last_played = "Never"
             full_play_count = 0
             skip_count = 0
@@ -583,9 +653,7 @@ class MusicModuleServer:
 
         print('[MusicModuleServer] Set song play rate:', file_path, skip_score_change)
         file_hash = self.music_search_engine.get_file_hash(file_path)
-        song = db_models.MusicLibrary.query.filter_by(file_path=file_path).first()
-        if song is None:
-            song = self._get_or_create_play_record(file_path, file_hash)
+        song = self._get_or_create_play_record(file_path, file_hash)
 
         if skip_score_change == 1:
             song.full_play_count = (song.full_play_count or 0) + 1
@@ -624,23 +692,16 @@ class MusicModuleServer:
     def handle_song_start_playing(self, data):
         """Records that a track started playing (updates last_played in MusicLibrary).
 
-        The frontend may send either a bare hash (legacy) or a dict with file_path.
+        The frontend sends ``{ file_path: ... }``. Legacy callers that sent a bare
+        hash are no longer supported (path is the canonical key now).
         """
-        # Normalize input: accept {'file_path': ...}, {'hash': ...}, or a bare value.
-        if isinstance(data, dict):
-            file_path = data.get('file_path')
-        else:
-            file_path = None
-
-        if file_path is None:
-            # Legacy callers sent a hash; we can't reliably resolve a path, so no-op.
+        if not isinstance(data, dict) or data.get('file_path') is None:
             print('[MusicModuleServer] song_start_playing: no file_path provided, skipping.')
             return
 
-        song = db_models.MusicLibrary.query.filter_by(file_path=file_path).first()
-        if song is None:
-            file_hash = self.music_search_engine.get_file_hash(file_path)
-            song = self._get_or_create_play_record(file_path, file_hash)
+        file_path = data.get('file_path')
+        file_hash = self.music_search_engine.get_file_hash(file_path)
+        song = self._get_or_create_play_record(file_path, file_hash)
 
         song.last_played = datetime.datetime.now()
         db_models.db.session.commit()

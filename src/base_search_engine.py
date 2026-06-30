@@ -310,7 +310,12 @@ class BaseSearchEngine(ABC):
             modified_sec = info.get('details', 'modified')
             mtime_ns = int(modified_sec * 1e9) if modified_sec is not None else 0
 
-            cache_key = f"METADATA_OF_FILE::{file_path}::{mtime_ns}"
+            # The '::v2::' tag invalidates any metadata dict cached by an older
+            # extraction implementation (e.g. a prior stub that returned {}),
+            # whose stale entries would otherwise be served for up to 90 days
+            # and show as e.g. "null - null | null" in the UI. Bump this tag
+            # whenever the extraction shape/semantics change.
+            cache_key = f"METADATA_OF_FILE::v2::{file_path}::{mtime_ns}"
             file_metadata = self._fast_cache.get(cache_key)
 
             if file_metadata is not None:
