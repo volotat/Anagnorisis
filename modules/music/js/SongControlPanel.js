@@ -123,7 +123,8 @@ class SongControlPanel {
 
         if (updateServer && this.currentSongFilePath) {
             console.log(`Calling server to set '${this.currentSongFilePath}' song rating: ${score}`);
-            this.socket.emit('emit_music_page_set_song_rating', { file_path: this.currentSongFilePath, score: score });
+            // this.socket.emit('emit_music_page_set_song_rating', { file_path: this.currentSongFilePath, score: score });
+            this.socket.emit('emit_set_file_rating', { file_path: this.currentSongFilePath, rating: score });
         }
     }
 

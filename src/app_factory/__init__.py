@@ -56,4 +56,22 @@ def create_app(root_folder):
     WatchdogManager.init_watchdog(app, socketio)
     EventManager.init_socket_events(app, socketio)
 
+    # 4. Memory system — owns the embedding/omni models directly and writes
+    #    durable memory .md files when files are rated. Built after
+    #    init_socket_events so app.task_manager exists (save_memory enqueues
+    #    background tasks through it).
+    from src.memory_system import MemorySystem
+    app.memory_system = MemorySystem(
+        cfg=cfg,
+        cache_path=cfg.main.cache_path,
+        memory_path=cfg.main.memory_path,
+        models_folder=cfg.main.embedding_models_path,
+        personal_models_path=cfg.main.personal_models_path,
+        task_manager=app.task_manager,
+    )
+    # One-time migration: convert any DB-only ratings into memory files.
+    app.task_manager.submit(
+        'Migrate DB ratings to memory', app.memory_system.migrate_db_ratings_to_memory
+    )
+
     return app, socketio, cfg

@@ -92,12 +92,6 @@ class EventManager:
 
         @socketio.on('emit_set_file_rating')
         def set_file_rating(data):
-            # TODO: Rating file event should create new file in project_config/memory/ with all available metadata about the file,
-            # if it doesn't exist, and update the rating if it does.
-            # The database should then use this folder as source of truth for ratings, and sync it when necessary.
-            # This is highly important as file may disappear in any moment, especially from remote servers, so we have to keep
-            # all the necessary information required to train the recommendation model even if the original file no longer exists.
-
             file_path = data['file_path']
             file_rating = data['rating']
 
@@ -110,8 +104,8 @@ class EventManager:
             if files_db_item is None:
                 # Create new instance if there is no entry in the database
                 files_data = {
-                    "hash": file_soft_hash,  
-                    "hash_algorithm": cls.soft_hash_algorithm, 
+                    "hash": file_soft_hash,
+                    "hash_algorithm": cls.soft_hash_algorithm,
                     "file_path": file_path,
                     "user_rating": float(file_rating),
                     "user_rating_date": datetime.datetime.now()
@@ -125,3 +119,11 @@ class EventManager:
                 files_db_item.user_rating = float(file_rating)
                 files_db_item.user_rating_date = datetime.datetime.now()
                 db_models.db.session.commit()
+
+            # Write/refresh the durable memory .md for this file (background task,
+            # non-blocking). The rating is stored as the first line of the .md and
+            # stripped before embedding at train time, so the evaluator never sees
+            # the score in the text it predicts.
+            memory_system = getattr(app, 'memory_system', None)
+            if memory_system is not None:
+                memory_system.save_memory(file_path, float(file_rating), soft_hash=file_soft_hash)

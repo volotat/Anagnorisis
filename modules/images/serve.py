@@ -617,13 +617,18 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
             image_db_item = db_models.ImagesLibrary(**image_data)
             db_models.db.session.add(image_db_item)
             db_models.db.session.commit()
-        else: 
+        else:
             # Update the existing instance
 
             image_db_item.file_path = image_path # in case the file was moved
             image_db_item.user_rating = float(image_rating)
             image_db_item.user_rating_date = datetime.datetime.now()
             db_models.db.session.commit()
+
+        # Write/refresh the durable memory .md for this file (background task).
+        memory_system = getattr(app, 'memory_system', None)
+        if memory_system is not None:
+            memory_system.save_memory(image_path, float(image_rating))
 
     @socketio.on('emit_images_page_get_path_to_media_folder')
     def get_path_to_media_folder():

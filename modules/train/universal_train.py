@@ -1,17 +1,19 @@
 """
 Universal evaluator training module.
 
-Gathers (chunk_embeddings, user_rating) pairs from ALL media modules by
-auto-discovering modules/*/train.py files and calling get_training_pairs()
-on each.  Every module is fully responsible for its own DB queries and
-text embedding — no central registry required.  New modules contribute to
-training simply by adding a train.py with get_training_pairs().
+Gathers (chunk_embeddings, user_rating) pairs from the durable memory folder
+(``project_config/memory/<YYYY-MM-DD>/<soft_hash>.md``). Each memory file holds
+the rich text description of a rated file (tags/fingerprint/omni/internal/.meta);
+the rating itself lives in the ``FilesLibrary`` table (joined by soft hash) so
+the evaluator never sees the score in the text it embeds and cannot cheat.
 """
 
 from tqdm import tqdm
 import numpy as np
 import os
 import time
+import re
+import glob
 from collections import Counter
 
 from sklearn.model_selection import train_test_split
@@ -33,79 +35,93 @@ ENABLE_OVERSAMPLING = False
 
 # Apply per-sample inverse-frequency loss weighting so rare scores contribute
 # proportionally more to the gradient even without duplicating data.
-# This might hurt the performance as the task essentially a regression, so 
+# This might hurt the performance as the task essentially a regression, so
 # weights might skew the values.
 ENABLE_LOSS_WEIGHTING = False
 
 
-
-# UniversalEvaluator is now a subprocess proxy defined in src/universal_evaluator.py.
-# It is re-exported here for backward-compatibility with any code that imports it
-# from this module path.
-# from src.universal_evaluator import UniversalEvaluator  # already imported above
-
-
 # ---------------------------------------------------------------------------
-# Auto-discovery: gather training pairs from modules/*/train.py
+# Memory-folder gathering
 # ---------------------------------------------------------------------------
-def _gather_from_module_train_files(cfg, text_embedder, status_callback=None):
-    """
-    Scan modules/*/train.py for modules that expose get_training_pairs() and
-    collect already-embedded (chunk_embeddings, score) pairs from each.
 
-    All modules — including built-in ones (music, images, videos, text) — are
-    handled here.  Each module's train.py is fully responsible for querying
-    its own DB and producing ready-to-use text embeddings.
-    """
-    import importlib
-    import glob
+def _parse_memory_file(text):
+    """Split a memory .md into (rating, description_text).
 
-    # modules/ directory is one level above this file (modules/train/)
-    pages_dir = os.path.normpath(
-        os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
+    Line 1 must be ``Rating: <float>``. If it isn't (missing or unparseable),
+    the file is considered broken/foreign and we return ``(None, None)`` so the
+    caller skips it. The description is everything from line 2 onward — i.e.
+    the whole file minus the rating line, so the embedder never sees the score.
+    """
+    lines = text.split('\n', 1)
+    if not lines:
+        return None, None
+    m = re.match(r'^Rating:\s*(\S+)', lines[0].strip())
+    if not m:
+        return None, None  # no rating on line 1 → broken/unrelated file
+    try:
+        rating = float(m.group(1))
+    except ValueError:
+        return None, None
+    description = lines[1] if len(lines) > 1 else ""
+    return rating, description.strip()
+
+
+def _gather_from_memory(cfg, text_embedder, status_callback=None):
+    """Collect (chunk_embeddings, score) pairs from the memory folder.
+
+    Walks ``cfg.main.memory_path/<YYYY-MM-DD>/*.md``, parses the rating from
+    the first line of each file, deduplicates by soft hash (keeping the most
+    recent dated folder = the user's latest opinion), and embeds the
+    description text (everything after the header block, with the rating line
+    stripped) with the shared Jina text embedder.
+
+    No DB lookup is needed — the rating lives on line 1 of each memory file.
+    """
+    memory_path = cfg.main.memory_path
+    if not os.path.isdir(memory_path):
+        print(f"[UniversalTrain] Memory folder not found: {memory_path}")
+        return [], []
+
+    # Date folders sort chronologically: YYYY-MM-DD. Walk oldest -> newest so
+    # that newer files overwrite older ones for the same soft hash.
+    date_dirs = sorted(
+        (d for d in glob.glob(os.path.join(memory_path, '*')) if os.path.isdir(d))
     )
+
+    hash_to_entry = {}  # soft_hash -> (rating, description)
+    for date_dir in date_dirs:
+        for md_path in glob.glob(os.path.join(date_dir, '*.md')):
+            try:
+                with open(md_path, 'r', encoding='utf-8') as f:
+                    text = f.read()
+            except Exception as exc:
+                print(f"[UniversalTrain] Could not read {md_path}: {exc}")
+                continue
+            rating, soft_hash, description = _parse_memory_file(text)
+            if soft_hash is None or rating is None or len(description) < 10:
+                continue
+            hash_to_entry[soft_hash] = (rating, description)  # latest wins
+
+    if not hash_to_entry:
+        print("[UniversalTrain] No usable memory files found.")
+        return [], []
+
+    print(f"[UniversalTrain] {len(hash_to_entry)} unique rated memory entries.")
 
     all_embeddings = []
     all_scores = []
-
-    train_files = sorted(glob.glob(os.path.join(pages_dir, '*', 'train.py')))
-
-    for train_file in train_files:
-        module_name = os.path.basename(os.path.dirname(train_file))
-
-        # Skip template / hidden folders
-        if module_name.startswith('_'):
+    count = 0
+    for rating, description in hash_to_entry.values():
+        if count % 100 == 0 and status_callback:
+            status_callback(f"Gathering memory pairs ({count})...")
+        chunk_embeddings = text_embedder.embed_text(description)
+        if chunk_embeddings is None or len(chunk_embeddings) == 0:
             continue
+        all_embeddings.append(np.array(chunk_embeddings, dtype=np.float32))
+        all_scores.append(float(rating))
+        count += 1
 
-        module_import_path = f"modules.{module_name}.train"
-        try:
-            mod = importlib.import_module(module_import_path)
-        except Exception as exc:
-            print(f"[UniversalTrain] Could not import {module_import_path}: {exc}")
-            continue
-
-        if not hasattr(mod, 'get_training_pairs'):
-            print(f"[UniversalTrain] {module_import_path} has no get_training_pairs(), skipping.")
-            continue
-
-        print(f"[UniversalTrain] Gathering training pairs from '{module_name}'...")
-        if status_callback:
-            status_callback(f"Gathering training pairs from '{module_name}'...")
-
-        count = 0
-        try:
-            for chunk_embeddings, score in mod.get_training_pairs(
-                cfg, text_embedder, status_callback
-            ):
-                all_embeddings.append(chunk_embeddings)
-                all_scores.append(score)
-                count += 1
-        except Exception as exc:
-            print(f"[UniversalTrain] Error in get_training_pairs for '{module_name}': {exc}")
-            continue
-
-        print(f"[UniversalTrain] '{module_name}': collected {count} training pairs.")
-
+    print(f"[UniversalTrain] Collected {count} training pairs from memory.")
     return all_embeddings, all_scores
 
 
@@ -136,14 +152,14 @@ def train_universal_evaluator(cfg, callback=None, max_steps=None, time_budget_se
     print("[UniversalTrain] Starting universal evaluator training")
     print("=" * 60)
 
-    # 1. Initialise text embedder (shared across all module get_training_pairs calls)
+    # 1. Initialise text embedder (shared across all memory description embeds)
     text_embedder = TextEmbedder(cfg)
     text_embedder.initiate(models_folder=cfg.main.embedding_models_path)
 
-    # 2. Gather (chunk_embeddings, score) pairs from all modules via auto-discovery.
-    #    Each module's train.py is responsible for querying its own DB, reading
-    #    its files, and producing ready-to-use text embeddings.
-    valid_embeddings, valid_scores = _gather_from_module_train_files(
+    # 2. Gather (chunk_embeddings, score) pairs from the durable memory folder.
+    #    Descriptions come from memory/<date>/<soft_hash>.md; ratings are joined
+    #    from FilesLibrary by soft hash (never stored inside the .md text).
+    valid_embeddings, valid_scores = _gather_from_memory(
         cfg, text_embedder,
         status_callback=lambda msg: callback(msg, 0, 0) if callback else None,
     )

@@ -282,7 +282,7 @@ class MusicModuleServer:
                 needs_user = old_entry.user_rating is not None and (
                     not new_entry or new_entry.user_rating is None
                 )
-                needs_model = old_entry.model_rating.isnot(None) and (
+                needs_model = old_entry.model_rating is not None and (
                     not new_entry or new_entry.model_rating is None
                 )
                 if needs_user or needs_model:

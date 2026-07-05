@@ -17,7 +17,7 @@ import src.scoring_models
 import modules.music.db_models as db_models
 import src.file_manager as file_manager
 from src.base_search_engine import BaseSearchEngine
-from src.audio_embedder import AudioEmbedder
+from src.audio_embedder import AudioEmbedder, get_shared_audio_embedder
 
 from typing import List, Tuple
 import fs
@@ -149,9 +149,10 @@ class MusicSearch(BaseSearchEngine):
         if self._model_manager is not None:
             return
 
-        self._audio_embedder = AudioEmbedder(cfg=self.cfg)
-        res = self._audio_embedder.initiate(models_folder=models_folder)
-
+        # self._audio_embedder = AudioEmbedder(cfg=self.cfg)
+        # res = self._audio_embedder.initiate(models_folder=models_folder)
+        self._audio_embedder = get_shared_audio_embedder(cfg=self.cfg, models_folder=models_folder)
+        
         # Mirror attributes needed by BaseSearchEngine helpers and EmbeddingProxyGenerator.
         self.embedding_dim = self._audio_embedder.embedding_dim
         self.model_hash    = self._audio_embedder.model_hash

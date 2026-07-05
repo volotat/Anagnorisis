@@ -38,6 +38,7 @@ class ConfigManager:
             "embedding_models": os.path.join(root_folder, 'models'),
             "personal_models": os.path.join(project_config_folder_path, 'models'),
             "cache": os.path.join(project_config_folder_path, 'cache'),
+            "memory": os.path.join(project_config_folder_path, 'memory'),
         }
 
         # Create necessary directories
@@ -45,7 +46,8 @@ class ConfigManager:
             project_config_folder_path,
             os.path.dirname(paths["database"]),
             paths["personal_models"],
-            paths["cache"]
+            paths["cache"],
+            paths["memory"]
         ]:
             os.makedirs(path, exist_ok=True)
 
@@ -55,6 +57,7 @@ class ConfigManager:
         cfg.main.embedding_models_path = paths["embedding_models"]
         cfg.main.personal_models_path = paths["personal_models"]
         cfg.main.cache_path = paths["cache"]
+        cfg.main.memory_path = paths["memory"]
 
         # Load the user-specific configuration as a clean, isolated object
         user_config_path = os.path.join(project_config_folder_path, 'config.yaml')

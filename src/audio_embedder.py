@@ -9,6 +9,15 @@ from typing import List
 
 import torch
 import numpy as np
+import src.virtual_file_system as vfs
+
+_SHARED_CLAP = None
+def get_shared_audio_embedder(cfg, models_folder):
+    global _SHARED_CLAP
+    if _SHARED_CLAP is None:
+        _SHARED_CLAP = AudioEmbedder(cfg)
+        _SHARED_CLAP.initiate(models_folder)
+    return _SHARED_CLAP
 
 # --- The Worker Implementation (Runs in separate process) ---
 
@@ -140,50 +149,57 @@ class _AudioEmbedderImpl:
         if self.model is None:
             raise RuntimeError("AudioEmbedder not initiated.")
 
-        waveform, sample_rate = self._read_audio(audio_path)
-        if waveform is None:
-            raise ValueError(f"Failed to read audio file: {audio_path}")
-
+        local_path, temp = vfs.resolve_to_local_path(audio_path)
         try:
-            # Resample to 48 kHz mono on CPU
-            if sample_rate != 48000:
-                waveform = torchaudio.transforms.Resample(
-                    orig_freq=sample_rate, new_freq=48000
-                )(waveform)
-                sample_rate = 48000
-            if waveform.dim() > 1 and waveform.shape[0] > 1:
-                waveform = waveform.mean(dim=0, keepdim=False)
-            if waveform.dim() > 1:
-                waveform = waveform.squeeze()
-            waveform_np = waveform.to(torch.float32).contiguous().cpu().numpy()
+            waveform, sample_rate = self._read_audio(local_path)
+            if waveform is None:
+                raise ValueError(f"Failed to read audio file: {audio_path}")
 
-            proc = self.processor(
-                audios=[waveform_np],
-                sampling_rate=sample_rate,
-                return_tensors="pt",
-                padding=False,
-            )
-            inputs_audio = {
-                k: (v.pin_memory().to(self.device, non_blocking=True) if isinstance(v, torch.Tensor) else v)
-                for k, v in proc.items()
-            }
-            if "input_features" in inputs_audio:
-                inputs_audio["input_features"] = torch.nan_to_num(
-                    inputs_audio["input_features"], nan=0.0, posinf=0.0, neginf=0.0
+            try:
+                # Resample to 48 kHz mono on CPU
+                if sample_rate != 48000:
+                    waveform = torchaudio.transforms.Resample(
+                        orig_freq=sample_rate, new_freq=48000
+                    )(waveform)
+                    sample_rate = 48000
+                if waveform.dim() > 1 and waveform.shape[0] > 1:
+                    waveform = waveform.mean(dim=0, keepdim=False)
+                if waveform.dim() > 1:
+                    waveform = waveform.squeeze()
+                waveform_np = waveform.to(torch.float32).contiguous().cpu().numpy()
+
+                proc = self.processor(
+                    audios=[waveform_np],
+                    sampling_rate=sample_rate,
+                    return_tensors="pt",
+                    padding=False,
                 )
+                inputs_audio = {
+                    k: (v.pin_memory().to(self.device, non_blocking=True) if isinstance(v, torch.Tensor) else v)
+                    for k, v in proc.items()
+                }
+                if "input_features" in inputs_audio:
+                    inputs_audio["input_features"] = torch.nan_to_num(
+                        inputs_audio["input_features"], nan=0.0, posinf=0.0, neginf=0.0
+                    )
 
-            with torch.no_grad():
-                out = self.model.get_audio_features(**inputs_audio)  # [1, D]
+                with torch.no_grad():
+                    out = self.model.get_audio_features(**inputs_audio)  # [1, D]
 
-            if out.dim() == 1:
-                out = out.unsqueeze(0)
-            out = torch.nan_to_num(out, nan=0.0, posinf=0.0, neginf=0.0)
-            return out.cpu().numpy()  # shape (1, embedding_dim)
+                if out.dim() == 1:
+                    out = out.unsqueeze(0)
+                out = torch.nan_to_num(out, nan=0.0, posinf=0.0, neginf=0.0)
+                return out.cpu().numpy()  # shape (1, embedding_dim)
 
-        except Exception as e:
-            print(f"Error embedding audio {audio_path}: {e}")
-            traceback.print_exc()
-            raise
+            except Exception as e:
+                print(f"Error embedding audio {audio_path}: {e}")
+                traceback.print_exc()
+                raise
+
+        finally:
+            if temp and os.path.exists(temp):
+                try: os.unlink(temp)
+                except OSError: pass
 
     def embed_text(self, text: str) -> np.ndarray:
         """
@@ -460,8 +476,9 @@ if __name__ == '__main__':
     # Initialise proxy
     # ---------------------------------------------------------------------------
     print("Initializing AudioEmbedder proxy...")
-    embedder = AudioEmbedder(cfg=mock_cfg)
-    embedder.initiate(models_folder=models_path)
+    # embedder = AudioEmbedder(cfg=mock_cfg)
+    # embedder.initiate(models_folder=models_path)
+    embedder = get_shared_audio_embedder(mock_cfg, models_path)
     print(f"AudioEmbedder ready. embedding_dim={embedder.embedding_dim}, model_hash={embedder.model_hash[:8]}")
 
     # ---------------------------------------------------------------------------

@@ -9,6 +9,7 @@ from typing import List
 
 import torch
 import numpy as np
+import src.virtual_file_system as vfs
 
 # --- The Worker Implementation (Runs in separate process) ---
 
@@ -155,20 +156,26 @@ class _ImageEmbedderImpl:
         if self.model is None:
             raise RuntimeError("ImageEmbedder not initiated.")
 
-        image = self._read_image(image_path)
-        if image is None:
-            raise ValueError(f"Failed to read image: {image_path}")
-
+        local_path, temp = vfs.resolve_to_local_path(image_path)
         try:
-            inputs = self.processor(images=[image], padding="max_length", return_tensors="pt").to(self.device)
-            with torch.no_grad():
-                features = self.model.get_image_features(**inputs)
-            features = features / features.norm(p=2, dim=-1, keepdim=True)
-            return features.cpu().numpy()  # shape (1, embedding_dim)
-        except Exception as e:
-            print(f"Error embedding image {image_path}: {e}")
-            traceback.print_exc()
-            raise
+            image = self._read_image(local_path)
+            if image is None:
+                raise ValueError(f"Failed to read image: {image_path}")
+
+            try:
+                inputs = self.processor(images=[image], padding="max_length", return_tensors="pt").to(self.device)
+                with torch.no_grad():
+                    features = self.model.get_image_features(**inputs)
+                features = features / features.norm(p=2, dim=-1, keepdim=True)
+                return features.cpu().numpy()  # shape (1, embedding_dim)
+            except Exception as e:
+                print(f"Error embedding image {image_path}: {e}")
+                traceback.print_exc()
+                raise
+        finally:
+            if temp and os.path.exists(temp):
+                try: os.unlink(temp)
+                except OSError: pass
 
     def embed_text(self, text: str) -> np.ndarray:
         """

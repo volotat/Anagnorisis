@@ -9,6 +9,9 @@ from typing import Optional, List, Dict, Any
 
 import torch
 import numpy as np
+import tempfile
+import fs
+import src.virtual_file_system as vfs
 
 # --- The Worker Implementation (Runs in separate process) ---
 
@@ -262,23 +265,33 @@ class _OmniDescriptorImpl:
             else:
                 raise ValueError("Image prompt not specified in config (cfg.omni.image_prompt).")
 
-        image = Image.open(image_path).convert("RGB")
-        # Resize if too large, keeping aspect ratio
-        max_size = self.cfg.omni.get('image_max_size', 512)
-        if max(image.size) > max_size:
-            scale = max_size / max(image.size)
-            new_size = (int(image.width * scale), int(image.height * scale))
-            image = image.resize(new_size, resample=Image.BICUBIC)
+        # IL.Image.open doesn't understand 'osfs://...' URLs. So we need to [convert]/[dwnload to tmp] remote files to local paths
+        local_path, temp_to_cleanup = vfs.resolve_to_local_path(image_path)
 
-        msgs = [{"role": "user", "content": [image, prompt]}]
+        try:
+            image = Image.open(local_path).convert("RGB")
+            # Resize if too large, keeping aspect ratio
+            max_size = self.cfg.omni.get('image_max_size', 512)
+            if max(image.size) > max_size:
+                scale = max_size / max(image.size)
+                new_size = (int(image.width * scale), int(image.height * scale))
+                image = image.resize(new_size, resample=Image.BICUBIC)
 
-        result = self.model.chat(
-            msgs=msgs,
-            use_tts_template=False,
-            enable_thinking=False,
-            max_new_tokens=self.cfg.omni.get('max_new_tokens', 1024),
-            do_sample=self.cfg.omni.get('do_sample', False),
-        )
+            msgs = [{"role": "user", "content": [image, prompt]}]
+
+            result = self.model.chat(
+                msgs=msgs,
+                use_tts_template=False,
+                enable_thinking=False,
+                max_new_tokens=self.cfg.omni.get('max_new_tokens', 1024),
+                do_sample=self.cfg.omni.get('do_sample', False),
+            )
+        finally:
+            if temp_to_cleanup and os.path.exists(temp_to_cleanup):
+                try:
+                    os.unlink(temp_to_cleanup)
+                except OSError:
+                    pass
 
         if torch.cuda.is_available(): torch.cuda.empty_cache()
         return result
@@ -296,17 +309,25 @@ class _OmniDescriptorImpl:
             else:
                 raise ValueError("Audio prompt not specified in config (cfg.omni.audio_prompt).")
 
-        audio_input, _ = librosa.load(audio_path, sr=16000, mono=True)
-        msgs = [{"role": "user", "content": [prompt, audio_input]}]
+        local_path, temp_to_cleanup = vfs.resolve_to_local_path(audio_path)
+        try:
+            audio_input, _ = librosa.load(local_path, sr=16000, mono=True)
+            msgs = [{"role": "user", "content": [prompt, audio_input]}]
 
-        result = self.model.chat(
-            msgs=msgs,
-            do_sample=self.cfg.omni.get('do_sample', False),
-            max_new_tokens=self.cfg.omni.get('max_new_tokens', 1024),
-            use_tts_template=True,
-            generate_audio=False,
-            temperature=self.cfg.omni.get('temperature', 0.3),
-        )
+            result = self.model.chat(
+                msgs=msgs,
+                do_sample=self.cfg.omni.get('do_sample', False),
+                max_new_tokens=self.cfg.omni.get('max_new_tokens', 1024),
+                use_tts_template=True,
+                generate_audio=False,
+                temperature=self.cfg.omni.get('temperature', 0.3),
+            )
+        finally:
+            if temp_to_cleanup and os.path.exists(temp_to_cleanup):
+                try:
+                    os.unlink(temp_to_cleanup)
+                except OSError:
+                    pass
 
         if torch.cuda.is_available(): torch.cuda.empty_cache()
         return result
@@ -347,79 +368,88 @@ class _OmniDescriptorImpl:
             prompt = self.cfg.omni.get('audio_prompt',
                 "Summarize the main content of this audio segment.")
 
-        audio_full, sr = librosa.load(audio_path, sr=16000, mono=True)
-        total_s = len(audio_full) / sr
-        samples_per_seg = int(sample_duration_s * sr)
+        # librosa can't open 'osfs://...' URLs; resolve once at the top.
+        local_audio_path, temp_to_cleanup = vfs.resolve_to_local_path(audio_path)
+        try:
+            audio_full, sr = librosa.load(local_audio_path, sr=16000, mono=True)
+            total_s = len(audio_full) / sr
+            samples_per_seg = int(sample_duration_s * sr)
 
-        # Compute evenly-spaced start positions, clamped to valid range.
-        if n_samples == 1:
-            start_offsets = [max(0, int((total_s / 2 - sample_duration_s / 2) * sr))]
-        else:
-            margin = min(sample_duration_s / 2, total_s * 0.05)
-            lo = int(margin * sr)
-            hi = max(lo, int((total_s - sample_duration_s - margin) * sr))
-            step = (hi - lo) / max(n_samples - 1, 1)
-            start_offsets = [int(lo + i * step) for i in range(n_samples)]
+            # Compute evenly-spaced start positions, clamped to valid range.
+            if n_samples == 1:
+                start_offsets = [max(0, int((total_s / 2 - sample_duration_s / 2) * sr))]
+            else:
+                margin = min(sample_duration_s / 2, total_s * 0.05)
+                lo = int(margin * sr)
+                hi = max(lo, int((total_s - sample_duration_s - margin) * sr))
+                step = (hi - lo) / max(n_samples - 1, 1)
+                start_offsets = [int(lo + i * step) for i in range(n_samples)]
 
-        segment_descriptions: List[str] = []
+            segment_descriptions: List[str] = []
 
-        for idx, start in enumerate(start_offsets):
-            end = min(start + samples_per_seg, len(audio_full))
-            chunk = audio_full[start:end]
+            for idx, start in enumerate(start_offsets):
+                end = min(start + samples_per_seg, len(audio_full))
+                chunk = audio_full[start:end]
 
-            start_s = start / sr
-            end_s = end / sr
-            print(
-                f"OmniDescriptor (Worker): Audio segment {idx + 1}/{n_samples} "
-                f"[{start_s:.1f}s – {end_s:.1f}s] …"
-            )
-
-            msgs = [{"role": "user", "content": [prompt, chunk]}]
-            try:
-                seg_desc = self.model.chat(
-                    msgs=msgs,
-                    do_sample=True,
-                    num_beams=1,
-                    max_new_tokens=self.cfg.omni.get('max_new_tokens', 512),
-                    use_tts_template=True,
-                    generate_audio=False,
-                    temperature=self.cfg.omni.get('temperature', 0.3),
+                start_s = start / sr
+                end_s = end / sr
+                print(
+                    f"OmniDescriptor (Worker): Audio segment {idx + 1}/{n_samples} "
+                    f"[{start_s:.1f}s – {end_s:.1f}s] …"
                 )
-                segment_descriptions.append(
-                    f"[{start_s:.0f}s–{end_s:.0f}s]: {seg_desc[:512].strip()}"
-                )
-            except torch.cuda.OutOfMemoryError:
-                print(f"  OOM on segment {idx + 1} — skipping.")
-                torch.cuda.empty_cache()
-            except Exception as seg_exc:
-                print(f"  Error on segment {idx + 1}: {seg_exc}")
-            finally:
-                if torch.cuda.is_available():
+
+                msgs = [{"role": "user", "content": [prompt, chunk]}]
+                try:
+                    seg_desc = self.model.chat(
+                        msgs=msgs,
+                        do_sample=True,
+                        num_beams=1,
+                        max_new_tokens=self.cfg.omni.get('max_new_tokens', 512),
+                        use_tts_template=True,
+                        generate_audio=False,
+                        temperature=self.cfg.omni.get('temperature', 0.3),
+                    )
+                    segment_descriptions.append(
+                        f"[{start_s:.0f}s–{end_s:.0f}s]: {seg_desc[:512].strip()}"
+                    )
+                except torch.cuda.OutOfMemoryError:
+                    print(f"  OOM on segment {idx + 1} — skipping.")
                     torch.cuda.empty_cache()
+                except Exception as seg_exc:
+                    print(f"  Error on segment {idx + 1}: {seg_exc}")
+                finally:
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
 
-        if not segment_descriptions:
-            raise RuntimeError("Failed to generate descriptions for any audio segments.")
+            if not segment_descriptions:
+                raise RuntimeError("Failed to generate descriptions for any audio segments.")
 
-        if len(segment_descriptions) == 1:
-            # Strip the timestamp prefix for single-segment results.
-            return segment_descriptions[0].split(": ", 1)[-1]
+            if len(segment_descriptions) == 1:
+                # Strip the timestamp prefix for single-segment results.
+                return segment_descriptions[0].split(": ", 1)[-1]
 
-        # Synthesise per-segment descriptions into one coherent summary.
-        joined = "\n".join(segment_descriptions)
-        synthesis_prompt = (
-            f"The following are descriptions of {len(segment_descriptions)} "
-            f"sampled segments from an audio recording that is {total_s:.0f} "
-            f"seconds long. Based on these samples, write a concise overall "
-            f"description of the audio:\n\n{joined}"
-        )
-        synthesis_msgs = [{"role": "user", "content": [synthesis_prompt]}]
-        summary = self.model.chat(
-            msgs=synthesis_msgs,
-            use_tts_template=False,
-            enable_thinking=False,
-            max_new_tokens=self.cfg.omni.get('max_new_tokens', 512),
-            do_sample=self.cfg.omni.get('do_sample', False),
-        )
+            # Synthesise per-segment descriptions into one coherent summary.
+            joined = "\n".join(segment_descriptions)
+            synthesis_prompt = (
+                f"The following are descriptions of {len(segment_descriptions)} "
+                f"sampled segments from an audio recording that is {total_s:.0f} "
+                f"seconds long. Based on these samples, write a concise overall "
+                f"description of the audio:\n\n{joined}"
+            )
+            synthesis_msgs = [{"role": "user", "content": [synthesis_prompt]}]
+            summary = self.model.chat(
+                msgs=synthesis_msgs,
+                use_tts_template=False,
+                enable_thinking=False,
+                max_new_tokens=self.cfg.omni.get('max_new_tokens', 512),
+                do_sample=self.cfg.omni.get('do_sample', False),
+            )
+        finally:
+            if temp_to_cleanup and os.path.exists(temp_to_cleanup):
+                try:
+                    os.unlink(temp_to_cleanup)
+                except OSError:
+                    pass
 
         if torch.cuda.is_available(): torch.cuda.empty_cache()
         return summary
@@ -435,9 +465,10 @@ class _OmniDescriptorImpl:
             else:
                 raise ValueError("Video prompt not specified in config (cfg.omni.video_prompt).")
 
+        local_path, temp_to_cleanup = vfs.resolve_to_local_path(video_path)
         try:
             from minicpmo.utils import get_video_frame_audio_segments
-            video_frames, _, _ = get_video_frame_audio_segments(video_path)
+            video_frames, _, _ = get_video_frame_audio_segments(local_path)
             print(f"OmniDescriptor (Worker): Extracted {len(video_frames)} frames from video.")
 
             msgs = [{"role": "user", "content": video_frames + [prompt]}]
@@ -458,6 +489,12 @@ class _OmniDescriptorImpl:
             print(f"Error describing video '{video_path}': {e}")
             traceback.print_exc()
             return ""
+        finally:
+            if temp_to_cleanup and os.path.exists(temp_to_cleanup):
+                try:
+                    os.unlink(temp_to_cleanup)
+                except OSError:
+                    pass
 
     def describe_video_sampled(
         self,
@@ -504,203 +541,212 @@ class _OmniDescriptorImpl:
                 "Describe the video segment in detail. Include the scene, actions, "
                 "objects, any speech or sounds, and any notable events.")
 
-    
-        # ------------------------------------------------------------------
-        # Probe video metadata
-        # ------------------------------------------------------------------
-        cap = cv2.VideoCapture(video_path)
-        if not cap.isOpened():
-            raise RuntimeError(f"Cannot open video: {video_path}")
-        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        fps = cap.get(cv2.CAP_PROP_FPS) or 24.0
-        total_s = total_frames / fps
-        cap.release()
-
-        # Check whether ffmpeg is available (needed for audio extraction)
+        # cv2/ffmpeg/librosa can't open 'osfs://...' URLs — resolve to a real path
+        # up front so all subprocess calls and file opens below use it.
+        local_path, temp_to_cleanup = vfs.resolve_to_local_path(video_path)
         try:
-            _ffmpeg_available = (
-                subprocess.run(
-                    ['ffmpeg', '-version'], capture_output=True
-                ).returncode == 0
-            )
-        except FileNotFoundError:
-            _ffmpeg_available = False
-        if not _ffmpeg_available:
-            print("OmniDescriptor (Worker): WARNING — ffmpeg not found; "
-                    "audio extraction disabled, falling back to video-only segments.")
+            # ------------------------------------------------------------------
+            # Probe video metadata
+            # ------------------------------------------------------------------
+            cap = cv2.VideoCapture(local_path)
+            if not cap.isOpened():
+                raise RuntimeError(f"Cannot open video: {local_path}")
+            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            fps = cap.get(cv2.CAP_PROP_FPS) or 24.0
+            total_s = total_frames / fps
+            cap.release()
 
-        # ------------------------------------------------------------------
-        # Compute evenly-spaced segment start times (same logic as describe_audio_sampled)
-        # ------------------------------------------------------------------
-        if n_samples == 1:
-            start_times = [max(0.0, (total_s / 2) - (sample_duration_s / 2))]
-        else:
-            margin = min(sample_duration_s / 2, total_s * 0.05)
-            lo = margin
-            hi = max(lo, total_s - sample_duration_s - margin)
-            step = (hi - lo) / max(n_samples - 1, 1)
-            start_times = [lo + i * step for i in range(n_samples)]
-
-        segment_descriptions: List[str] = []
-
-        # determine optional scaling filter from config
-        max_size = self.cfg.omni.get('video_sample_max_size', None)
-        if max_size is not None:
-            # maintain aspect ratio, cap larger dimension to max_size
-            scale_filter = f"scale='if(gt(iw,ih),{max_size},-1)':'if(gt(ih,iw),{max_size},-1)'"
-        else:
-            scale_filter = None
-
-        for idx, start_s in enumerate(start_times):
-            end_s = min(start_s + sample_duration_s, total_s)
-            print(
-                f"OmniDescriptor (Worker): Video segment {idx + 1}/{n_samples} "
-                f"[{start_s:.1f}s – {end_s:.1f}s] …"
-            )
-
-            # --------------------------------------------------------------
-            # Extract frames for this window (use ffmpeg if possible to avoid
-            # OpenCV pixel-format warnings and to allow on-the-fly scaling)
-            # --------------------------------------------------------------
-            segment_duration = end_s - start_s
-            timestamps = []
-            if frames_per_segment > 0:
-                step = segment_duration / frames_per_segment
-                # take one frame in the middle of each subwindow
-                timestamps = [start_s + (i + 0.5) * step for i in range(frames_per_segment)]
-
-            pil_frames = []
-            if timestamps:
-                # try ffmpeg extraction for each timestamp
-                for t in timestamps:
-                    # ask ffmpeg for a single PNG frame; disable hwaccel and
-                    # force RGB pixel format to avoid decoder warnings/errors.
-                    cmd = [
-                        'ffmpeg', '-loglevel', 'error', '-hide_banner',
-                        '-hwaccel', 'none',
-                        '-err_detect', 'ignore_err',
-                        '-ss', str(t), '-i', video_path,
-                        '-vframes', '1', '-pix_fmt', 'rgb24',
-                        '-f', 'image2pipe', '-vcodec', 'png',
-                        'pipe:1',
-                    ]
-                    if scale_filter:
-                        cmd[8:8] = ['-vf', scale_filter]
-                    try:
-                        proc = subprocess.run(cmd, capture_output=True, timeout=300, stderr=subprocess.DEVNULL)
-                        if proc.returncode == 0 and proc.stdout:
-                            img = PILImage.open(io.BytesIO(proc.stdout)).convert('RGB')
-                            pil_frames.append(img)
-                        else:
-                            # fallback to cv2 if ffmpeg fails for some reason
-                            raise RuntimeError(f"ffmpeg frame extraction failed (code {proc.returncode})")
-                    except Exception:
-                        # fallback to OpenCV; this is last resort and may still
-                        # emit AV1 warnings via VideoCapture, but it only occurs
-                        # when ffmpeg completely failed.
-                        cap = cv2.VideoCapture(video_path)
-                        if scale_filter:
-                            cap.set(cv2.CAP_PROP_FRAME_WIDTH, max_size)
-                            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, max_size)
-                        cap.set(cv2.CAP_PROP_POS_MSEC, t * 1000)
-                        ret, frame = cap.read()
-                        cap.release()
-                        if ret:
-                            pil_frames.append(PILImage.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)))
-            # if no timestamps, leave pil_frames empty
-
-            # --------------------------------------------------------------
-            # Extract audio for this window via ffmpeg pipe
-            # --------------------------------------------------------------
-            audio_chunk = None
-            if _ffmpeg_available:
-                try:
-                    proc = subprocess.run(
-                        [
-                            'ffmpeg', '-y',
-                            '-ss', str(start_s),
-                            '-t',  str(end_s - start_s),
-                            '-i',  video_path,
-                            '-ac', '1',
-                            '-ar', '16000',
-                            '-f',  'wav',
-                            'pipe:1',
-                        ],
-                        capture_output=True,
-                        timeout=60,
-                    )
-                    if proc.returncode == 0 and proc.stdout:
-                        audio_chunk, _ = librosa.load(
-                            io.BytesIO(proc.stdout), sr=16000, mono=True
-                        )
-                except Exception as audio_exc:
-                    print(f"  Audio extraction failed for segment {idx + 1}: {audio_exc}")
-
-            if not pil_frames:
-                print(f"  No frames extracted for segment {idx + 1} — skipping.")
-                continue
-
-            # --------------------------------------------------------------
-            # Build content list: frames [+ audio] + prompt
-            # use_tts_template=True only when audio is present
-            # --------------------------------------------------------------
-            if audio_chunk is not None:
-                content = pil_frames + [audio_chunk, prompt]
-                use_tts = True
-            else:
-                content = pil_frames + [prompt]
-                use_tts = False
-
-            msgs = [{"role": "user", "content": content}]
+            # Check whether ffmpeg is available (needed for audio extraction)
             try:
-                seg_desc = self.model.chat(
-                    msgs=msgs,
-                    do_sample=True,
-                    num_beams=1,
-                    max_new_tokens=self.cfg.omni.get('max_new_tokens', 512),
-                    use_image_id=False,
-                    max_slice_nums=1,
-                    use_tts_template=use_tts,
-                    generate_audio=False,
-                    enable_thinking=False,
-                    temperature=self.cfg.omni.get('temperature', 0.3),
+                _ffmpeg_available = (
+                    subprocess.run(
+                        ['ffmpeg', '-version'], capture_output=True
+                    ).returncode == 0
                 )
-                # We crop the description to 1024 chars to prevent the final synthesis prompt from becoming too long if many segments are used.
-                segment_descriptions.append(
-                    f"[{start_s:.0f}s–{end_s:.0f}s]: {seg_desc[:1024].strip()}"
+            except FileNotFoundError:
+                _ffmpeg_available = False
+            if not _ffmpeg_available:
+                print("OmniDescriptor (Worker): WARNING — ffmpeg not found; "
+                        "audio extraction disabled, falling back to video-only segments.")
+
+            # ------------------------------------------------------------------
+            # Compute evenly-spaced segment start times (same logic as describe_audio_sampled)
+            # ------------------------------------------------------------------
+            if n_samples == 1:
+                start_times = [max(0.0, (total_s / 2) - (sample_duration_s / 2))]
+            else:
+                margin = min(sample_duration_s / 2, total_s * 0.05)
+                lo = margin
+                hi = max(lo, total_s - sample_duration_s - margin)
+                step = (hi - lo) / max(n_samples - 1, 1)
+                start_times = [lo + i * step for i in range(n_samples)]
+
+            segment_descriptions: List[str] = []
+
+            # determine optional scaling filter from config
+            max_size = self.cfg.omni.get('video_sample_max_size', None)
+            if max_size is not None:
+                # maintain aspect ratio, cap larger dimension to max_size
+                scale_filter = f"scale='if(gt(iw,ih),{max_size},-1)':'if(gt(ih,iw),{max_size},-1)'"
+            else:
+                scale_filter = None
+
+            for idx, start_s in enumerate(start_times):
+                end_s = min(start_s + sample_duration_s, total_s)
+                print(
+                    f"OmniDescriptor (Worker): Video segment {idx + 1}/{n_samples} "
+                    f"[{start_s:.1f}s – {end_s:.1f}s] …"
                 )
-            except torch.cuda.OutOfMemoryError:
-                print(f"  OOM on segment {idx + 1} — skipping.")
-                torch.cuda.empty_cache()
-            except Exception as seg_exc:
-                print(f"  Error on segment {idx + 1}: {seg_exc}")
-            finally:
-                if torch.cuda.is_available():
+
+                # --------------------------------------------------------------
+                # Extract frames for this window (use ffmpeg if possible to avoid
+                # OpenCV pixel-format warnings and to allow on-the-fly scaling)
+                # --------------------------------------------------------------
+                segment_duration = end_s - start_s
+                timestamps = []
+                if frames_per_segment > 0:
+                    step = segment_duration / frames_per_segment
+                    # take one frame in the middle of each subwindow
+                    timestamps = [start_s + (i + 0.5) * step for i in range(frames_per_segment)]
+
+                pil_frames = []
+                if timestamps:
+                    # try ffmpeg extraction for each timestamp
+                    for t in timestamps:
+                        # ask ffmpeg for a single PNG frame; disable hwaccel and
+                        # force RGB pixel format to avoid decoder warnings/errors.
+                        cmd = [
+                            'ffmpeg', '-loglevel', 'error', '-hide_banner',
+                            '-hwaccel', 'none',
+                            '-err_detect', 'ignore_err',
+                            '-ss', str(t), '-i', local_path,
+                            '-vframes', '1', '-pix_fmt', 'rgb24',
+                            '-f', 'image2pipe', '-vcodec', 'png',
+                            'pipe:1',
+                        ]
+                        if scale_filter:
+                            cmd[8:8] = ['-vf', scale_filter]
+                        try:
+                            proc = subprocess.run(cmd, capture_output=True, timeout=300, stderr=subprocess.DEVNULL)
+                            if proc.returncode == 0 and proc.stdout:
+                                img = PILImage.open(io.BytesIO(proc.stdout)).convert('RGB')
+                                pil_frames.append(img)
+                            else:
+                                # fallback to cv2 if ffmpeg fails for some reason
+                                raise RuntimeError(f"ffmpeg frame extraction failed (code {proc.returncode})")
+                        except Exception:
+                            # fallback to OpenCV; this is last resort and may still
+                            # emit AV1 warnings via VideoCapture, but it only occurs
+                            # when ffmpeg completely failed.
+                            cap = cv2.VideoCapture(local_path)
+                            if scale_filter:
+                                cap.set(cv2.CAP_PROP_FRAME_WIDTH, max_size)
+                                cap.set(cv2.CAP_PROP_FRAME_HEIGHT, max_size)
+                            cap.set(cv2.CAP_PROP_POS_MSEC, t * 1000)
+                            ret, frame = cap.read()
+                            cap.release()
+                            if ret:
+                                pil_frames.append(PILImage.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)))
+                # if no timestamps, leave pil_frames empty
+
+                # --------------------------------------------------------------
+                # Extract audio for this window via ffmpeg pipe
+                # --------------------------------------------------------------
+                audio_chunk = None
+                if _ffmpeg_available:
+                    try:
+                        proc = subprocess.run(
+                            [
+                                'ffmpeg', '-y',
+                                '-ss', str(start_s),
+                                '-t',  str(end_s - start_s),
+                                '-i',  local_path,
+                                '-ac', '1',
+                                '-ar', '16000',
+                                '-f',  'wav',
+                                'pipe:1',
+                            ],
+                            capture_output=True,
+                            timeout=60,
+                        )
+                        if proc.returncode == 0 and proc.stdout:
+                            audio_chunk, _ = librosa.load(
+                                io.BytesIO(proc.stdout), sr=16000, mono=True
+                            )
+                    except Exception as audio_exc:
+                        print(f"  Audio extraction failed for segment {idx + 1}: {audio_exc}")
+
+                if not pil_frames:
+                    print(f"  No frames extracted for segment {idx + 1} — skipping.")
+                    continue
+
+                # --------------------------------------------------------------
+                # Build content list: frames [+ audio] + prompt
+                # use_tts_template=True only when audio is present
+                # --------------------------------------------------------------
+                if audio_chunk is not None:
+                    content = pil_frames + [audio_chunk, prompt]
+                    use_tts = True
+                else:
+                    content = pil_frames + [prompt]
+                    use_tts = False
+
+                msgs = [{"role": "user", "content": content}]
+                try:
+                    seg_desc = self.model.chat(
+                        msgs=msgs,
+                        do_sample=True,
+                        num_beams=1,
+                        max_new_tokens=self.cfg.omni.get('max_new_tokens', 512),
+                        use_image_id=False,
+                        max_slice_nums=1,
+                        use_tts_template=use_tts,
+                        generate_audio=False,
+                        enable_thinking=False,
+                        temperature=self.cfg.omni.get('temperature', 0.3),
+                    )
+                    # We crop the description to 1024 chars to prevent the final synthesis prompt from becoming too long if many segments are used.
+                    segment_descriptions.append(
+                        f"[{start_s:.0f}s–{end_s:.0f}s]: {seg_desc[:1024].strip()}"
+                    )
+                except torch.cuda.OutOfMemoryError:
+                    print(f"  OOM on segment {idx + 1} — skipping.")
                     torch.cuda.empty_cache()
+                except Exception as seg_exc:
+                    print(f"  Error on segment {idx + 1}: {seg_exc}")
+                finally:
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
 
-        if not segment_descriptions:
-            raise RuntimeError("Failed to generate descriptions for any video segments.")
+            if not segment_descriptions:
+                raise RuntimeError("Failed to generate descriptions for any video segments.")
 
-        if len(segment_descriptions) == 1:
-            return segment_descriptions[0].split(": ", 1)[-1]
+            if len(segment_descriptions) == 1:
+                return segment_descriptions[0].split(": ", 1)[-1]
 
-        # Synthesise per-segment descriptions into one coherent summary.
-        joined = "\n".join(segment_descriptions)
-        synthesis_prompt = (
-            f"The following are descriptions of {len(segment_descriptions)} "
-            f"sampled segments from a video that is {total_s:.0f} seconds long. "
-            f"Based on these samples, write a concise overall description of the "
-            f"video:\n\n{joined}"
-        )
-        synthesis_msgs = [{"role": "user", "content": [synthesis_prompt]}]
-        summary = self.model.chat(
-            msgs=synthesis_msgs,
-            use_tts_template=False,
-            enable_thinking=False,
-            num_beams=1,
-            max_new_tokens=self.cfg.omni.get('max_new_tokens', 512),
-            do_sample=self.cfg.omni.get('do_sample', False),
-        )
+            # Synthesise per-segment descriptions into one coherent summary.
+            joined = "\n".join(segment_descriptions)
+            synthesis_prompt = (
+                f"The following are descriptions of {len(segment_descriptions)} "
+                f"sampled segments from a video that is {total_s:.0f} seconds long. "
+                f"Based on these samples, write a concise overall description of the "
+                f"video:\n\n{joined}"
+            )
+            synthesis_msgs = [{"role": "user", "content": [synthesis_prompt]}]
+            summary = self.model.chat(
+                msgs=synthesis_msgs,
+                use_tts_template=False,
+                enable_thinking=False,
+                num_beams=1,
+                max_new_tokens=self.cfg.omni.get('max_new_tokens', 512),
+                do_sample=self.cfg.omni.get('do_sample', False),
+            )
+        finally:
+            if temp_to_cleanup and os.path.exists(temp_to_cleanup):
+                try:
+                    os.unlink(temp_to_cleanup)
+                except OSError:
+                    pass
 
         if torch.cuda.is_available(): torch.cuda.empty_cache()
         return summary
