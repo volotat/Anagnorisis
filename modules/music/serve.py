@@ -34,7 +34,6 @@ from src.module_helpers import (
 #   emit_music_page_get_files
 #   emit_music_page_get_song_details
 #   emit_music_page_set_song_play_rate
-#   emit_music_page_set_song_rating
 #   emit_music_page_update_song_info
 #   emit_music_page_song_start_playing
 #   emit_music_page_get_path_to_media_folder
@@ -148,8 +147,6 @@ class MusicModuleServer:
         self.socketio.on_event('emit_music_page_get_files', self.handle_get_files)
         self.socketio.on_event('emit_music_page_get_song_details', self.handle_get_song_details)
         self.socketio.on_event('emit_music_page_set_song_play_rate', self.handle_set_play_rate)
-        self.socketio.on_event('emit_music_page_set_song_rating', self.handle_set_song_rating)
-        self.socketio.on_event('emit_music_page_update_song_info', self.handle_update_song_info)
         self.socketio.on_event('emit_music_page_song_start_playing', self.handle_song_start_playing)
         self.socketio.on_event('emit_music_page_get_path_to_media_folder', self.handle_get_path_to_media_folder)
         self.socketio.on_event('emit_music_page_update_path_to_media_folder', self.handle_update_path_to_media_folder)
@@ -727,33 +724,6 @@ class MusicModuleServer:
             song.skip_count = (song.skip_count or 0) + 1
 
         db_models.db.session.commit()
-
-    def handle_set_song_rating(self, data):
-        """Saves a user rating for a track into FilesLibrary (keyed by file_path)."""
-        file_path = data.get('file_path')
-        song_score = data.get('score')
-
-        print('[MusicModuleServer] Set song rating:', file_path, song_score)
-
-        db_item = main_db_models.FilesLibrary.query.filter_by(file_path=file_path).first()
-        if db_item is None:
-            file_hash = self.music_search_engine.get_file_hash(file_path)
-            db_item = main_db_models.FilesLibrary(
-                hash=file_hash,
-                hash_algorithm=self.music_search_engine.get_hash_algorithm(),
-                file_path=file_path,
-            )
-            main_db_models.db.session.add(db_item)
-
-        db_item.user_rating = float(song_score)
-        db_item.user_rating_date = datetime.datetime.now()
-        main_db_models.db.session.commit()
-
-    def handle_update_song_info(self, data):
-        # NOTE: It is very important to update the hash of the file in the database
-        # after the metadata has been updated to not lose user rating of the song
-        # and other connected data.
-        pass
 
     def handle_song_start_playing(self, data):
         """Records that a track started playing (updates last_played in MusicLibrary).
