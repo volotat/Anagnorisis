@@ -883,7 +883,7 @@ class FileManager:
                     # "hash": file_hash,
                     "file_size": convert_size(file_size),
                     "file_info": get_file_info(full_path),
-                    "has_meta": os.path.exists(full_path + ".meta"),
+                    "has_meta": my_fs.exists(path_in_fs + '.meta'),
                     "search_score": page_files_scores[ind]
                 }
                 files_data.append(data)

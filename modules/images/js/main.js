@@ -50,8 +50,7 @@ import createModuleMetaEditors from '/modules/ModuleMetaEditors.js';
     const starRating = new StarRatingComponent({
       callback: (rating) => {
         console.log('New rating:', rating);
-        socket.emit('emit_images_page_set_image_rating', {
-          hash: fileData.hash,
+        socket.emit('emit_set_file_rating', {
           file_path: fileData.file_path,
           rating: rating,
         });

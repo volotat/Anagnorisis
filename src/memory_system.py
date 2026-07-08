@@ -26,6 +26,7 @@ so it stays decoupled from the individual modules.
 
 import os
 import datetime
+import threading
 import numpy as np
 import torch
 import fs
@@ -120,39 +121,71 @@ class MemorySystem:
 
         os.makedirs(self.memory_path, exist_ok=True)
 
-        # --- Audio (CLAP) ---
-        # self._audio_embedder = AudioEmbedder(cfg)
-        # self._audio_embedder.initiate(models_folder)
-        self._audio_embedder = get_shared_audio_embedder(cfg, models_folder)
-        self._audio_adapter = EmbedderAdapter(
-            self._audio_embedder, cache_path, 'audio', 'v1.2'
-        )
-        self._audio_proxy = EmbeddingProxyGenerator(
-            engine=self._audio_adapter,
-            tag_list=list(OmegaConf.select(cfg, 'music.embedding_tags', default=[]) or []),
-            threshold=OmegaConf.select(cfg, 'music.embedding_tags_threshold', default=None),
-            cache_path=cache_path,
-            model_name='CLAP',
-        )
+        # Models are NOT loaded here — this constructor must return instantly so
+        # the Flask server can start and show the loading page immediately. Heavy
+        # embedding/omni models are loaded lazily on first use (inside a background
+        # task) via _ensure_initialized().
+        self._initialized = False
+        self._init_lock = threading.Lock()
+        self._audio_embedder = None
+        self._audio_adapter = None
+        self._audio_proxy = None
+        self._image_embedder = None
+        self._image_adapter = None
+        self._image_proxy = None
+        self._omni = None
 
-        # --- Image (SigLIP) ---
-        self._image_embedder = ImageEmbedder(cfg)
-        self._image_embedder.initiate(models_folder)
-        self._image_adapter = EmbedderAdapter(
-            self._image_embedder, cache_path, 'image', 'v1.1'
-        )
-        self._image_proxy = EmbeddingProxyGenerator(
-            engine=self._image_adapter,
-            tag_list=list(OmegaConf.select(cfg, 'images.embedding_tags', default=[]) or []),
-            threshold=OmegaConf.select(cfg, 'images.embedding_tags_threshold', default=None),
-            cache_path=cache_path,
-            model_name='SigLIP',
-        )
+    def _ensure_initialized(self):
+        """Lazily load all embedding/omni models on first use (thread-safe).
 
-        # --- Omni (MiniCPM-o) ---
-        self._omni = OmniDescriptor(cfg)
-        self._omni.initiate(models_folder)
-        self._omni.unload()  # free VRAM until first use
+        Called from inside background tasks (save_memory / migration), so the
+        heavy GPU model loading never blocks app startup or the Flask server.
+        """
+        if self._initialized:
+            return
+        with self._init_lock:
+            if self._initialized:
+                return
+            cfg = self.cfg
+            cache_path = self.cache_path
+            models_folder = self.models_folder
+
+            print("[MemorySystem] Loading embedding/omni models (first use)...")
+
+            # --- Audio (CLAP) ---
+            self._audio_embedder = get_shared_audio_embedder(cfg, models_folder)
+            self._audio_adapter = EmbedderAdapter(
+                self._audio_embedder, cache_path, 'audio', 'v1.2'
+            )
+            self._audio_proxy = EmbeddingProxyGenerator(
+                engine=self._audio_adapter,
+                tag_list=list(OmegaConf.select(cfg, 'music.embedding_tags', default=[]) or []),
+                threshold=OmegaConf.select(cfg, 'music.embedding_tags_threshold', default=None),
+                cache_path=cache_path,
+                model_name='CLAP',
+            )
+
+            # --- Image (SigLIP) ---
+            self._image_embedder = ImageEmbedder(cfg)
+            self._image_embedder.initiate(models_folder)
+            self._image_adapter = EmbedderAdapter(
+                self._image_embedder, cache_path, 'image', 'v1.1'
+            )
+            self._image_proxy = EmbeddingProxyGenerator(
+                engine=self._image_adapter,
+                tag_list=list(OmegaConf.select(cfg, 'images.embedding_tags', default=[]) or []),
+                threshold=OmegaConf.select(cfg, 'images.embedding_tags_threshold', default=None),
+                cache_path=cache_path,
+                model_name='SigLIP',
+            )
+
+            # --- Omni (MiniCPM-o) ---
+            self._omni = OmniDescriptor(cfg)
+            self._omni.initiate(models_folder)
+            self._omni.unload()  # free VRAM until first use
+
+            self._initialized = True
+            print("[MemorySystem] Models loaded and ready.")
 
     # ------------------------------------------------------------------
     # Extension -> modality dispatch
@@ -189,6 +222,10 @@ class MemorySystem:
         Each section is wrapped defensively so a failed model call or a missing
         file does not lose the rest of the description.
         """
+        # Lazily load embedding/omni models on first use (inside a background task,
+        # so this never blocks app startup).
+        self._ensure_initialized()
+
         file_name = os.path.basename(file_path)
         ext = os.path.splitext(file_name)[1].lower()
         modality = self._modality_for_extension(ext)

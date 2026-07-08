@@ -171,7 +171,7 @@ class CommonFilters:
             embeds_meta_text = self.metadata_engine.process_query(text_query)
             embeds_meta_files = self.metadata_engine.process_files(all_files, callback=self.meta_embedding_gathering_callback, media_folder=self.media_directory)
             meta_similarity_scores = self.metadata_engine.compare(embeds_meta_files, embeds_meta_text)
-                
+
             self.common_socket_events.show_search_status("Sorting by relevance")
             scores = meta_similarity_scores
 
@@ -255,7 +255,25 @@ class CommonFilters:
         min_distances = np.min(distances, axis=1)
         target_indices = np.argmin(distances, axis=1)
         target_min_distances = min_distances[target_indices]
-        file_sizes = [os.path.getsize(f) for f in all_files]
+        # VFS-aware file size gathering (os.path.getsize breaks on VFS URLs).
+        file_sizes = []
+        opened_fses = {}
+        try:
+            for f in all_files:
+                try:
+                    base_url, path_in_fs = vfs.resolve_base_and_path_from_url(f)
+                    if base_url not in opened_fses:
+                        opened_fses[base_url] = fs.open_fs(base_url)
+                    info = opened_fses[base_url].getinfo(path_in_fs, namespaces=['details'])
+                    file_sizes.append(info.size if info.size is not None else 0)
+                except Exception:
+                    file_sizes.append(0)
+        finally:
+            for opened_fs in opened_fses.values():
+                try:
+                    opened_fs.close()
+                except Exception:
+                    pass
 
         files_with_metrics = list(zip(target_min_distances, min_distances, file_sizes, all_files))
         sorted_files_with_metrics = sorted(files_with_metrics, key=lambda x: (x[0], x[1], x[2]))

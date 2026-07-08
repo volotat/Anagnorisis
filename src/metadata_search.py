@@ -6,6 +6,8 @@ import threading
 import time
 from typing import Optional
 
+import fs
+import src.virtual_file_system as vfs
 from src.text_embedder import TextEmbedder
 from src.caching import TwoLevelCache
 from src.omni_descriptor import OmniDescriptor
@@ -95,19 +97,26 @@ class MetadataSearch:
         """
         Read only the first N lines (and cap total chars) to avoid huge I/O and
         long embeddings. Returns (text, truncated_flag).
+
+        VFS-aware: meta_path may be a full VFS URL (e.g. osfs:///mnt/media/...).
         """
         lines = []
         total = 0
         truncated = False
         try:
             print(f"Reading metadata file: {meta_path}")
-            with open(meta_path, 'r', encoding='utf-8', errors='ignore') as f:
-                for i, line in enumerate(f):
-                    if i >= self._MAX_META_LINES or total + len(line) > self._MAX_META_CHARS:
-                        truncated = True
-                        break
-                    lines.append(line)
-                    total += len(line)
+            base_url, path_in_fs = vfs.resolve_base_and_path_from_url(meta_path)
+            with fs.open_fs(base_url) as my_fs:
+                if not my_fs.exists(path_in_fs):
+                    return '', False
+                with my_fs.open(path_in_fs, 'rb') as f:
+                    for i, raw in enumerate(f):
+                        line = raw.decode('utf-8', errors='ignore')
+                        if i >= self._MAX_META_LINES or total + len(line) > self._MAX_META_CHARS:
+                            truncated = True
+                            break
+                        lines.append(line)
+                        total += len(line)
         except Exception as e:
             print(f"Error reading metadata file {meta_path}: {e}")
         return ''.join(lines), truncated
@@ -238,8 +247,11 @@ class MetadataSearch:
             method = getattr(descriptor, method_name)
             if method_name == 'describe_text':
                 # Read text content first; cap at 30 000 chars to stay within model context.
-                with open(file_path, 'r', encoding='utf-8', errors='ignore') as fh:
-                    text_content = fh.read(30_000)
+                # VFS-aware: file_path may be a VFS URL (e.g. osfs:///mnt/media/text/...).
+                _base_url, _path_in_fs = vfs.resolve_base_and_path_from_url(file_path)
+                with fs.open_fs(_base_url) as _text_fs:
+                    with _text_fs.open(_path_in_fs, 'rb') as fh:
+                        text_content = fh.read(30_000).decode('utf-8', errors='ignore')
                 description = method(text_content)
             else:
                 description = method(file_path)
@@ -302,8 +314,15 @@ class MetadataSearch:
                     full_description += f"{key}: {value}\n"
             full_description += "\n"
         
-        # Include file's special {file_name}.meta file content if it exists
-        if os.path.exists(file_path + '.meta'):
+        # Include file's special {file_name}.meta file content if it exists (VFS-aware)
+        try:
+            meta_base_url, meta_path_in_fs = vfs.resolve_base_and_path_from_url(file_path + '.meta')
+            with fs.open_fs(meta_base_url) as _meta_fs:
+                _meta_exists = _meta_fs.exists(meta_path_in_fs)
+        except Exception:
+            _meta_exists = False
+
+        if _meta_exists:
             full_description += f"# External metadata from '{file_name}.meta' file:\n"
             meta_content, _ = self._read_meta_snippet(file_path + '.meta')
             full_description += meta_content
@@ -312,7 +331,12 @@ class MetadataSearch:
         return full_description
     
     def _generate_embedding(self, file_path: str, media_folder: str) -> np.ndarray:
-        """Generates a metadata embedding for a single file."""
+        """Generates a metadata embedding for a single file.
+
+        This is called during metadata-based search (cache-only — no OmniDescriptor
+        or embedding-engine model is loaded). The only model it touches is the
+        TextEmbedder (Jina v3) for embedding the assembled description text.
+        """
         meta_text = self.generate_full_description(file_path, media_folder, generate_desc_if_not_in_cache=False)
 
         # OmniDescriptor (if used) has finished. Unload it before TextEmbedder
@@ -335,23 +359,30 @@ class MetadataSearch:
         Returns a list containing one embedding.
         """
         try:
-            # 1. Generate a robust cache key from file stats
-            file_stat = os.stat(file_path)
-            meta_path = file_path + '.meta'
-            if os.path.exists(meta_path):
-                try:
-                    meta_stat = os.stat(meta_path)
-                    meta_sig = f"{meta_stat.st_mtime}::{meta_stat.st_size}"
-                except Exception:
-                    meta_sig = "meta_stat_error"
-            else:
-                meta_sig = "no_meta"
+            # 1. Generate a robust cache key from file stats (VFS-aware).
+            base_url, path_in_fs = vfs.resolve_base_and_path_from_url(file_path)
+            with fs.open_fs(base_url) as my_fs:
+                info = my_fs.getinfo(path_in_fs, namespaces=['details'])
+                file_size = info.size
+                modified_sec = info.get('details', 'modified')
+                file_mtime = modified_sec if modified_sec is not None else 0
+
+                meta_path_in_fs = path_in_fs + '.meta'
+                if my_fs.exists(meta_path_in_fs):
+                    try:
+                        meta_info = my_fs.getinfo(meta_path_in_fs, namespaces=['details'])
+                        meta_modified = meta_info.get('details', 'modified')
+                        meta_mtime = meta_modified if meta_modified is not None else 0
+                        meta_sig = f"{meta_mtime}::{meta_info.size}"
+                    except Exception:
+                        meta_sig = "meta_stat_error"
+                else:
+                    meta_sig = "no_meta"
 
             cache_key = (
                 f"meta::{file_path}::"
-                f"{file_stat.st_mtime}::{file_stat.st_size}::"
+                f"{file_mtime}::{file_size}::"
                 f"meta::{meta_sig}::"
-                # f"auto_desc_hash::{self.omni_descriptor.model_hash if getattr(self.omni_descriptor, 'model_hash', None) else 'no_desc'}::"
                 f"alg::{self.get_algorithm_version()}"
             )
 
@@ -388,7 +419,7 @@ class MetadataSearch:
         total_files = len(file_paths)
         if total_files == 0:
             return []
-        
+
     
         # first pass: automatic descriptions
         start_time = time.time()
@@ -409,7 +440,7 @@ class MetadataSearch:
             if file_elapsed > max_elapsed:
                 max_elapsed = file_elapsed
 
-        # second pass: embeddings
+        # Second pass: generate embeddings (loads TextEmbedder for cache misses).
         start_time = time.time()
         all_files_meta_embeddings = []
         max_elapsed = 0.0
@@ -447,7 +478,7 @@ class MetadataSearch:
         self.omni_descriptor.unload()  
 
         beta = 16.0  # tune (4..20). Higher -> closer to max.
-        
+
         scores = []
         for file_chunks in file_embeddings:
             if not file_chunks:

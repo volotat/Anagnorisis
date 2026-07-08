@@ -268,6 +268,10 @@ class _OmniDescriptorImpl:
         # IL.Image.open doesn't understand 'osfs://...' URLs. So we need to [convert]/[dwnload to tmp] remote files to local paths
         local_path, temp_to_cleanup = vfs.resolve_to_local_path(image_path)
 
+        if not os.path.exists(local_path):
+            desc = f"[Error: file not found — {image_path}]"
+            raise ValueError(f"[OmniDescriptor] {desc}")
+
         try:
             image = Image.open(local_path).convert("RGB")
             # Resize if too large, keeping aspect ratio
@@ -310,6 +314,11 @@ class _OmniDescriptorImpl:
                 raise ValueError("Audio prompt not specified in config (cfg.omni.audio_prompt).")
 
         local_path, temp_to_cleanup = vfs.resolve_to_local_path(audio_path)
+
+        if not os.path.exists(local_path):
+            desc = f"[Error: file not found — {audio_path}]"
+            raise ValueError(f"[OmniDescriptor] {desc}")
+
         try:
             audio_input, _ = librosa.load(local_path, sr=16000, mono=True)
             msgs = [{"role": "user", "content": [prompt, audio_input]}]
@@ -370,6 +379,11 @@ class _OmniDescriptorImpl:
 
         # librosa can't open 'osfs://...' URLs; resolve once at the top.
         local_audio_path, temp_to_cleanup = vfs.resolve_to_local_path(audio_path)
+
+        if not os.path.exists(local_audio_path):
+            desc = f"[Error: file not found — {audio_path}]"
+            raise ValueError(f"[OmniDescriptor] {desc}")
+
         try:
             audio_full, sr = librosa.load(local_audio_path, sr=16000, mono=True)
             total_s = len(audio_full) / sr
@@ -466,6 +480,11 @@ class _OmniDescriptorImpl:
                 raise ValueError("Video prompt not specified in config (cfg.omni.video_prompt).")
 
         local_path, temp_to_cleanup = vfs.resolve_to_local_path(video_path)
+
+        if not os.path.exists(local_path):
+            desc = f"[Error: file not found — {video_path}]"
+            raise ValueError(f"[OmniDescriptor] {desc}")
+
         try:
             from minicpmo.utils import get_video_frame_audio_segments
             video_frames, _, _ = get_video_frame_audio_segments(local_path)
@@ -544,6 +563,11 @@ class _OmniDescriptorImpl:
         # cv2/ffmpeg/librosa can't open 'osfs://...' URLs — resolve to a real path
         # up front so all subprocess calls and file opens below use it.
         local_path, temp_to_cleanup = vfs.resolve_to_local_path(video_path)
+
+        if not os.path.exists(local_path):
+            desc = f"[Error: file not found — {video_path}]"
+            raise ValueError(f"[OmniDescriptor] {desc}")
+
         try:
             # ------------------------------------------------------------------
             # Probe video metadata
