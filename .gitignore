@@ -182,3 +182,5 @@ instances/*
 !instances/README.md
 !instances/example-*.yaml
 .env
+
+.vscode

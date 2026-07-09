@@ -123,7 +123,7 @@ class MetadataSearch:
 
     def process_query(self, query_text: str) -> np.ndarray:
         # Unload to free VRAM, if it was loaded for description generation
-        self.omni_descriptor.unload() 
+        # self.omni_descriptor.unload() 
         
         return self.text_embedder.embed_query(query_text)
 
@@ -209,7 +209,7 @@ class MetadataSearch:
         Returns an empty string if OmniDescriptor is unavailable or not yet initiated.
         """
 
-        print(f"Generating auto-description for {file_path} using OmniDescriptor...")
+        # print(f"Generating auto-description for {file_path} using OmniDescriptor...")
 
         # Try to get cached description first, using file hash and model hash for invalidation.
         descriptor = self.omni_descriptor
@@ -234,7 +234,7 @@ class MetadataSearch:
 
         # Unload TextEmbedder before starting OmniDescriptor — both are large GPU models
         # and cannot comfortably coexist in VRAM. TextEmbedder auto-restarts on next embed call.
-        self.text_embedder.unload()
+        # self.text_embedder.unload()
 
         # Initiate the descriptor if not already done (lazy loading). This will load the model into VRAM.
         if not getattr(descriptor, 'model_hash', None):
@@ -342,7 +342,7 @@ class MetadataSearch:
         # OmniDescriptor (if used) has finished. Unload it before TextEmbedder
         # reclaims VRAM to generate the embedding. OmniDescriptor auto-restarts
         # on the next describe call.
-        self.omni_descriptor.unload()
+        # self.omni_descriptor.unload()
 
         meta_embeddings = self.text_embedder.embed_text(meta_text)
         
@@ -475,7 +475,7 @@ class MetadataSearch:
             query_embedding_np = query_embedding
 
         # Unload to free VRAM, if it was loaded for description generation
-        self.omni_descriptor.unload()  
+        # self.omni_descriptor.unload()  
 
         beta = 16.0  # tune (4..20). Higher -> closer to max.
 
