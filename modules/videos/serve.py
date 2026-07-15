@@ -510,7 +510,14 @@ class VideoModuleServer:
             if missing_paths:
                 hash_to_path = {}
                 for p in missing_paths:
-                    h = self.videos_search_engine.get_file_hash(p)
+                    try:
+                        h = self.videos_search_engine.get_file_hash(p)
+                    except OSError:
+                        # File has been moved, deleted, or is unreadable since the
+                        # directory scan. Legacy hash-keyed recovery is best-effort
+                        # only — skip and move on.  No rating can be returned for a
+                        # file that can't be opened anyway.
+                        continue
                     if h is not None:
                         hash_to_path[h] = p
                 if hash_to_path:

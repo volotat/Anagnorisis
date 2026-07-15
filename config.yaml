@@ -230,7 +230,7 @@ image_embedder: # Used for image embedding in the images module.
   model_name: "google/siglip-base-patch16-224"
   device: cuda # Device for image embedding (cpu/cuda).
 text_embedder: # Used for embedding text in the meta-database search, the universal evaluator, and any other text-related processes. 
-  model_name: "jinaai/jina-embeddings-v3" 
+  model_name: "Qwen/Qwen3-Embedding-0.6B" 
   device: cuda # Device for text embedding (cpu/cuda).
   chunk_size: 384 # Max tokens per chunk
   chunk_overlap: 128 # Overlap between chunks

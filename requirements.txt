@@ -12,7 +12,8 @@ torchaudio
 send2trash
 Pillow
 requests
-transformers==4.51.0
+#transformers==4.51.0
+transformers>=5.5.0
 huggingface-hub
 tqdm
 opencv-python-headless
