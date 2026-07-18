@@ -150,9 +150,7 @@ class _ImageEmbedderImpl:
             return None
 
     def embed_image(self, image_path: str) -> np.ndarray:
-        """
-        Returns a L2-normalised image embedding of shape (1, embedding_dim).
-        """
+        """Returns a L2-normalised image embedding of shape (1, embedding_dim)."""
         if self.model is None:
             raise RuntimeError("ImageEmbedder not initiated.")
 
@@ -161,11 +159,27 @@ class _ImageEmbedderImpl:
             image = self._read_image(local_path)
             if image is None:
                 raise ValueError(f"Failed to read image: {image_path}")
-
             try:
                 inputs = self.processor(images=[image], padding="max_length", return_tensors="pt").to(self.device)
                 with torch.no_grad():
-                    features = self.model.get_image_features(**inputs)
+                    out = self.model.get_image_features(**inputs)
+
+                # transformers >= 5.5 may return BaseModelOutputWithPooling (or other
+                # output dataclass) instead of a raw tensor — unwrap defensively.
+                if isinstance(out, torch.Tensor):
+                    features = out
+                elif hasattr(out, "pooler_output") and out.pooler_output is not None:
+                    features = out.pooler_output
+                elif hasattr(out, "image_embeds") and out.image_embeds is not None:
+                    features = out.image_embeds
+                elif hasattr(out, "last_hidden_state") and out.last_hidden_state is not None:
+                    # Last-resort fallback: use the first token (typically CLS-equivalent)
+                    features = out.last_hidden_state[:, 0]
+                else:
+                    raise RuntimeError(
+                        f"Unexpected get_image_features() return type: {type(out).__name__}"
+                    )
+
                 features = features / features.norm(p=2, dim=-1, keepdim=True)
                 return features.cpu().numpy()  # shape (1, embedding_dim)
             except Exception as e:
@@ -178,16 +192,28 @@ class _ImageEmbedderImpl:
                 except OSError: pass
 
     def embed_text(self, text: str) -> np.ndarray:
-        """
-        Returns a L2-normalised text embedding of shape (embedding_dim,).
-        """
+        """Returns a L2-normalised text embedding of shape (embedding_dim,)."""
         if self.model is None:
             raise RuntimeError("ImageEmbedder not initiated.")
 
         try:
             inputs = self.processor(text=text, padding="max_length", return_tensors="pt").to(self.device)
             with torch.no_grad():
-                features = self.model.get_text_features(**inputs)
+                out = self.model.get_text_features(**inputs)
+
+            if isinstance(out, torch.Tensor):
+                features = out
+            elif hasattr(out, "pooler_output") and out.pooler_output is not None:
+                features = out.pooler_output
+            elif hasattr(out, "text_embeds") and out.text_embeds is not None:
+                features = out.text_embeds
+            elif hasattr(out, "last_hidden_state") and out.last_hidden_state is not None:
+                features = out.last_hidden_state[:, 0]
+            else:
+                raise RuntimeError(
+                    f"Unexpected get_text_features() return type: {type(out).__name__}"
+                )
+
             features = features / features.norm(p=2, dim=-1, keepdim=True)
             return features.squeeze(0).cpu().numpy()  # shape (embedding_dim,)
         except Exception as e:

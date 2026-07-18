@@ -82,6 +82,30 @@ class CommonFilters:
 
         self._fast_cache = TwoLevelCache(cache_dir=None) # Short lived RAM-only cache
 
+    def _read_cached_content_embeddings(self, file_paths):
+        """Read cached content embeddings for file_paths (CPU only, no subprocess).
+
+        Returns (cached_paths, cached_embs, missing_paths).
+        cached_embs is a list of torch.Tensor or numpy array embeddings, each (1, D).
+        """
+        cached_paths, cached_embs, missing_paths = [], [], []
+        for idx, fp in enumerate(file_paths):
+            try:
+                file_hash = self.engine.get_file_hash(fp)
+                key = f"{file_hash}::{self.engine.model_hash}{self.engine._get_model_hash_postfix()}"
+                emb = self.engine._fast_cache.get(key)
+                if emb is not None:
+                    cached_paths.append(fp)
+                    cached_embs.append(emb)
+                else:
+                    missing_paths.append(fp)
+
+                self.common_socket_events.show_search_status(
+                    f'Extracting embeddings from cache: {idx + 1}/{len(file_paths)}.')
+            except Exception:
+                missing_paths.append(fp)
+        return cached_paths, cached_embs, missing_paths
+
     def filter_by_file(self, all_files, text_query):
         target_path = text_query
         self.common_socket_events.show_search_status("Extracting embeddings")
@@ -159,21 +183,35 @@ class CommonFilters:
 
         if mode == 'semantic-content':
             self.common_socket_events.show_search_status("Extracting embeddings")
-            embeds_text = self.engine.process_text(text_query)
-            embeds_files = self.engine.process_files(all_files, callback=self.embedding_gathering_callback, media_folder=self.media_directory)
+            embeds_text = self.engine.query_embedder.embed_text(text_query)
+            embeds_files = self.engine.process_files(all_files, callback=self.embedding_gathering_callback, media_folder=self.media_directory, generate_embs_if_not_in_cache=True)
             files_similarity_scores = self.engine.compare(embeds_files, embeds_text)
-                
+
             self.common_socket_events.show_search_status("Sorting by relevance")
             scores = files_similarity_scores
 
+            # All the embeddings that are almost zero in all directions are missing files, so we want set the scores for them to None
+            # to make sure they are excluded from the presentations and calculated as "unindexed" files.
+            scores[np.all(embeds_files.cpu().numpy() < 1e-5, axis=1)] = np.nan
+
         if mode == 'semantic-metadata':
             self.common_socket_events.show_search_status("Extracting metadata embeddings")
-            embeds_meta_text = self.metadata_engine.process_query(text_query)
-            embeds_meta_files = self.metadata_engine.process_files(all_files, callback=self.meta_embedding_gathering_callback, media_folder=self.media_directory)
+            embeds_meta_text = self.metadata_engine.text_embedder_cpu.embed_text(text_query)
+            embeds_meta_files = self.metadata_engine.process_files(all_files, callback=self.meta_embedding_gathering_callback, media_folder=self.media_directory, generate_embs_if_not_in_cache=True)
+            # embeds_meta_text = embeds_meta_text[None,...] # Wierd hack fix later
             meta_similarity_scores = self.metadata_engine.compare(embeds_meta_files, embeds_meta_text)
 
             self.common_socket_events.show_search_status("Sorting by relevance")
             scores = meta_similarity_scores
+
+            # Mark unindexed files (zero/empty chunks from process_files when
+            # generate_embs_if_not_in_cache=False) as NaN so they are excluded.
+            for i, file_chunks in enumerate(embeds_meta_files):
+                if not file_chunks:
+                    scores[i] = np.nan
+                    continue
+                if all(np.all(np.abs(chunk) < 1e-5) for chunk in file_chunks):
+                    scores[i] = np.nan
 
         return scores
 

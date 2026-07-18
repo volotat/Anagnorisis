@@ -170,6 +170,7 @@ static/tmp/
 static/discarded/
 experiments/
 old_code/
+research/
 
 docker-compose-k.yaml
 docker-compose-m.yaml

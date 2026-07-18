@@ -1,5 +1,21 @@
 # Change History
 
+
+### Version 0.4.4 (18.07.2026)
+*  **Search Performance & Reliability:**
+    *   Search queries are now embedded on CPU directly in the main process, so searching no longer competes with background tasks (rating, description, embedding) for GPU time. The app stays responsive even while heavy background work is running. (This feature is not yet fully complete, though)
+    *   "Content-based" semantic search was silently returning text-search results after the recent refactor and now correctly produces real semantic matches again.
+    *   "Find similar" search (asking for files similar to a given file) was failing for files on remote or VFS-mounted drives and silently falling back to a plain text search. Fixed.
+*  **Background Embedding Computation:**
+    *   Images module now has a new automatic background scheduler that computes missing embeddings every 10 minutes (configurable via `embedding_update_interval_minutes` and `embedding_update_batch_size` in `config.yaml`). Files added to your library are indexed in the background so they become searchable almost immediately, instead of waiting for the next manual batch run.
+*  **Bug Fixes:**
+    *   "Show full search description" was returning an empty modal. Now displays the full metadata payload used to compute the file's search embeddings.
+    *   Files with no computed embeddings yet (e.g. newly added files) were appearing in the result list as if they had a real score, making sort-by-rating unreliable. Such files are now hidden from the list and counted separately so the user can see what is still being processed in the background.
+    *   TwoLevelCache was reloading the same disk shard on every read, causing unnecessary repeated I/O. Added an in-memory cache so after the first read of a shard, subsequent reads are served from RAM.
+*  **UI & Themes:**
+    *   Added a new "Matrix" theme with falling katakana rain, green-on-black phosphor colors and occasional glitch bursts on images. Available alongside the existing Light, Dark and Solarized options.
+    *   Status bar now reports `"Showed X of Y files in Zs. N file(s) still unindexed."` when some files in a folder are still being indexed in the background, making it clearer what is happening.
+
 ### Version 0.4.3 (15.07.2026) 
 *  **Remote Severs Support:**
     *   Now the project could also fetch and play data from the remote servers. For now the remote servers could only be added manually by editing `project_data/config.yaml` file. To support remote servers all four major modules were completely refactored with use of [pyfilesystem2](https://github.com/pyfilesystem/pyfilesystem2) library in replace of typical `os` based file manipulation commands. Because of this major change external modules (WebSearch, YouTube) will not be able to work properly until the new way of working with files is adapted there. 

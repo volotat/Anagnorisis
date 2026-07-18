@@ -95,7 +95,8 @@ class FileGridComponent {
     previewContainer.style.justifyContent = 'center';
     previewContainer.style.alignItems = 'center';
     previewContainer.style.position = 'relative';
-    previewContainer.style.border = "2px solid #bbb";
+    previewContainer.style.border = "2px solid rgba(187, 187, 187, 0.14)";
+    previewContainer.style.borderRadius = "3px";
 
     if (this.renderPreviewContent) {
       const previewContent = this.renderPreviewContent(fileData);

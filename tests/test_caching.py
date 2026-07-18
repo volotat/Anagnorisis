@@ -174,6 +174,35 @@ class TestDiskCache:
         cache.set('k', 'v2')
         assert cache.get('k') == 'v2'
 
+    def test_disk_cache_shard_cache_survives_corrupted_disk(self, tmp_path):
+        """After a shard is read once, subsequent get() must NOT touch disk.
+        Demonstrated by corrupting the on-disk file mid-run and checking that
+        cached entries are still served correctly."""
+        cache = DiskCache(
+            cache_dir=str(tmp_path),
+            ttl_seconds=3600,
+            write_back=False,
+        )
+        cache.set('k1', 'v1')
+        cache.set('k2', 'v2')
+
+        # First read populates the in-memory shard cache.
+        assert cache.get('k1') == 'v1'
+        shard = DiskCache._shard_for_key('k1')
+        assert shard in cache._shard_data, (
+            "Expected shard to be cached in memory after first read"
+        )
+
+        # Corrupt the disk file. If get() re-reads from disk it would either
+        # raise (pickle error) or return None — both would fail the test.
+        shard_path = os.path.join(str(tmp_path), f"{shard:02x}.pkl")
+        with open(shard_path, 'wb') as f:
+            f.write(b'this is not valid pickle data')
+
+        # Subsequent reads must still work because they hit the in-memory cache.
+        assert cache.get('k1') == 'v1'
+        assert cache.get('k2') == 'v2'
+
 
 # ===========================================================================
 # TwoLevelCache

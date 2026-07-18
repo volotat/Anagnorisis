@@ -1,0 +1,485 @@
+/* =====================================================================
+   theme_matrix.css — "Matrix" theme for Anagnorisis
+   Loaded after themes.css. Fully self-contained: every rule is scoped
+   to [data-theme="matrix"] so no other theme is affected.
+
+   Companion script: /static/js/matrix_rain.js — renders the falling
+   katakana rain on a fixed full-screen canvas (z-index:-1) and applies
+   rare glitch bursts to visible images. The script only activates when
+   data-theme="matrix" is set on <html>.
+
+   DESIGN NOTES
+   ────────────
+   • Bulma's built-in dark theme is keyed to [data-theme=dark] only, so
+     the full dark-scheme variable ladder is replicated here first
+     (same structure as Bulma 1.0's dark block), then re-hued to green.
+   • Surfaces use TRANSLUCENT compound colors (rgba) so the rain canvas
+     glows through everything: page bg, navbar, boxes, cards, modals,
+     grid cells. Only <html> itself keeps an opaque near-black backdrop
+     (the canvas sits between it and the content).
+   • Bulma computes .has-background-light as an opaque hsl(...) with
+     !important, so grid cells (FileGridComponent uses that helper) get
+     an explicit translucent override below.
+   ===================================================================== */
+
+
+[data-theme="matrix"] {
+  color-scheme: dark;
+  --bulma-scheme-brightness: dark;
+
+  /* ── Scheme hue: muted green so surfaces are dark-jade, not neon ── */
+  --bulma-scheme-h: 140deg;
+  --bulma-scheme-s: 28%;
+
+  /* ── Dark lightness ladder (mirrors Bulma 1.0 [data-theme=dark]) ── */
+  --bulma-scheme-main-l: 7%;
+  --bulma-scheme-main-bis-l: 9%;
+  --bulma-scheme-main-ter-l: 11%;
+  --bulma-soft-l: 18%;
+  --bulma-bold-l: 88%;
+  --bulma-soft-invert-l: 88%;
+  --bulma-bold-invert-l: 18%;
+  --bulma-background-l: 13%;
+  --bulma-border-weak-l: 22%;
+  --bulma-border-l: 26%;
+  --bulma-text-weak-l: 55%;
+  --bulma-text-l: 72%;
+  --bulma-text-strong-l: 90%;
+  --bulma-text-title-l: 96%;
+  --bulma-hover-background-l-delta: 5%;
+  --bulma-active-background-l-delta: 10%;
+  --bulma-hover-border-l-delta: 10%;
+  --bulma-active-border-l-delta: 20%;
+  --bulma-hover-color-l-delta: 5%;
+  --bulma-active-color-l-delta: 10%;
+
+  /* Green-tinted text (h/s drive all text rungs) */
+  --bulma-text-h: 140deg;
+  --bulma-text-s: 16%;
+
+  /* Shadows glow green instead of dropping black */
+  --bulma-shadow-h: 140deg;
+  --bulma-shadow-s: 90%;
+  --bulma-shadow-l: 55%;
+  --bulma-shadow:
+    0 0.5em 1.5em -0.125em hsla(var(--bulma-shadow-h), var(--bulma-shadow-s), var(--bulma-shadow-l), 0.10),
+    0 0 0 1px hsla(var(--bulma-shadow-h), var(--bulma-shadow-s), var(--bulma-shadow-l), 0.06);
+
+  /* ── on-scheme lightness (from Bulma dark, kept as-is) ── */
+  --bulma-white-on-scheme-l: 100%;
+  --bulma-black-on-scheme-l: 0%;
+  --bulma-light-on-scheme-l: 96%;
+  --bulma-dark-on-scheme-l: 56%;
+  --bulma-text-on-scheme-l: 54%;
+
+  /* ── Recompute compound scheme/text/border vars (Bulma dark does the
+       same — the :root versions of some of these are literals) ── */
+  --bulma-background-hover: hsl(var(--bulma-scheme-h), var(--bulma-scheme-s), calc(var(--bulma-background-l) + var(--bulma-hover-background-l-delta)));
+  --bulma-background-active: hsl(var(--bulma-scheme-h), var(--bulma-scheme-s), calc(var(--bulma-background-l) + var(--bulma-active-background-l-delta)));
+  --bulma-border-weak: hsl(var(--bulma-scheme-h), var(--bulma-scheme-s), var(--bulma-border-weak-l));
+  --bulma-border: hsl(var(--bulma-scheme-h), var(--bulma-scheme-s), var(--bulma-border-l));
+  --bulma-border-hover: hsl(var(--bulma-scheme-h), var(--bulma-scheme-s), calc(var(--bulma-border-l) + var(--bulma-hover-border-l-delta)));
+  --bulma-border-active: hsl(var(--bulma-scheme-h), var(--bulma-scheme-s), calc(var(--bulma-border-l) + var(--bulma-active-border-l-delta)));
+  --bulma-text-weak: hsl(var(--bulma-text-h), var(--bulma-text-s), var(--bulma-text-weak-l));
+  --bulma-text: hsl(var(--bulma-text-h), var(--bulma-text-s), var(--bulma-text-l));
+  --bulma-text-strong: hsl(var(--bulma-text-h), var(--bulma-text-s), var(--bulma-text-strong-l));
+  --bulma-scheme-invert-ter: hsl(var(--bulma-scheme-h), var(--bulma-scheme-s), var(--bulma-scheme-invert-ter-l));
+  --bulma-scheme-invert-bis: hsl(var(--bulma-scheme-h), var(--bulma-scheme-s), var(--bulma-scheme-invert-bis-l));
+  --bulma-scheme-invert: hsl(var(--bulma-scheme-h), var(--bulma-scheme-s), var(--bulma-scheme-invert-l));
+
+  /* ── TRANSLUCENT SURFACES — the whole point of this theme.
+       Every main surface lets the rain canvas shine through a little.
+       (Hover/active states above stay opaque hsl — intentional, they
+       are transient and need to pop.) ── */
+  --bulma-scheme-main:     rgba(7, 22, 13, 0.70);   /* page panels, navbar, boxes  */
+  --bulma-scheme-main-bis: rgba(9, 27, 16, 0.70);
+  --bulma-scheme-main-ter: rgba(12, 33, 20, 0.70);
+  --bulma-background:      rgba(17, 44, 26, 0.50);  /* code bg, wells              */
+
+  /* <html> backdrop behind the rain canvas must stay OPAQUE */
+  --bulma-body-background-color: #020804;
+
+  /* ── Accents — Matrix phosphor greens; warning/danger keep their
+       semantic hues (there is a red pill, after all) ── */
+
+  /* Primary — signature Matrix green, dark text on bright green */
+  --bulma-primary-h: 135deg;
+  --bulma-primary-s: 85%;
+  --bulma-primary-l: 45%;
+  --bulma-primary-on-scheme-l: 55%;
+  --bulma-primary-invert-l: 6%;
+  --bulma-primary-invert: hsla(135deg, 60%, 6%, 1);
+  --bulma-primary: hsla(var(--bulma-primary-h), var(--bulma-primary-s), var(--bulma-primary-l), 1);
+  --bulma-primary-on-scheme: hsla(var(--bulma-primary-h), var(--bulma-primary-s), var(--bulma-primary-on-scheme-l), 1);
+
+  /* Link — brighter spring green */
+  --bulma-link-h: 145deg;
+  --bulma-link-s: 90%;
+  --bulma-link-l: 58%;
+  --bulma-link-on-scheme-l: 62%;
+  --bulma-link: hsla(var(--bulma-link-h), var(--bulma-link-s), var(--bulma-link-l), 1);
+  --bulma-link-on-scheme: hsla(var(--bulma-link-h), var(--bulma-link-s), var(--bulma-link-on-scheme-l), 1);
+  --bulma-link-text: hsl(var(--bulma-link-h), var(--bulma-link-s), var(--bulma-link-on-scheme-l));
+  --bulma-link-text-hover: hsl(var(--bulma-link-h), var(--bulma-link-s), calc(var(--bulma-link-on-scheme-l) + var(--bulma-hover-color-l-delta)));
+  --bulma-link-text-active: hsl(var(--bulma-link-h), var(--bulma-link-s), calc(var(--bulma-link-on-scheme-l) + var(--bulma-active-color-l-delta)));
+
+  /* Info — teal-green terminal cyan */
+  --bulma-info-h: 168deg;
+  --bulma-info-s: 70%;
+  --bulma-info-l: 55%;
+  --bulma-info-on-scheme-l: 60%;
+  --bulma-info: hsla(var(--bulma-info-h), var(--bulma-info-s), var(--bulma-info-l), 1);
+  --bulma-info-on-scheme: hsla(var(--bulma-info-h), var(--bulma-info-s), var(--bulma-info-on-scheme-l), 1);
+
+  /* Success — pure green, slightly brighter than primary */
+  --bulma-success-h: 120deg;
+  --bulma-success-s: 75%;
+  --bulma-success-l: 52%;
+  --bulma-success-on-scheme-l: 58%;
+  --bulma-success: hsla(var(--bulma-success-h), var(--bulma-success-s), var(--bulma-success-l), 1);
+  --bulma-success-on-scheme: hsla(var(--bulma-success-h), var(--bulma-success-s), var(--bulma-success-on-scheme-l), 1);
+
+  /* Warning — amber, boosted for the dark bg (as in the dark theme) */
+  --bulma-warning-l: 62%;
+  --bulma-warning-on-scheme-l: 62%;
+  --bulma-warning: hsla(var(--bulma-warning-h), var(--bulma-warning-s), var(--bulma-warning-l), 1);
+  --bulma-warning-on-scheme: hsla(var(--bulma-warning-h), var(--bulma-warning-s), var(--bulma-warning-on-scheme-l), 1);
+
+  /* Danger — red pill, boosted for the dark bg */
+  --bulma-danger-l: 64%;
+  --bulma-danger-on-scheme-l: 64%;
+  --bulma-danger: hsla(var(--bulma-danger-h), var(--bulma-danger-s), var(--bulma-danger-l), 1);
+  --bulma-danger-on-scheme: hsla(var(--bulma-danger-h), var(--bulma-danger-s), var(--bulma-danger-on-scheme-l), 1);
+
+  /* ── "is-light" surfaces (navbar is-light, grid cells, light buttons)
+       — translucent dark jade with bright green-white text ── */
+  --bulma-light-h: 140deg;
+  --bulma-light-s: 35%;
+  --bulma-light-l: 15%;
+  --bulma-light:      rgba(22, 58, 34, 0.35);
+  --bulma-light-base: rgba(22, 58, 34, 0.35);
+  --bulma-light-invert-l: 82%;
+  --bulma-light-invert: hsla(140deg, 30%, 82%, 1);
+  --bulma-light-on-scheme-l: 85%;
+  --bulma-light-on-scheme: hsla(140deg, 30%, 85%, 1);
+
+  /* "is-{color} is-light" combos — dark tinted surface + bright accent
+     text (same fix the dark theme needs, see themes.css) */
+  --bulma-primary-light-l: 16%;
+  --bulma-primary-light: hsla(var(--bulma-primary-h), var(--bulma-primary-s), 16%, 0.75);
+  --bulma-primary-light-invert-l: 55%;
+  --bulma-primary-light-invert: hsla(var(--bulma-primary-h), var(--bulma-primary-s), 55%, 1);
+
+  --bulma-link-light-l: 16%;
+  --bulma-link-light: hsla(var(--bulma-link-h), var(--bulma-link-s), 16%, 0.75);
+  --bulma-link-light-invert-l: 62%;
+  --bulma-link-light-invert: hsla(var(--bulma-link-h), var(--bulma-link-s), 62%, 1);
+
+  --bulma-info-light-l: 16%;
+  --bulma-info-light: hsla(var(--bulma-info-h), var(--bulma-info-s), 16%, 0.75);
+  --bulma-info-light-invert-l: 60%;
+  --bulma-info-light-invert: hsla(var(--bulma-info-h), var(--bulma-info-s), 60%, 1);
+
+  --bulma-success-light-l: 16%;
+  --bulma-success-light: hsla(var(--bulma-success-h), var(--bulma-success-s), 16%, 0.75);
+  --bulma-success-light-invert-l: 58%;
+  --bulma-success-light-invert: hsla(var(--bulma-success-h), var(--bulma-success-s), 58%, 1);
+
+  --bulma-warning-light-l: 16%;
+  --bulma-warning-light: hsla(var(--bulma-warning-h), var(--bulma-warning-s), 16%, 0.75);
+  --bulma-warning-light-invert-l: 62%;
+  --bulma-warning-light-invert: hsla(var(--bulma-warning-h), var(--bulma-warning-s), 62%, 1);
+
+  --bulma-danger-light-l: 16%;
+  --bulma-danger-light: hsla(var(--bulma-danger-h), var(--bulma-danger-s), 16%, 0.75);
+  --bulma-danger-light-invert-l: 64%;
+  --bulma-danger-light-invert: hsla(var(--bulma-danger-h), var(--bulma-danger-s), 64%, 1);
+
+  /* Focus ring / code colors follow the green scheme */
+  --bulma-focus-h: var(--bulma-link-h);
+  --bulma-focus-s: var(--bulma-link-s);
+  --bulma-focus-l: var(--bulma-link-l);
+  --bulma-code: hsl(145deg, 80%, 65%);
+  --bulma-code-background: var(--bulma-background);
+  --bulma-pre: var(--bulma-text);
+  --bulma-pre-background: var(--bulma-background);
+}
+
+
+/* Standalone pages (e.g. loading.html) give <body> its own background;
+   a body background paints OVER the z-index:-1 rain canvas, so keep it
+   transparent — the opaque backdrop comes from <html> anyway. */
+[data-theme="matrix"] body {
+  background-color: transparent;
+}
+
+
+/* ── Rain canvas (created/removed by matrix_rain.js) ────────────────
+   Fixed behind all content, above the opaque <html> backdrop.
+   scaleX(-1) mirrors the glyphs horizontally — like the film's rain. */
+
+[data-theme="matrix"] #matrix-rain-canvas {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: -1;
+  pointer-events: none;
+  transform: scaleX(-1);
+}
+
+
+/* ── Grid cells: Bulma's .has-background-light computes an OPAQUE
+   hsl(...) with !important, so FileGridComponent cells need this
+   explicit translucent override to let the rain show through. ── */
+
+[data-theme="matrix"] .has-background-light {
+  background-color: rgba(24, 64, 36, 0.28) !important;
+}
+
+/* FileGridComponent preview frame (inline border needs !important) */
+[data-theme="matrix"] .file-preview-container {
+  border-color: rgba(64, 255, 128, 0.14) !important;
+}
+
+
+/* ── Menu lists (folder tree, wiki sidebar): Bulma paints every item
+   with an opaque computed hsl(). Replicate its formula with an alpha
+   channel — fully transparent at rest, solid on hover/selection so
+   the interaction feedback stays crisp. ── */
+
+[data-theme="matrix"] .menu-list .menu-item,
+[data-theme="matrix"] .menu-list a,
+[data-theme="matrix"] .menu-list button {
+  background-color: hsla(
+    var(--bulma-menu-item-h),
+    var(--bulma-menu-item-s),
+    calc(var(--bulma-menu-item-background-l) + var(--bulma-menu-item-background-l-delta)),
+    var(--matrix-menu-item-a, 0)
+  );
+}
+
+[data-theme="matrix"] .menu-list .menu-item:hover,
+[data-theme="matrix"] .menu-list a:hover,
+[data-theme="matrix"] .menu-list button:hover,
+[data-theme="matrix"] .menu-list .menu-item:active,
+[data-theme="matrix"] .menu-list a:active,
+[data-theme="matrix"] .menu-list button:active {
+  --matrix-menu-item-a: 0.85;
+}
+
+[data-theme="matrix"] .menu-list .menu-item.is-active,
+[data-theme="matrix"] .menu-list .menu-item.is-selected,
+[data-theme="matrix"] .menu-list a.is-active,
+[data-theme="matrix"] .menu-list a.is-selected,
+[data-theme="matrix"] .menu-list button.is-active,
+[data-theme="matrix"] .menu-list button.is-selected {
+  --matrix-menu-item-a: 1;
+}
+
+
+/* ── Fixed "chrome" surfaces — top navbar, music song-control panel
+   (also a .navbar), playlist side panel, floating action box. These
+   sit over scrolling content, so they are less transparent than the
+   regular surfaces and frost everything underneath with a backdrop
+   blur to keep their text readable at all times. ── */
+
+[data-theme="matrix"] .navbar {
+  --bulma-navbar-background-color: rgba(5, 17, 10, 0.82);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+/* Touch layout: the expanded burger menu paints its own background
+   below the bar and needs its own frost */
+@media screen and (max-width: 1023px) {
+  [data-theme="matrix"] .navbar-menu {
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+  }
+}
+
+[data-theme="matrix"] .playlist-panel,
+[data-theme="matrix"] #files_actions {
+  background: rgba(5, 17, 10, 0.85);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+
+/* ── Floating surfaces: translucent + blur so text stays readable
+   while the rain still ghosts through ── */
+
+[data-theme="matrix"] .navbar-dropdown,
+[data-theme="matrix"] .dropdown-content {
+  background-color: rgba(5, 18, 11, 0.88);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  border: 1px solid rgba(0, 255, 65, 0.15);
+}
+
+[data-theme="matrix"] .modal-card-head,
+[data-theme="matrix"] .modal-card-foot {
+  background-color: rgba(8, 26, 15, 0.85);
+}
+
+[data-theme="matrix"] .modal-card-body {
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+[data-theme="matrix"] .modal-background {
+  background-color: rgba(1, 5, 3, 0.65);
+}
+
+/* Inputs: readable translucent wells with a faint phosphor border */
+[data-theme="matrix"] .input,
+[data-theme="matrix"] .textarea,
+[data-theme="matrix"] .select select {
+  background-color: rgba(8, 24, 14, 0.55);
+}
+
+/* Tables and panels inherit translucency instead of opaque scheme bg */
+[data-theme="matrix"] .table {
+  --bulma-table-background-color: rgba(10, 30, 18, 0.35);
+}
+
+/* Navbar: hairline phosphor separation from the page */
+[data-theme="matrix"] .navbar {
+  box-shadow: 0 1px 0 0 rgba(0, 255, 65, 0.18);
+}
+
+/* Text selection glows green */
+[data-theme="matrix"] ::selection {
+  background: rgba(0, 255, 65, 0.35);
+  color: #eafff0;
+}
+
+/* Headings get the faintest CRT glow — subtle, not annoying */
+[data-theme="matrix"] .title {
+  text-shadow: 0 0 8px rgba(0, 255, 65, 0.25);
+}
+
+
+/* ── Images: gentle dim + desaturation so media blends with the dark
+   theme without distorting colors (no hue shift — images stay
+   natural); hover restores true colors (same pattern as Solarized). ── */
+
+[data-theme="matrix"] img {
+  filter: brightness(0.78) saturate(0.55);
+  transition: filter 0.25s ease;
+}
+
+[data-theme="matrix"] img:hover {
+  filter: none;
+}
+
+
+/* ── Image glitch burst — matrix_rain.js adds .matrix-glitching to a
+   random visible image every so often, then removes it. steps(1)
+   makes the frames snap instead of tween: RGB-split shadows, slice
+   clips and channel jumps for ~0.5s. ── */
+
+[data-theme="matrix"] img.matrix-glitching {
+  animation: matrix-glitch-img 0.5s steps(1, end) 1 both;
+}
+
+@keyframes matrix-glitch-img {
+  0% {
+    transform: translate(-3px, 0) skewX(-1.5deg);
+    filter: drop-shadow(3px 0 0 rgba(0, 255, 65, 0.8)) drop-shadow(-3px 0 0 rgba(255, 0, 70, 0.6)) saturate(2);
+  }
+  14% {
+    transform: translate(3px, -2px);
+    clip-path: inset(12% 0 64% 0);
+    filter: hue-rotate(90deg) saturate(4) brightness(1.6);
+  }
+  28% {
+    transform: translate(-2px, 1px) skewX(2deg);
+    clip-path: none;
+    filter: drop-shadow(-4px 0 0 rgba(0, 255, 65, 0.9)) contrast(1.6);
+  }
+  42% {
+    transform: translate(0, 0);
+    clip-path: inset(58% 0 8% 0);
+    filter: brightness(2.2) saturate(0.2);
+  }
+  56% {
+    transform: translate(4px, 0) skewX(-2.5deg);
+    clip-path: none;
+    filter: drop-shadow(2px 0 0 rgba(255, 0, 70, 0.7)) drop-shadow(-2px 0 0 rgba(0, 180, 255, 0.7));
+  }
+  72% {
+    transform: translate(-1px, 2px);
+    clip-path: inset(30% 0 34% 0);
+    filter: hue-rotate(120deg) saturate(3);
+  }
+  86% {
+    transform: translate(1px, -1px);
+    clip-path: none;
+    filter: brightness(1.3) contrast(1.2);
+  }
+  100% {
+    transform: none;
+    clip-path: none;
+  }
+}
+
+
+/* ── Prism.js token colors — phosphor terminal flavor ─────────────── */
+
+[data-theme="matrix"] code[class*="language-"],
+[data-theme="matrix"] pre[class*="language-"] {
+  color: #9fdcb4;
+  background: rgba(3, 14, 8, 0.75);
+  text-shadow: none;
+}
+
+[data-theme="matrix"] :not(pre) > code[class*="language-"] {
+  background: rgba(3, 14, 8, 0.75);
+}
+
+[data-theme="matrix"] .token.comment,
+[data-theme="matrix"] .token.block-comment,
+[data-theme="matrix"] .token.prolog,
+[data-theme="matrix"] .token.doctype,
+[data-theme="matrix"] .token.cdata          { color: #4e7a5c; font-style: italic; }
+
+[data-theme="matrix"] .token.punctuation    { color: #6fae87; }
+
+[data-theme="matrix"] .token.keyword,
+[data-theme="matrix"] .token.atrule,
+[data-theme="matrix"] .token.selector,
+[data-theme="matrix"] .token.important      { color: #00e653; }
+
+[data-theme="matrix"] .token.string,
+[data-theme="matrix"] .token.char,
+[data-theme="matrix"] .token.attr-value,
+[data-theme="matrix"] .token.inserted       { color: #46e08a; }
+
+[data-theme="matrix"] .token.function,
+[data-theme="matrix"] .token.function-name,
+[data-theme="matrix"] .token.class-name     { color: #7dffab; }
+
+[data-theme="matrix"] .token.tag,
+[data-theme="matrix"] .token.namespace      { color: #37d67a; }
+
+[data-theme="matrix"] .token.attr-name,
+[data-theme="matrix"] .token.property,
+[data-theme="matrix"] .token.builtin,
+[data-theme="matrix"] .token.variable       { color: #a8f0c0; }
+
+[data-theme="matrix"] .token.boolean,
+[data-theme="matrix"] .token.number,
+[data-theme="matrix"] .token.constant,
+[data-theme="matrix"] .token.symbol         { color: #ffe66d; }
+
+[data-theme="matrix"] .token.regex,
+[data-theme="matrix"] .token.deleted        { color: #ff6b6b; }
+
+[data-theme="matrix"] .token.operator,
+[data-theme="matrix"] .token.entity,
+[data-theme="matrix"] .token.url            { color: #9fdcb4; }
+
+[data-theme="matrix"] .token.bold           { font-weight: bold; }
+[data-theme="matrix"] .token.italic         { font-style: italic; }

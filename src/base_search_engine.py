@@ -329,6 +329,11 @@ class BaseSearchEngine(ABC):
             self._fast_cache.set(cache_key, metadata)
 
         return metadata
+    
+    def make_embedding_cache_key(self, file_path: str) -> str:
+        """Public version of the cache key used by process_files() — lets
+        schedulers probe for missing embeddings without duplicating the formula."""
+        return f"{file_path}::{self.model_hash}{self._get_model_hash_postfix()}"
 
     def _process_batch_files(self, file_paths: List[str], **kwargs) -> List[torch.Tensor]:
         """
@@ -347,7 +352,7 @@ class BaseSearchEngine(ABC):
             results.append(emb)
         return results
     
-    def process_files(self, file_paths: list[str], callback=None, media_folder: str = None, batch_size: int = 1, **kwargs) -> torch.Tensor:
+    def process_files(self, file_paths: list[str], callback=None, media_folder: str = None, batch_size: int = 1, generate_embs_if_not_in_cache: bool = True, **kwargs) -> torch.Tensor:
         """
         Processes files with per-file caching and batched inference for cache misses.
         Returns a single tensor [N, D]. Failed files get zeros([1, D]).
@@ -363,46 +368,44 @@ class BaseSearchEngine(ABC):
         # 1) Build items with hashes and check cache
         items = []
         for i, path in enumerate(file_paths):
-            try:
-                file_hash = self.get_file_hash(path)
-            except Exception:
-                # If hash fails, force compute with a synthetic key
-                file_hash = f"INVALID::{path}"
-            cache_key = f"{file_hash}::{self.model_hash}{self._get_model_hash_postfix()}"
+
+            cache_key = self.make_embedding_cache_key(path)
             cached = self._fast_cache.get(cache_key)
             if cached is not None:
                 outputs[i] = cached  # expected to be CPU tensor
                 if callback:
                     callback(sum(1 for o in outputs if o is not None), N)
             else:
+                outputs[i] = None
                 items.append((i, path, cache_key))
 
         # 2) Batch process only misses
-        for start in range(0, len(items), batch_size):
-            batch = items[start:start + batch_size]
-            idxs = [i for (i, _, _) in batch]
-            paths = [p for (_, p, _) in batch]
-            keys = [k for (_, _, k) in batch]
+        if generate_embs_if_not_in_cache and items:
+            for start in range(0, len(items), batch_size):
+                batch = items[start:start + batch_size]
+                idxs = [i for (i, _, _) in batch]
+                paths = [p for (_, p, _) in batch]
+                keys = [k for (_, _, k) in batch]
 
-            try:
-                batch_embs = self._process_batch_files(paths, media_folder=media_folder, **kwargs)
-            except Exception:
-                # catastrophic batch failure
-                batch_embs = [None] * len(paths)
+                try:
+                    batch_embs = self._process_batch_files(paths, media_folder=media_folder, **kwargs)
+                except Exception:
+                    # catastrophic batch failure
+                    batch_embs = [None] * len(paths)
 
-            # 3) Normalize results, cache, and place in outputs
-            for j, emb in enumerate(batch_embs):
-                out_idx = idxs[j]
-                key = keys[j]
-                if emb is None:
-                    emb = torch.zeros(1, self.embedding_dim)
-                # Move to CPU for caching; keep single-file [1, D] shape
-                emb_cpu = emb.detach().to("cpu")
-                if emb is not None: 
-                    self._fast_cache.set(key, emb_cpu)
-                outputs[out_idx] = emb_cpu
-                if callback:
-                    callback(sum(1 for o in outputs if o is not None), N)
+                # 3) Normalize results, cache, and place in outputs
+                for j, emb in enumerate(batch_embs):
+                    out_idx = idxs[j]
+                    key = keys[j]
+                    if emb is None:
+                        emb = torch.zeros(1, self.embedding_dim)
+                    # Move to CPU for caching; keep single-file [1, D] shape
+                    emb_cpu = emb.detach().to("cpu")
+                    if emb is not None: 
+                        self._fast_cache.set(key, emb_cpu)
+                    outputs[out_idx] = emb_cpu
+                    if callback:
+                        callback(sum(1 for o in outputs if o is not None), N)
 
         # 4) Safety: fill any remaining gaps with zeros
         for i in range(N):
@@ -453,8 +456,9 @@ class BaseSearchEngine(ABC):
 
         # Similarity is computed on CPU — the result is .numpy() anyway,
         # and the main process has no model to justify a CUDA context.
-        embeds_target = embeds_target.cpu().float()
-        embeds_query = embeds_query.cpu().float()
+        embeds_target = embeds_target.cpu().float() 
+        embeds_query = torch.from_numpy(embeds_query)  # Query is now calculated in CPU in the first place, no need to convert
+        # embeds_query = embeds_query.cpu().float()
 
         # Normalize features
         embeds_target = embeds_target / embeds_target.norm(p=2, dim=-1, keepdim=True)

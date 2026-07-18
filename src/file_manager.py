@@ -741,11 +741,10 @@ class FileManager:
             # use first word as filter name
             filter_name = text_query
 
-
             # If there is a file path used as a query, this file exists and within specified formats, sort files by similarity to that file
-            if os.path.isfile(text_query) and text_query.lower().endswith(tuple(self.media_formats)):
+            if vfs.is_file_exists(text_query) and text_query.lower().endswith(tuple(self.media_formats)):
                 if filters["by_file"] is not None:
-                    scores = filters["by_file"](all_files, text_query) # Set the filter for other components
+                    scores = filters["by_file"](all_files, text_query)
             
             # Custom sorts
             elif filter_name and (filter_name not in ["by_file", "by_text"]) and (filter_name in filters):
@@ -785,12 +784,24 @@ class FileManager:
         else:
             raise ValueError("order must be 'most-relevant' or 'least-relevant'")
 
-        # Filter out any None or NaN scores and files, keeping only valid pairs
+        # Filter out any None / NaN / -1 scores and files, keeping only valid pairs.
+        # -1 marks unindexed files (set by CommonFilters in semantic modes); we
+        # also tally them so the user can see what the background scheduler is
+        # still working on.
+        unindexed_count = sum(
+            1 for s in scores
+            if isinstance(s, (int, float)) and s == -1
+        )
+        
         def is_valid_pair(i):
             score = scores[i]
             file_path = all_files[i]
-            return score is not None and not (isinstance(score, float) and (score != score)) and file_path is not None
-        
+            if score is None or file_path is None:
+                return False
+            if isinstance(score, float) and (score != score or score < 0):
+                return False
+            return True
+
         sorted_files = [all_files[i] for i in indices if is_valid_pair(i)]
         sorted_scores = [scores[i] for i in indices if is_valid_pair(i)]
 
@@ -898,7 +909,16 @@ class FileManager:
         # Save all extracted metadata to the cache
         # self.cached_metadata.save_metadata_cache()
 
-        self.show_status(f'{len(sorted_files)} files processed in {time.time() - start_time:.4f} seconds.')
+        elapsed = time.time() - start_time
+        if unindexed_count > 0:
+            self.show_status(
+                f'Showed {len(sorted_files)} of {len(all_files)} files in {elapsed:.2f}s. '
+                f'{unindexed_count} file(s) still unindexed.'
+            )
+        else:
+            self.show_status(
+                f'Processed {len(sorted_files)} files in {elapsed:.2f}s.'
+            )
 
         logger.info(f'get_files returning {len(files_data)} files data.')
 

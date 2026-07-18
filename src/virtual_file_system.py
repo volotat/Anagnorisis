@@ -137,3 +137,27 @@ def resolve_to_local_path(file_path: str) -> tuple[str, Optional[str]]:
     except Exception as exc:
         print(f"[VirtualFileSystem] Failed to download remote file '{file_path}': {exc}")
         raise
+
+def is_file_exists(file_path: str) -> bool:
+    """
+    VFS-aware counterpart of os.path.isfile(): returns True iff
+    *file_path* points to an existing regular file, regardless of
+    whether it is a local path or a full VFS URL (osfs://, webdav://, …).
+    Returns False on any error (missing file, unreachable server, …).
+    """
+    # Plain local path — defer to os.path for full accuracy.
+    if '://' not in file_path:
+        return os.path.isfile(file_path)
+
+    try:
+        base_url, path_in_fs = resolve_base_and_path_from_url(file_path)
+    except Exception:
+        return False
+
+    try:
+        with fs.open_fs(base_url) as my_fs:
+            if not my_fs.exists(path_in_fs):
+                return False
+            return my_fs.isfile(path_in_fs)
+    except Exception:
+        return False

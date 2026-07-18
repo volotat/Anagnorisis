@@ -22,11 +22,7 @@ import src.virtual_file_system as vfs
 
 from src.utils import convert_size, SortingProgressCallback, EmbeddingGatheringCallback
 from src.scheduler import Scheduler
-from src.module_helpers import (
-    register_meta_handlers,
-    make_scheduled_rating_check,
-    make_scheduled_description_check,
-)
+import src.module_helpers
 
 # -------------------------------------------------------------------------
 # EVENTS
@@ -166,7 +162,7 @@ class ImageModuleServer:
             print("Images module: File deletion handlers disabled (ALLOW_FILE_DELETION=false)")
 
         # .meta sidecar handlers + full description handler (shared helper)
-        register_meta_handlers(
+        src.module_helpers.register_meta_handlers(
             self.socketio, 'images', lambda: self.media_directory, self.metadata_search_engine
         )
 
@@ -175,8 +171,22 @@ class ImageModuleServer:
         app = self.app
         cfg = self.cfg
 
+        # Proactively compute embeddings for any files not yet in the cache.
+        _check_and_submit_embedding = src.module_helpers.make_scheduled_embedding_check(
+            app, 'Images', self.file_manager, self.images_search_engine, cfg, 'images'
+        )
+        embedding_update_interval = OmegaConf.select(
+            cfg, 'images.embedding_update_interval_minutes', default=10
+        )
+        Scheduler(
+            app,
+            interval_minutes=embedding_update_interval,
+            fn=_check_and_submit_embedding,
+            name='Images: compute missing embeddings',
+        )
+
         # Proactively rate unrated files using the shared factory (writes to FilesLibrary)
-        _check_and_submit_rating = make_scheduled_rating_check(
+        _check_and_submit_rating = src.module_helpers.make_scheduled_rating_check(
             app, 'Images', self.file_manager, self.images_evaluator, cfg, 'images',
             self.update_model_ratings,
         )
@@ -191,7 +201,7 @@ class ImageModuleServer:
         )
 
         # Proactively describe undescribed files using the shared factory
-        _check_and_submit_description = make_scheduled_description_check(
+        _check_and_submit_description = src.module_helpers.make_scheduled_description_check(
             app, 'Images', self.file_manager, self.metadata_search_engine, cfg, 'images'
         )
         desc_interval = OmegaConf.select(cfg, 'images.description_update_interval_minutes', default=None)
@@ -201,6 +211,8 @@ class ImageModuleServer:
             fn=_check_and_submit_description,
             name='Images: describe undescribed files',
         )
+
+
 
     def _register_background_tasks(self):
         """One-time migration task.

@@ -129,7 +129,7 @@ class EmbeddingGatheringCallback:
             percent = (num_extracted / num_total) * 100
 
             # Show the status
-            self.show_status_function(f"Extracted {self.name} embeddings for {num_extracted}/{num_total} ({percent:.2f}%) files.")
+            self.show_status_function(f"Resolving {self.name} embeddings for {num_extracted}/{num_total} ({percent:.2f}%) files.")
             self.last_shown_time = current_time
 
 

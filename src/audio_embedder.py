@@ -141,11 +141,7 @@ class _AudioEmbedderImpl:
             return None, None
 
     def embed_audio(self, audio_path: str) -> np.ndarray:
-        """
-        Returns a CLAP audio embedding of shape (1, embedding_dim).
-        """
-        import torchaudio
-
+        """Returns a L2-normalised audio embedding of shape (1, embedding_dim)."""
         if self.model is None:
             raise RuntimeError("AudioEmbedder not initiated.")
 
@@ -154,20 +150,8 @@ class _AudioEmbedderImpl:
             waveform, sample_rate = self._read_audio(local_path)
             if waveform is None:
                 raise ValueError(f"Failed to read audio file: {audio_path}")
-
             try:
-                # Resample to 48 kHz mono on CPU
-                if sample_rate != 48000:
-                    waveform = torchaudio.transforms.Resample(
-                        orig_freq=sample_rate, new_freq=48000
-                    )(waveform)
-                    sample_rate = 48000
-                if waveform.dim() > 1 and waveform.shape[0] > 1:
-                    waveform = waveform.mean(dim=0, keepdim=False)
-                if waveform.dim() > 1:
-                    waveform = waveform.squeeze()
                 waveform_np = waveform.to(torch.float32).contiguous().cpu().numpy()
-
                 proc = self.processor(
                     audios=[waveform_np],
                     sampling_rate=sample_rate,
@@ -184,34 +168,58 @@ class _AudioEmbedderImpl:
                     )
 
                 with torch.no_grad():
-                    out = self.model.get_audio_features(**inputs_audio)  # [1, D]
+                    out = self.model.get_audio_features(**inputs_audio)
 
-                if out.dim() == 1:
-                    out = out.unsqueeze(0)
-                out = torch.nan_to_num(out, nan=0.0, posinf=0.0, neginf=0.0)
-                return out.cpu().numpy()  # shape (1, embedding_dim)
+                if isinstance(out, torch.Tensor):
+                    features = out
+                elif hasattr(out, "pooler_output") and out.pooler_output is not None:
+                    features = out.pooler_output
+                elif hasattr(out, "audio_embeds") and out.audio_embeds is not None:
+                    features = out.audio_embeds
+                elif hasattr(out, "last_hidden_state") and out.last_hidden_state is not None:
+                    features = out.last_hidden_state[:, 0]
+                else:
+                    raise RuntimeError(
+                        f"Unexpected get_audio_features() return type: {type(out).__name__}"
+                    )
 
+                if features.dim() == 1:
+                    features = features.unsqueeze(0)
+                features = torch.nan_to_num(features, nan=0.0, posinf=0.0, neginf=0.0)
+                return features.cpu().numpy()  # shape (1, embedding_dim)
             except Exception as e:
                 print(f"Error embedding audio {audio_path}: {e}")
                 traceback.print_exc()
                 raise
-
         finally:
             if temp and os.path.exists(temp):
                 try: os.unlink(temp)
                 except OSError: pass
 
     def embed_text(self, text: str) -> np.ndarray:
-        """
-        Returns a CLAP text embedding of shape (embedding_dim,).
-        """
+        """Returns a CLAP text embedding of shape (embedding_dim,)."""
         if self.model is None:
             raise RuntimeError("AudioEmbedder not initiated.")
 
         try:
             inputs = self.processor(text=text, padding=True, return_tensors="pt").to(self.device)
             with torch.no_grad():
-                features = self.model.get_text_features(**inputs)
+                out = self.model.get_text_features(**inputs)
+
+            # transformers >= 5.5 may return BaseModelOutputWithPooling instead of a raw tensor
+            if isinstance(out, torch.Tensor):
+                features = out
+            elif hasattr(out, "pooler_output") and out.pooler_output is not None:
+                features = out.pooler_output
+            elif hasattr(out, "text_embeds") and out.text_embeds is not None:
+                features = out.text_embeds
+            elif hasattr(out, "last_hidden_state") and out.last_hidden_state is not None:
+                features = out.last_hidden_state[:, 0]
+            else:
+                raise RuntimeError(
+                    f"Unexpected get_text_features() return type: {type(out).__name__}"
+                )
+
             return features.squeeze(0).cpu().numpy()  # shape (embedding_dim,)
         except Exception as e:
             print(f"Error embedding text: {e}")

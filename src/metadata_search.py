@@ -61,6 +61,69 @@ class MetadataSearch:
         self.embedding_proxy = None
 
         self._initialized = True
+        self._text_embedder_cpu = None  # lazy CPU query embedder (text)
+    
+    @property
+    def text_embedder_cpu(self):
+        """Lazy-loaded CPU text embedder for query embedding during search.
+
+        Single, process-wide instance per (model, type) tuple — held in
+        src.query_embedder.QueryEmbedder._instances so re-opening the page
+        does not re-load the model.
+        """
+        if self._text_embedder_cpu is None:
+            from src.query_embedder import QueryEmbedder
+            self._text_embedder_cpu = QueryEmbedder.get_instance(
+                model_name=self.cfg.text_embedder.model_name,
+                models_folder=self.cfg.main.embedding_models_path,
+                model_type='text',
+                truncate_dim=self.cfg.text_embedder.embedding_dimension,
+            )
+        return self._text_embedder_cpu
+
+    def _read_cached_metadata_embeddings(self, file_paths):
+        """Read cached metadata embeddings for file_paths (CPU only, no subprocess).
+
+        Uses the same cache-key formula as _process_single_file_meta so any
+        metadata embedding written by the background description pass is found
+        here.
+        """
+        cached_paths, cached_embs, missing_paths = [], [], []
+        for fp in file_paths:
+            try:
+                base_url, path_in_fs = vfs.resolve_base_and_path_from_url(fp)
+                with fs.open_fs(base_url) as my_fs:
+                    info = my_fs.getinfo(path_in_fs, namespaces=['details'])
+                    file_size = info.size
+                    modified_sec = info.get('details', 'modified')
+                    file_mtime = modified_sec if modified_sec is not None else 0
+
+                    meta_path_in_fs = path_in_fs + '.meta'
+                    if my_fs.exists(meta_path_in_fs):
+                        try:
+                            meta_info = my_fs.getinfo(meta_path_in_fs, namespaces=['details'])
+                            meta_modified = meta_info.get('details', 'modified')
+                            meta_mtime = meta_modified if meta_modified is not None else 0
+                            meta_sig = f"{meta_mtime}::{meta_info.size}"
+                        except Exception:
+                            meta_sig = "meta_stat_error"
+                    else:
+                        meta_sig = "no_meta"
+
+                cache_key = (
+                    f"meta::{fp}::{file_mtime}::{file_size}::"
+                    f"meta::{meta_sig}::"
+                    f"alg::{self.get_algorithm_version()}"
+                )
+                emb = self._fast_cache.get(cache_key)
+                if emb is not None:
+                    cached_paths.append(fp)
+                    cached_embs.append(emb)
+                else:
+                    missing_paths.append(fp)
+            except Exception:
+                missing_paths.append(fp)
+        return cached_paths, cached_embs, missing_paths
     
     def get_algorithm_version(self) -> str:
         """
@@ -68,7 +131,7 @@ class MetadataSearch:
         Used for cache invalidation when the algorithm changes.
         """
         return "meta-search-v1.5" 
-
+    
     @staticmethod
     def _format_duration(seconds: float) -> str:
         """Return a human-readable H:M:S string for a given number of seconds."""
@@ -353,7 +416,7 @@ class MetadataSearch:
         dim = self.text_embedder.embedding_dim
         return np.zeros((dim,), dtype=np.float32) if dim else np.array([], dtype=np.float32)
 
-    def _process_single_file_meta(self, file_path: str, media_folder: str = None) -> list[np.ndarray]:
+    def _process_single_file_meta(self, file_path: str, media_folder: str = None, generate_embs_if_not_in_cache: bool = True) -> list[np.ndarray]:
         """
         Processes a single file's metadata, utilizing the cache.
         Returns a list containing one embedding.
@@ -392,8 +455,12 @@ class MetadataSearch:
                 return [cached_embedding]
 
             # 3. Cache Miss: Generate, cache, and return the new embedding
-            new_embedding = self._generate_embedding(file_path, media_folder)
-            self._fast_cache.set(cache_key, new_embedding)
+            if generate_embs_if_not_in_cache:
+                new_embedding = self._generate_embedding(file_path, media_folder)
+                self._fast_cache.set(cache_key, new_embedding)
+            else:
+                new_embedding = np.zeros((dim,), dtype=np.float32) if dim else np.array([], dtype=np.float32) 
+                
             return [new_embedding]
 
         except Exception as e:
@@ -404,7 +471,7 @@ class MetadataSearch:
             zero_embedding = np.zeros((dim,), dtype=np.float32) if dim else np.array([], dtype=np.float32)
             return [zero_embedding]
     
-    def process_files(self, file_paths: list[str], callback=None, media_folder: str = None, **kwargs) -> list[list[np.ndarray]]:
+    def process_files(self, file_paths: list[str], callback=None, media_folder: str = None, generate_embs_if_not_in_cache: bool = True, **kwargs) -> list[list[np.ndarray]]:
         """
         Processes metadata for a list of files by calling the single-file processor in a loop.
         Generates embeddings for this metadata text.
@@ -453,7 +520,7 @@ class MetadataSearch:
                 )
 
             file_start = time.time()
-            embedding_list = self._process_single_file_meta(file_path, media_folder)
+            embedding_list = self._process_single_file_meta(file_path, media_folder, generate_embs_if_not_in_cache = generate_embs_if_not_in_cache)
 
             file_elapsed = time.time() - file_start
             if file_elapsed > max_elapsed:
