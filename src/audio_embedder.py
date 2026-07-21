@@ -8,6 +8,7 @@ import hashlib
 from typing import List
 
 import torch
+import torchaudio
 import numpy as np
 import src.virtual_file_system as vfs
 
@@ -151,9 +152,20 @@ class _AudioEmbedderImpl:
             if waveform is None:
                 raise ValueError(f"Failed to read audio file: {audio_path}")
             try:
+                # Resample to 48 kHz mono on CPU
+                if sample_rate != 48000:
+                    waveform = torchaudio.transforms.Resample(
+                        orig_freq=sample_rate, new_freq=48000
+                    )(waveform)
+                    sample_rate = 48000
+                if waveform.dim() > 1 and waveform.shape[0] > 1:
+                    waveform = waveform.mean(dim=0, keepdim=False)
+                if waveform.dim() > 1:
+                    waveform = waveform.squeeze()
                 waveform_np = waveform.to(torch.float32).contiguous().cpu().numpy()
+                
                 proc = self.processor(
-                    audios=[waveform_np],
+                    audio=[waveform_np],
                     sampling_rate=sample_rate,
                     return_tensors="pt",
                     padding=False,

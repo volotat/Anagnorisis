@@ -31,7 +31,14 @@ class CommonSocketEvents:
         if msg is not None:
             self.socketio.emit('emit_show_search_status', msg, room=sid)
 
-    def show_search_status(self, status: str, sid: str | None = None):
+    def show_search_status(self, status: str, sid: str | None = None, force: bool = False):
+        """Throttled status broadcast.
+
+        If `force=True`, the throttle is bypassed: any pending queued status is
+        discarded and this one is emitted immediately. Use this for the final
+        summary so it always reaches the client.
+        """
+        
         # If we are in a background thread (no request context), broadcast to all
         try:
             current_sid = request.sid if sid is None else sid
@@ -44,8 +51,22 @@ class CommonSocketEvents:
             # Background task progress is handled by the TaskManager UI.
             # self.socketio.emit('emit_show_search_status', status)
             return
+        
+        if force:
+            with self._lock:
+                st = self._per_sid.get(current_sid, {'last': 0.0, 'timer': None, 'pending': None})
+                # Cancel any pending throttle timer and drop its queued status
+                t = st.get('timer')
+                if t is not None:
+                    try: t.cancel()
+                    except Exception: pass
+                st['timer'] = None
+                st['pending'] = None
+                st['last'] = time.time()
+            self.socketio.emit('emit_show_search_status', status, room=current_sid)
+            return
 
-        # Existing logic for specific client throttling
+        # Logic for specific client throttling
         now = time.time()
         can_emit_now = False
         with self._lock:

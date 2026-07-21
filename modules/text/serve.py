@@ -28,12 +28,12 @@ def get_text_preview(file_path):
     preview_text = '' # Default no preview
     try:
         with fs.open_fs(base_url) as my_fs:
-            # Read as binary and decode manually
             with my_fs.open(path_in_fs, 'rb') as f:
-                content_bytes = f.read()
+                # Read at most 4 KiB — more than enough for 25 lines / 400 chars
+                content_bytes = f.read(4096)
                 content = content_bytes.decode('utf-8', errors='ignore')
-                preview_text = '\n'.join(content.splitlines()[:25])  # First 25 lines
-                if len(preview_text) > 400: # Limit preview length
+                preview_text = '\n'.join(content.splitlines()[:25])
+                if len(preview_text) > 400:
                     preview_text = preview_text[:400] + '...'
     except Exception as e:
         print(f"[TextModuleServer] Error reading preview from {file_path}: {e}")
@@ -138,6 +138,8 @@ class TextModuleServer:
         # desc_interval = OmegaConf.select(cfg, 'text.description_update_interval_minutes', default=None)
         # Scheduler(app, interval_minutes=desc_interval, fn=_check_and_submit_description,
         #         name='Text: describe undescribed files')
+
+        # TODO: Schedule to extract embeddings from files for semantic search to work
     
     def _register_background_tasks(self):
         """Registers background tasks for the module."""
@@ -355,11 +357,12 @@ class TextModuleServer:
             else:
                 print(f"[TextModule:Serve] File '{full_path}' not found in the database.")
 
+            preview = get_text_preview(full_path)
             return {
                     "user_rating": user_rating,
                     "model_rating": model_rating,
                     "rating_is_stale": rating_is_stale,
-                    "preview_text": get_text_preview(full_path),    
+                    "preview_text": preview,    
                     "file_data": file_data,
                 }
 

@@ -82,7 +82,7 @@ def make_scheduled_embedding_check(app, label, file_manager: FileManager, engine
             return
 
         media_formats = OmegaConf.select(cfg, f'{cfg_key}.media_formats', default=[]) or []
-        all_files = file_manager._walk_files_cached(file_manager.media_directory, set(media_formats))
+        all_files = file_manager._walk_files_cached("osfs:///mnt/media/", set(media_formats)) #file_manager.media_directory
         if not all_files:
             return
 

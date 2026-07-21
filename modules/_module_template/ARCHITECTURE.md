@@ -152,7 +152,7 @@ Modules can include any extra `.py` files (e.g. `crawler.py` in the WebSearch mo
 | `src.scoring_models.Evaluator` | Base neural network for scoring. The universal evaluator (`TransformerEvaluator`) is the preferred variant for cross-module rating. |
 | `src.model_manager.ModelManager` | Wraps ML models for GPU memory-efficient inference with automatic device management and idle timeout. |
 | `src.db_models.db` | The shared SQLAlchemy instance. All modules must import `db` from here. |
-| `src.text_embedder.TextEmbedder` | Converts text strings to embedding vectors using the configured text model (e.g. jina-embeddings-v3). Runs in a subprocess to isolate CUDA context. |
+| `src.text_embedder.TextEmbedder` | Converts text strings to embedding vectors using the configured text model. Runs in a subprocess to isolate CUDA context. |
 | `src.omni_descriptor.OmniDescriptor` | Multi-modal captioning model that generates text descriptions from images, audio, video, or text files. |
 | `src.task_manager.TaskManager` | Centralised background task queue accessible via `app.task_manager`. Tasks run sequentially with cooperative pause/resume/cancel via `TaskContext`. Progress is broadcast to the frontend `TaskManagerComponent`. |
 | `src.scheduler.schedule_task` | Utility to run a function periodically on a daemon thread with `app.app_context()`. Used by all media modules for background rating and description generation. |

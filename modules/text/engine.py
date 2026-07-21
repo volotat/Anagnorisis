@@ -25,20 +25,63 @@ import src.virtual_file_system as vfs
 import fs
 
 
-def get_text_metadata(file_path: str):
+
+def get_text_metadata(file_path: str) -> dict:
     """
-    Extracts basic metadata from a text file.
+    Extracts basic metadata from a text file via VFS-aware stat calls.
+
+    Text files have no embedded metadata block (unlike images' EXIF or
+    audio's ID3 tags), so we expose only filesystem-level information
+    that helps the embedding understand the file:
+
+      - file_size        : integer byte count
+      - modification_time: ISO 8601 datetime of last modification
+      - creation_time    : ISO 8601 datetime of creation (if FS supports it)
+      - access_time      : ISO 8601 datetime of last access (if FS supports it)
+      - extension        : lowercase file extension (txt, md, html, …)
+      - content_type     : human-readable hint derived from extension
+
+    File content is NEVER read, so this stays O(1) regardless of file
+    size — important since text libraries often contain multi-GB logs.
+
+    All values are stringified so that ``MetadataSearch.generate_full_description``
+    can drop them straight into the embedding payload.
     """
     metadata = {}
     try:
-        metadata['file_size'] = os.path.getsize(file_path)
-        metadata['creation_time'] = os.path.getctime(file_path)
-        metadata['modification_time'] = os.path.getmtime(file_path)
+        base_url, path_in_fs = vfs.resolve_base_and_path_from_url(file_path)
+
+        with fs.open_fs(base_url) as my_fs:
+            info = my_fs.getinfo(path_in_fs, namespaces=['details'])
+
+            # File size — cheap, useful as a "document size" hint.
+            if getattr(info, 'size', None) is not None:
+                metadata['file_size'] = f"{info.size} bytes"
+
+            # Timestamps — stringified via isoformat() so they fit
+            # directly into the embedding text payload.
+            for attr, key in (
+                ('modified', 'modification_time'),
+                ('created',  'creation_time'),
+                ('accessed', 'access_time'),
+            ):
+                dt = getattr(info, attr, None)
+                if dt is None:
+                    continue
+                metadata[key] = (
+                    dt.isoformat() if hasattr(dt, 'isoformat') else str(dt)
+                )
+
+            # Extension — the single most useful field for text files.
+            # Cheapest possible computation, and it tells the embedding
+            # "this is markdown" / "this is JSON" before it has seen
+            # a single line of content.
+            ext = os.path.splitext(path_in_fs)[1].lstrip('.').lower()
+            if ext:
+                metadata['extension'] = ext
+
     except Exception as e:
         print(f"Error extracting metadata from {file_path}: {e}")
-        metadata['file_size'] = None
-        metadata['creation_time'] = None
-        metadata['modification_time'] = None
 
     return metadata
 
@@ -53,6 +96,7 @@ class TextSearch(BaseSearchEngine):
         # We set this to a marker string just in case base class checks for existence,
         # though we override the methods that use it.
         self._model_manager = "Bypassed" 
+        self._query_embedder = None  # lazy CPU query embedder
 
     @property
     def model_name(self) -> str:
@@ -63,6 +107,23 @@ class TextSearch(BaseSearchEngine):
     @property
     def cache_prefix(self) -> str:
         return 'text'
+    
+    @property
+    def query_embedder(self):
+        """Lazy CPU query embedder — used by CommonFilters for search-time only.
+
+        Loads the same embedding model as the subprocess, but
+        directly in the main process on CPU, so a search never touches the
+        GPU and cannot be starved by background rating tasks.
+        """
+        if self._query_embedder is None:
+            from src.query_embedder import QueryEmbedder
+            self._query_embedder = QueryEmbedder.get_instance(
+                model_name=self.model_name,
+                models_folder=self.cfg.main.embedding_models_path,
+                model_type='text',
+            )
+        return self._query_embedder
         
     def _get_metadata(self, file_path):
         return get_text_metadata(file_path)
@@ -114,7 +175,8 @@ class TextSearch(BaseSearchEngine):
         """
         if not self.embedder._initialized:
             raise RuntimeError(f"{self.__class__.__name__} not initialized. Call initiate() first.")
-
+        
+        dim = self.cfg.text_embedder.embedding_dimension or self.embedding_dim
         try:
             # with open(file_path, 'r', encoding='utf-8') as f:
             #     content = f.read()
@@ -142,25 +204,31 @@ class TextSearch(BaseSearchEngine):
             traceback.print_exc()
             return []
 
-    def process_files(self, file_paths: list[str], callback=None, media_folder: str = None, ignore_cache=False) -> list[list[np.ndarray]]:
+    def process_files(self, file_paths: list[str], callback=None, media_folder: str = None, ignore_cache=False, generate_embs_if_not_in_cache=True) -> list[list[np.ndarray]]:
         """
         Override process_files to handle list-of-lists return type for text chunks.
         Bypasses BaseSearchEngine.process_files which assumes fixed-size tensor output.
         """
         all_files_chunk_embeddings = []
-        
+        dim = self.cfg.text_embedder.embedding_dimension or self.embedding_dim
+
         for ind, file_path in enumerate(tqdm(file_paths, desc=f"Processing {self.cache_prefix} files")):
             current_file_embeddings = None
             try:
-                file_hash = self.get_file_hash(file_path)
-                cache_key = f"{file_hash}::{self.model_hash}"
+                # file_hash = self.get_file_hash(file_path)
+                # cache_key = f"{file_hash}::{self.model_hash}"
+                cache_key = self.make_embedding_cache_key(file_path)
 
                 cached_chunk_embeddings = self._fast_cache.get(cache_key) if not ignore_cache else None
                 if cached_chunk_embeddings is not None:
                     current_file_embeddings = cached_chunk_embeddings
                 else:
-                    current_file_embeddings = self._process_single_file(file_path, media_folder=media_folder)
-                    self._fast_cache.set(cache_key, current_file_embeddings)
+                    if generate_embs_if_not_in_cache:
+                        current_file_embeddings = self._process_single_file(file_path, media_folder=media_folder)
+                        self._fast_cache.set(cache_key, current_file_embeddings)
+                    else:
+                        current_file_embeddings = []
+
 
             except Exception as e:
                 print(f"Error processing file {file_path}: {e}")
@@ -188,44 +256,75 @@ class TextSearch(BaseSearchEngine):
             print(f"Error processing text query '{query_text}': {e}")
             traceback.print_exc()
             dim = self.cfg.text_embedder.embedding_dimension or self.embedding_dim
-            return torch.zeros((dim,)) if dim else None
+            return torch.zeros((dim,))
         
-    def compare(self, file_embeddings: list[list[np.ndarray]], query_embedding: torch.Tensor) -> np.ndarray:
+    def compare(self, file_embeddings, query_embedding) -> np.ndarray:
         """
-        Compares a query embedding against file embeddings (list of lists of chunk embeddings).
+        Compute per-file similarity scores between a query embedding and all
+        chunk embeddings, using ONE subprocess call regardless of file/chunk count.
+
+        Returns
+        -------
+        np.ndarray of shape [N_files] with per-file smooth-max similarity.
+        NaN marks files whose embedding is missing or all-zero (unindexed),
+        so the downstream filter can drop them exactly like image/music.
+
+        Multi-chunk semantics are preserved: each file's score is the
+        smooth-max over the similarities of *its* individual chunks to the
+        query — the "best matching chunk wins" behaviour.
         """
-        # Ensure query embedding is numpy array (float32)
+        # 1. Normalize the query embedding once on the calling side.
         if isinstance(query_embedding, torch.Tensor):
-            query_embedding_np = query_embedding.to(torch.float32).cpu().numpy()
+            query_np = query_embedding.detach().to(torch.float32).cpu().numpy().ravel()
         else:
-            query_embedding_np = query_embedding
-        
-        beta = 16.0  # tune (4..20). Higher -> closer to max.
-        
-        scores = []
-        for file_chunks in file_embeddings:
+            query_np = np.asarray(query_embedding, dtype=np.float32).ravel()
+
+        n_files = len(file_embeddings)
+        # NaN by default → unindexed files are dropped by FileManager.is_valid_pair().
+        scores = np.full(n_files, np.nan, dtype=np.float32)
+
+        # 2. Collect ALL valid chunks from ALL files into one flat list,
+        #    remembering which file each chunk came from. Skip all-zero
+        #    chunks (failed embeddings) so they don't poison the smooth-max.
+        all_chunks = []
+        chunk_file_indices = []
+        for file_idx, file_chunks in enumerate(file_embeddings):
             if not file_chunks:
-                scores.append(0.0)
-                continue
-            
-            # TextEmbedder's compare method expects a numpy array of embeddings
-            chunk_embeddings_np = np.array(file_chunks, dtype=np.float32)
-            
-            # Use TextEmbedder's compare logic
-            chunk_scores = self.embedder.compare(chunk_embeddings_np, query_embedding_np)
-            
-            chunk_scores = np.array(chunk_scores)
+                continue  # stays NaN — unindexed (empty file / cache miss with no generation)
+            for chunk in file_chunks:
+                chunk_np = np.asarray(chunk, dtype=np.float32)
+                if not np.any(np.abs(chunk_np) > 1e-5):
+                    # All-zero chunk → embedding failed for this chunk.
+                    # We skip it instead of letting it pollute the smooth-max.
+                    continue
+                all_chunks.append(chunk_np)
+                chunk_file_indices.append(file_idx)
 
-            m = float(chunk_scores.max())
-            x = beta * (chunk_scores - m)
-            x = np.clip(x, -50.0, None)  # prevent underflow
+        if not all_chunks:
+            return scores  # all files are unindexed
+
+        # 3. ONE subprocess call for the whole batch.
+        big_array = np.stack(all_chunks)                              # [total_chunks, D]
+        flat_sims = self.embedder.compare(big_array, query_np)  # list of total_chunks floats
+        flat_sims = np.asarray(flat_sims, dtype=np.float32)
+
+        # 4. Smooth-max per file. Indexing by mask is O(N_files × avg_chunks),
+        #    not O(N_files × N_total_chunks) like a Python per-file loop.
+        beta = 16.0
+        chunk_file_indices = np.asarray(chunk_file_indices, dtype=np.int64)
+        for file_idx in range(n_files):
+            chunk_sims = flat_sims[chunk_file_indices == file_idx]
+            if chunk_sims.size == 0:
+                continue  # all of this file's chunks were zero → stays NaN
+
+            m = float(chunk_sims.max())
+            x = beta * (chunk_sims - m)
+            x = np.clip(x, -50.0, None)
             lse_centered = np.log(np.exp(x).sum())
-            # Length‑invariant smooth max
-            smooth = m + (lse_centered - np.log(len(chunk_scores))) / beta
-            scores.append(float(smooth))
-            
-        return np.array(scores)
+            smooth = m + (lse_centered - np.math.log(len(chunk_sims))) / beta
+            scores[file_idx] = float(smooth)
 
+        return scores
 
 # --- Testing Section ---
 if __name__ == "__main__":
@@ -249,7 +348,7 @@ if __name__ == "__main__":
             'media_directory': test_text_dir
         },
         'text_embedder': {
-            'model_name': "jinaai/jina-embeddings-v3",
+            'model_name': "Qwen/Qwen3-Embedding-0.6B",
             'chunk_size': 128,
             'chunk_overlap': 0,
             'embedding_dimension': 512

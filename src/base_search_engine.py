@@ -367,14 +367,16 @@ class BaseSearchEngine(ABC):
 
         # 1) Build items with hashes and check cache
         items = []
+        hits = 0
         for i, path in enumerate(file_paths):
 
             cache_key = self.make_embedding_cache_key(path)
             cached = self._fast_cache.get(cache_key)
             if cached is not None:
                 outputs[i] = cached  # expected to be CPU tensor
+                hits += 1
                 if callback:
-                    callback(sum(1 for o in outputs if o is not None), N)
+                    callback(hits, N)
             else:
                 outputs[i] = None
                 items.append((i, path, cache_key))
@@ -404,8 +406,9 @@ class BaseSearchEngine(ABC):
                     if emb is not None: 
                         self._fast_cache.set(key, emb_cpu)
                     outputs[out_idx] = emb_cpu
+                    hits += 1    
                     if callback:
-                        callback(sum(1 for o in outputs if o is not None), N)
+                        callback(hits, N)
 
         # 4) Safety: fill any remaining gaps with zeros
         for i in range(N):
@@ -433,51 +436,48 @@ class BaseSearchEngine(ABC):
         raise NotImplementedError("Text processing is not implemented in BaseSearchEngine directly. "
                                   "Subclasses should implement their own 'process_text' if applicable.")
     
-    def compare(self, embeds_target: torch.Tensor, embeds_query: torch.Tensor) -> np.ndarray:
+    def compare(self, embeds_target, embeds_query):
         """
-        Generic method for comparing two sets of embeddings (e.g., image vs text).
-        Performs dot product and applies sigmoid/softmax as appropriate.
-        Subclasses can override if their comparison logic is more complex.
+        Generic cosine-similarity compare for a single query against N targets.
+
+        Returns
+        -------
+        np.ndarray of shape [N] with per-file cosine similarity.
+        Files whose embeddings are all-zero (e.g. cache miss with
+        generate_embs_if_not_in_cache=False) get NaN so the downstream
+        FileManager.is_valid_pair() filter drops them — exactly the same
+        contract as text/metadata engines after the unification below.
         """
-        if self._model_manager is None:
-            raise RuntimeError(f"{self.__class__.__name__} not initialized. Call initiate() first.")
-        
-        # logger.debug("Warning: Converting embeds_target to torch.Tensor")
-        # logger.debug(f"Type of embeds_target: {type(embeds_target)}")
-        # logger.debug(f"Shape of embeds_target[0]: {np.shape(embeds_target)}")
+        # Normalize inputs to torch tensors on CPU
+        if not isinstance(embeds_target, torch.Tensor):
+            embeds_target = torch.as_tensor(np.asarray(embeds_target, dtype=np.float32))
+        if not isinstance(embeds_query, torch.Tensor):
+            embeds_query = torch.as_tensor(np.asarray(embeds_query, dtype=np.float32))
 
-        # # Ensure embeddings are torch tensors
-        # if type(embeds_target) is not torch.Tensor:
-        #     embeds_target = torch.tensor(embeds_target)
-        #     logger.debug(f"New type of embeds_target: {type(embeds_target)}")
-        #     logger.debug(f"New shape of embeds_target: {embeds_target.shape}")
-        # if type(embeds_query) is not torch.Tensor:
-        #     embeds_query = torch.tensor(embeds_query) 
+        embeds_target = embeds_target.cpu().float()
+        embeds_query = embeds_query.cpu().float()
 
-        # Similarity is computed on CPU — the result is .numpy() anyway,
-        # and the main process has no model to justify a CUDA context.
-        embeds_target = embeds_target.cpu().float() 
-        embeds_query = torch.from_numpy(embeds_query)  # Query is now calculated in CPU in the first place, no need to convert
-        # embeds_query = embeds_query.cpu().float()
+        # Detect unindexed files BEFORE normalizing (so we don't need a clamp
+        # inside the cosine path). All-zero embeddings have norm 0.
+        target_norms = embeds_target.norm(p=2, dim=-1)
+        unindexed_mask = (target_norms < 1e-5).cpu().numpy()
 
-        # Normalize features
-        embeds_target = embeds_target / embeds_target.norm(p=2, dim=-1, keepdim=True)
-        embeds_query = embeds_query / embeds_query.norm(p=2, dim=-1, keepdim=True)
+        # L2-normalize. Clamp at 1e-9 only on the divisor so that a true zero
+        # vector doesn't produce a divide-by-zero warning before we mask it.
+        embeds_target = embeds_target / target_norms.unsqueeze(-1).clamp(min=1e-9)
+        query_norm = embeds_query.norm().clamp(min=1e-9)
+        embeds_query = embeds_query / query_norm
 
-        # Dot product for similarity
-        logits = torch.matmul(embeds_query, embeds_target.t())
+        # Promote 1-D query to 2-D so matmul works regardless of caller shape
+        if embeds_query.dim() == 1:
+            embeds_query = embeds_query.unsqueeze(0)
+        # Promote 1-D target to 2-D too (e.g. single-file edge case)
+        if embeds_target.dim() == 1:
+            embeds_target = embeds_target.unsqueeze(0)
 
-        # # If model has logit_scale (like CLIP/CLAP), apply it
-        # if hasattr(self._model_manager, 'logit_scale'):
-        #     logits = logits * self._model_manager.logit_scale.exp()
-        # elif hasattr(self._model_manager, 'logit_scale_t') and hasattr(self._model_manager, 'logit_scale_a'): # For CLAP
-        #     # Assuming embeds_query is text and embeds_target is audio/image
-        #     logits_per_text = logits * self._model_manager.logit_scale_t.exp()
-        #     logits_per_audio = torch.matmul(embeds_target, embeds_query.t()) * self._model_manager.logit_scale_a.exp()
-        #     logits = (logits_per_text + logits_per_audio.t()) / 2.0
-            
-        # # probs = torch.sigmoid(logits) # Sigmoid for similarity score (0-1)
+        # [1, D] @ [D, N] → [1, N] → squeeze → [N]
+        cosine_sim = torch.matmul(embeds_query, embeds_target.t()).squeeze(0).cpu().detach().numpy()
 
-        cosine_sim = logits # Return raw logits that represent cosine similarity
-
-        return cosine_sim.cpu().detach().numpy()
+        # Mark unindexed as NaN so FileManager drops them uniformly.
+        cosine_sim[unindexed_mask] = np.nan
+        return cosine_sim

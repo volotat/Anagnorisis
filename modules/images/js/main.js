@@ -429,10 +429,19 @@ import createModuleMetaEditors from '/modules/ModuleMetaEditors.js';
   $(document).ready(function() {
     let paginationComponent;
 
+    // Remote folders disable 'semantic-content' (it would force-download
+    // unknown content). The empty path ('All Files') is a mix of local and
+    // remote, so the mode stays available there — non-local files are
+    // filtered out at search time on the backend.
+    const isFolderRemoteOnly = path !== '' && path !== '/' && !path.startsWith('osfs://');
+    const enableModes = isFolderRemoteOnly
+      ? ['file-name', 'semantic-metadata']
+      : ['file-name', 'semantic-content', 'semantic-metadata'];
+
     // Instantiate SearchBarComponent
     const searchBar = new SearchBarComponent({
       container: '#search_bar_container',
-      enableModes: ['file-name', 'semantic-content', 'semantic-metadata'], // disable here as needed
+      enableModes: enableModes,
       showOrder: true,
       showTemperature: true,
       temperatures: [0, 0.2, 1, 2],

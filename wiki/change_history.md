@@ -1,5 +1,16 @@
 # Change History
 
+### Version 0.4.5 (21.07.2026)
+*  **Search Performance & Reliability:**
+    *   "Content-based" semantic search was iterating the full list of matched files on every progress update to count cache hits inside the status callback, making the lookup O(N²) instead of O(N). Replaced the per-iteration list scan with a running counter; subsequent searches over cached embeddings now complete almost immediately.
+    *   "Content-based" semantic search now skips remote (WebDAV/SFTP/FTP) files instead of force-downloading their content to embed it. Only local files are processed for content-based matching; remote files remain searchable via filename and metadata modes. Previously, browsing a folder that contained remote files with this mode enabled could hang or time out.
+*  **Bug Fixes:**
+    *   Fixed semantic search in the music module. It was failing for some files silently falling back to plain text search or returning nothing.
+    *   Fixed semantic search in the text module. File metadata extraction was hanging on large files because `get_text_metadata` read the entire file every time; it is now a stat-only O(1) operation. File previews are now capped at the first 4 KiB so even multi-gigabyte logs load instantly.
+    *   Files with no computed embeddings yet were appearing in the result list as if they had a real score, making sort-by-rating unreliable. Such files are now hidden from the list and counted separately so the user can see what is still being processed in the background.
+    *   Fixed metadata extraction process for text files.
+*  **Background Embedding Computation:**
+    *   New automatic background scheduler for the Music module that periodically scans the cache and computes embeddings for any files that don't have one yet. Configurable via `embedding_update_interval_minutes` (default 10) and `embedding_update_batch_size` (default 1000) in `config.yaml`. New files added to your library now get their embeddings in the background so they become searchable almost immediately, without requiring a manual batch run.
 
 ### Version 0.4.4 (18.07.2026)
 *  **Search Performance & Reliability:**

@@ -20,11 +20,7 @@ import src.virtual_file_system as vfs
 from src.utils import convert_length, time_difference, SortingProgressCallback, EmbeddingGatheringCallback
 from src.recommendation_engine import sort_files_by_recommendation
 from src.scheduler import Scheduler
-from src.module_helpers import (
-    register_meta_handlers,
-    make_scheduled_rating_check,
-    make_scheduled_description_check,
-)
+import src.module_helpers
 
 # -------------------------------------------------------------------------
 # EVENTS
@@ -153,7 +149,7 @@ class MusicModuleServer:
         self.socketio.on_event('emit_music_page_open_file_in_folder', self.handle_open_file_in_folder)
 
         # .meta sidecar handlers + full description handler (shared helper)
-        register_meta_handlers(
+        src.module_helpers.register_meta_handlers(
             self.socketio, 'music', lambda: self.media_directory, self.metadata_search_engine
         )
 
@@ -162,8 +158,22 @@ class MusicModuleServer:
         app = self.app
         cfg = self.cfg
 
+        # Proactively compute embeddings for any files not yet in the cache.
+        _check_and_submit_embedding = src.module_helpers.make_scheduled_embedding_check(
+            app, 'Music', self.file_manager, self.music_search_engine, cfg, 'music'
+        )
+        embedding_update_interval = OmegaConf.select(
+            cfg, 'music.embedding_update_interval_minutes', default=10
+        )
+        Scheduler(
+            app,
+            interval_minutes=embedding_update_interval,
+            fn=_check_and_submit_embedding,
+            name='Music: compute missing embeddings',
+        )
+
         # Proactively rate unrated files using the shared factory (writes to FilesLibrary)
-        _check_and_submit_rating = make_scheduled_rating_check(
+        _check_and_submit_rating = src.module_helpers.make_scheduled_rating_check(
             app, 'Music', self.file_manager, self.music_evaluator, cfg, 'music',
             self.update_model_ratings,
         )
@@ -178,7 +188,7 @@ class MusicModuleServer:
         )
 
         # Proactively describe undescribed files using the shared factory
-        _check_and_submit_description = make_scheduled_description_check(
+        _check_and_submit_description = src.module_helpers.make_scheduled_description_check(
             app, 'Music', self.file_manager, self.metadata_search_engine, cfg, 'music'
         )
         desc_interval = OmegaConf.select(cfg, 'music.description_update_interval_minutes', default=None)

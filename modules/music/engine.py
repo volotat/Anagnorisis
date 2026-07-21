@@ -115,6 +115,7 @@ class MusicSearch(BaseSearchEngine):
         super().__init__(cfg) # Call base class __init__
         self.cfg = cfg # Store cfg for reading parameters
         self._audio_embedder = None
+        self._query_embedder = None  # lazy CPU query embedder
 
     @property
     def model_name(self) -> str:
@@ -126,6 +127,23 @@ class MusicSearch(BaseSearchEngine):
     @property
     def cache_prefix(self) -> str:
         return 'music'
+    
+    @property
+    def query_embedder(self):
+        """Lazy CPU query embedder — used by CommonFilters for search-time only.
+
+        Loads the same embedding model as the subprocess, but
+        directly in the main process on CPU, so a search never touches the
+        GPU and cannot be starved by background rating tasks.
+        """
+        if self._query_embedder is None:
+            from src.query_embedder import QueryEmbedder
+            self._query_embedder = QueryEmbedder.get_instance(
+                model_name=self.model_name,
+                models_folder=self.cfg.main.embedding_models_path,
+                model_type='audio',
+            )
+        return self._query_embedder
         
     def _get_metadata(self, file_path):
         return get_audiofile_data(file_path)

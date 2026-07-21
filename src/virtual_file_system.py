@@ -161,3 +161,14 @@ def is_file_exists(file_path: str) -> bool:
             return my_fs.isfile(path_in_fs)
     except Exception:
         return False
+    
+def is_local_url(file_path: str) -> bool:
+    """Return True iff the path refers to a local filesystem (no network).
+
+    - Raw system path (no scheme) → local
+    - osfs://                        → local (Docker volume mount)
+    - everything else                → remote (webdav://, sftp://, ftp://, …)
+    """
+    if '://' not in file_path:
+        return True
+    return file_path.startswith('osfs://')

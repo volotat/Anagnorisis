@@ -109,15 +109,29 @@ class CommonFilters:
     def filter_by_file(self, all_files, text_query):
         target_path = text_query
         self.common_socket_events.show_search_status("Extracting embeddings")
-        embeds_all = self.engine.process_files(all_files, callback=self.embedding_gathering_callback, media_folder=self.media_directory)
+        embeds_files = self.engine.process_files(all_files, callback=self.embedding_gathering_callback, media_folder=self.media_directory, generate_embs_if_not_in_cache=False)
         target_emb = self.engine.process_files([target_path], callback=self.embedding_gathering_callback, media_folder=self.media_directory)
 
         self.common_socket_events.show_search_status("Computing distances between embeddings")
-        dists = torch.cdist(embeds_all, target_emb, p=2).squeeze(-1)
+        dists = torch.cdist(embeds_files, target_emb, p=2).squeeze(-1)
         scores = (1.0 / (1.0 + dists)).cpu().detach().numpy()
+
+        # All-zero embeddings mark unindexed local files → NaN them so
+        # FileManager.is_valid_pair() filters them out of the result list.
+        if isinstance(embeds_files, torch.Tensor): # images or music, single embedding vector
+            scores[np.all(embeds_files.cpu().numpy() < 1e-5, axis=1)] = np.nan
+        else: # text, list of vecrtor chunks
+            for i, file_chunks in enumerate(embeds_files):
+                if not file_chunks:
+                    scores[i] = np.nan
+                    continue
+                if all(np.all(np.abs(chunk) < 1e-5) for chunk in file_chunks):
+                    scores[i] = np.nan
+
         return scores
 
     def filter_by_text(self, all_files, text_query, **kwargs):
+        
         mode = kwargs.get("mode", "file-name")
 
         if mode not in ('file-name', 'semantic-content', 'semantic-metadata'):
@@ -182,17 +196,39 @@ class CommonFilters:
             scores = np.array([r[0] for r in ranked], dtype=np.float32) / 100.0
 
         if mode == 'semantic-content':
+            # Semantic content search reads each file to compute its embedding —
+            # that would force-download unknown content from remote servers. Restrict
+            # this mode to local files only. 
+            local_indices = [i for i, f in enumerate(all_files) if vfs.is_local_url(f)]
+            skipped_count = len(all_files) - len(local_indices)
+
+            if skipped_count > 0:
+                self.common_socket_events.show_search_status(
+                    f'Skipping {skipped_count} remote file(s) for semantic content search'
+                )
+            if not local_indices:
+                # All files are remote → no semantic search possible. Return NaN
+                # for every entry so FileManager filters them all out.
+                return np.full(len(all_files), np.nan, dtype=np.float32)
+
+            local_files = [all_files[i] for i in local_indices]
+            
             self.common_socket_events.show_search_status("Extracting embeddings")
             embeds_text = self.engine.query_embedder.embed_text(text_query)
-            embeds_files = self.engine.process_files(all_files, callback=self.embedding_gathering_callback, media_folder=self.media_directory, generate_embs_if_not_in_cache=True)
-            files_similarity_scores = self.engine.compare(embeds_files, embeds_text)
+            embeds_files = self.engine.process_files(
+                local_files, 
+                callback=self.embedding_gathering_callback,
+                media_folder=self.media_directory, 
+                generate_embs_if_not_in_cache=False
+            )
+            local_scores = self.engine.compare(embeds_files, embeds_text) # np.ndarray, NaN for unindexed
 
             self.common_socket_events.show_search_status("Sorting by relevance")
-            scores = files_similarity_scores
 
-            # All the embeddings that are almost zero in all directions are missing files, so we want set the scores for them to None
-            # to make sure they are excluded from the presentations and calculated as "unindexed" files.
-            scores[np.all(embeds_files.cpu().numpy() < 1e-5, axis=1)] = np.nan
+            # Project local scores back into the full-files index space.
+            scores = np.full(len(all_files), np.nan, dtype=np.float32)
+            for i, idx in enumerate(local_indices):
+                scores[idx] = local_scores[i]
 
         if mode == 'semantic-metadata':
             self.common_socket_events.show_search_status("Extracting metadata embeddings")
@@ -203,15 +239,6 @@ class CommonFilters:
 
             self.common_socket_events.show_search_status("Sorting by relevance")
             scores = meta_similarity_scores
-
-            # Mark unindexed files (zero/empty chunks from process_files when
-            # generate_embs_if_not_in_cache=False) as NaN so they are excluded.
-            for i, file_chunks in enumerate(embeds_meta_files):
-                if not file_chunks:
-                    scores[i] = np.nan
-                    continue
-                if all(np.all(np.abs(chunk) < 1e-5) for chunk in file_chunks):
-                    scores[i] = np.nan
 
         return scores
 
@@ -323,4 +350,6 @@ class CommonFilters:
             for rank, (_, _, _, f) in enumerate(sorted_files_with_metrics)
         }
         scores = np.array([path_to_score[f] for f in all_files], dtype=np.float32)
+
+        
         return scores

@@ -459,6 +459,7 @@ class MetadataSearch:
                 new_embedding = self._generate_embedding(file_path, media_folder)
                 self._fast_cache.set(cache_key, new_embedding)
             else:
+                dim = self.text_embedder.embedding_dim
                 new_embedding = np.zeros((dim,), dtype=np.float32) if dim else np.array([], dtype=np.float32) 
                 
             return [new_embedding]
@@ -530,47 +531,60 @@ class MetadataSearch:
 
         return all_files_meta_embeddings
     
-    def compare(self, file_embeddings: list[list[np.ndarray]], query_embedding: torch.Tensor) -> np.ndarray:
+    def compare(self, file_embeddings, query_embedding):
         """
-        Compares a query embedding against file embeddings (list of lists of chunk embeddings).
-        Calculates relevance scores (max similarity across all chunks in each file).
+        Compare query against metadata chunk embeddings of all files in a
+        single subprocess call.  Returns np.ndarray of per-file smooth-max
+        similarity scores with NaN for unindexed files — identical contract
+        to BaseSearchEngine.compare() and TextSearch.compare().
         """
-        # Ensure query embedding is numpy array (float32)
+        # 1. Normalize the query embedding once on the calling side.
         if isinstance(query_embedding, torch.Tensor):
-            query_embedding_np = query_embedding.to(torch.float32).cpu().numpy()
+            query_np = query_embedding.detach().to(torch.float32).cpu().numpy().ravel()
         else:
-            query_embedding_np = query_embedding
+            query_np = np.asarray(query_embedding, dtype=np.float32).ravel()
 
-        # Unload to free VRAM, if it was loaded for description generation
-        # self.omni_descriptor.unload()  
+        n_files = len(file_embeddings)
+        # NaN by default → unindexed files are dropped by FileManager.is_valid_pair().
+        scores = np.full(n_files, np.nan, dtype=np.float32)
 
-        beta = 16.0  # tune (4..20). Higher -> closer to max.
-
-        scores = []
-        for file_chunks in file_embeddings:
+        # 2. Collect ALL valid chunks from ALL files into one flat list.
+        #    Skip empty file-chunk lists and all-zero chunks (failed embeddings).
+        all_chunks = []
+        chunk_file_indices = []
+        for file_idx, file_chunks in enumerate(file_embeddings):
             if not file_chunks:
-                scores.append(0.0)
-                continue
-            
-            # TextEmbedder's compare method expects a numpy array of embeddings
-            chunk_embeddings_np = np.array(file_chunks, dtype=np.float32)
-            
-            # Use TextEmbedder's compare logic
-            chunk_scores = self.text_embedder.compare(chunk_embeddings_np, query_embedding_np)
-                
-            # scores.append(max(chunk_scores) if chunk_scores else 0.0)
+                continue  # stays NaN — unindexed
+            for chunk in file_chunks:
+                chunk_np = np.asarray(chunk, dtype=np.float32)
+                if not np.any(np.abs(chunk_np) > 1e-5):
+                    continue  # all-zero chunk — embedding failed for this chunk
+                all_chunks.append(chunk_np)
+                chunk_file_indices.append(file_idx)
 
-            # Calculate smooth-max-based score for better differentiation (f(a,b) = ln(e^a + e^b) with normalization to avoid large values for files with many chunks)
-            chunk_scores = np.array(chunk_scores)
+        if not all_chunks:
+            return scores  # all NaN
 
-            m = float(chunk_scores.max())
-            x = beta * (chunk_scores - m)
-            x = np.clip(x, -50.0, None)  # prevent underflow
+        # 3. ONE subprocess call for the whole batch.
+        big_array = np.stack(all_chunks)
+        flat_sims = self.text_embedder.compare(big_array, query_np)
+        flat_sims = np.asarray(flat_sims, dtype=np.float32)
+
+        # 4. Smooth-max per file. Indexing by mask is O(N_files × avg_chunks),
+        #    not O(N_files × N_total_chunks) like a per-file Python loop.
+        beta = 16.0
+        chunk_file_indices = np.asarray(chunk_file_indices, dtype=np.int64)
+        for file_idx in range(n_files):
+            chunk_sims = flat_sims[chunk_file_indices == file_idx]
+            if chunk_sims.size == 0:
+                continue  # all of this file's chunks were zero → stays NaN
+
+            m = float(chunk_sims.max())
+            x = beta * (chunk_sims - m)
+            x = np.clip(x, -50.0, None)
             lse_centered = np.log(np.exp(x).sum())
-            # Length‑invariant smooth max
-            smooth = m + (lse_centered - np.log(len(chunk_scores))) / beta
-            # scores.append(float(np.clip(smooth, -1.0, 1.0)))
-            scores.append(float(smooth))
-            
-        return np.array(scores)
+            smooth = m + (lse_centered - np.math.log(len(chunk_sims))) / beta
+            scores[file_idx] = float(smooth)
+
+        return scores
     

@@ -82,7 +82,7 @@ class ImageSearch(BaseSearchEngine):
         super().__init__(cfg) # Call base class __init__ to set up singleton and flags
         self.cfg = cfg # Store cfg for reading parameters
         self._image_embedder = None
-        self._query_embedder = None  # lazy CPU query embedder (SigLIP)
+        self._query_embedder = None  # lazy CPU query embedder
 
     @property
     def model_name(self) -> str:
@@ -99,7 +99,7 @@ class ImageSearch(BaseSearchEngine):
     def query_embedder(self):
         """Lazy CPU query embedder — used by CommonFilters for search-time only.
 
-        Loads the same SigLIP model as the ImageEmbedder subprocess, but
+        Loads the same embedding model as the subprocess, but
         directly in the main process on CPU, so a search never touches the
         GPU and cannot be starved by background rating tasks.
         """

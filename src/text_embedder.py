@@ -544,7 +544,7 @@ if __name__ == '__main__':
     # 1. Setup mock configuration
     mock_cfg = OmegaConf.create({
         'text_embedder': {
-            'model_name': 'jinaai/jina-embeddings-v3',
+            'model_name': 'Qwen/Qwen3-Embedding-0.6B',
             'embedding_dimension': 512,
             'chunk_size': 192,
             'chunk_overlap': 64,

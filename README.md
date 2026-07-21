@@ -186,7 +186,7 @@ The project is meant to be run on the localhost only for now. The default config
 To make audio, visual, video and text search possible the project uses these models:  
 [LAION-AI/CLAP](https://github.com/LAION-AI/CLAP) - for audio embeddings.  
 [Google/SigLIP](https://arxiv.org/pdf/2303.15343) - for image embeddings.  
-[JinaAI/jina-embeddings-v3](https://huggingface.co/jinaai/jina-embeddings-v3) - for text embeddings.  
+[Qwen/Qwen3-Embedding-0.6B](https://huggingface.co/Qwen/Qwen3-Embedding-0.6B) - for text embeddings.  
 [Dystrio/MiniCPM-o-4_5-Sculpt-Throughput](https://huggingface.co/dystrio/MiniCPM-o-4_5-Sculpt-Throughput) - as omni-descriptor model to convert all data modalities into text descriptions. Optimized version of [MiniCPM-o-4_5](https://huggingface.co/openbmb/MiniCPM-o-4_5) (used by `metadata-based-search`).  
 
 All models are downloaded automatically when the project is started for the first time. This might take some time depending on the internet connection. You can see the progress inside `logs/anagnorisis-app_log.txt` file that will appear in the project's root folder if you run the project from the Docker container.

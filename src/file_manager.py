@@ -194,8 +194,8 @@ class FileManager:
         t = threading.Thread(target=self._monitor_servers_loop, daemon=True, name="ServerMonitor")
         t.start()
 
-    def show_status(self, message):
-        self.common_socket_events.show_search_status(message)
+    def show_status(self, message, force=False):
+        self.common_socket_events.show_search_status(message, force=force)
 
     def resolve_media_path(self, path):
         """Return the absolute path for the given media directory and relative path."""
@@ -784,26 +784,26 @@ class FileManager:
         else:
             raise ValueError("order must be 'most-relevant' or 'least-relevant'")
 
-        # Filter out any None / NaN / -1 scores and files, keeping only valid pairs.
-        # -1 marks unindexed files (set by CommonFilters in semantic modes); we
-        # also tally them so the user can see what the background scheduler is
-        # still working on.
-        unindexed_count = sum(
-            1 for s in scores
-            if isinstance(s, (int, float)) and s == -1
-        )
         
         def is_valid_pair(i):
             score = scores[i]
             file_path = all_files[i]
             if score is None or file_path is None:
                 return False
-            if isinstance(score, float) and (score != score or score < 0):
+            # NaN scores mean the file couldn't be embedded (e.g. empty file with
+            # no cache entry under generate_embs_if_not_in_cache=False). They are
+            # NOT valid search results and would also break JSON serialization
+            # downstream (NaN is non-standard JSON and crashes JSON.parse() in JS).
+            # Filter them out exactly like None.
+            if isinstance(score, float) and score != score:   # NaN != NaN → True
                 return False
             return True
 
         sorted_files = [all_files[i] for i in indices if is_valid_pair(i)]
         sorted_scores = [scores[i] for i in indices if is_valid_pair(i)]
+
+        # Number of filtered out any None scores and files, keeping only valid pairs.
+        unindexed_count = len(all_files) - len(sorted_files)
 
         # Select files for the current page
         page_files = sorted_files[pagination:pagination+limit]
@@ -883,6 +883,11 @@ class FileManager:
                 #     if db_item.last_played:
                 #         last_played_timestamp = db_item.last_played.timestamp() if db_item.last_played else None
                 #         last_played = time_difference(last_played_timestamp, datetime.datetime.now().timestamp())
+
+                # Clean NaN values from the scores, to avoid serialization issues
+                score = page_files_scores[ind]
+                if isinstance(score, float) and score != score:
+                    score = None
                     
                 data = {
                     "type": "file",
@@ -895,7 +900,7 @@ class FileManager:
                     "file_size": convert_size(file_size),
                     "file_info": get_file_info(full_path),
                     "has_meta": my_fs.exists(path_in_fs + '.meta'),
-                    "search_score": page_files_scores[ind]
+                    "search_score": score
                 }
                 files_data.append(data)
         finally:
@@ -909,18 +914,18 @@ class FileManager:
         # Save all extracted metadata to the cache
         # self.cached_metadata.save_metadata_cache()
 
-        elapsed = time.time() - start_time
-        if unindexed_count > 0:
-            self.show_status(
-                f'Showed {len(sorted_files)} of {len(all_files)} files in {elapsed:.2f}s. '
-                f'{unindexed_count} file(s) still unindexed.'
-            )
-        else:
-            self.show_status(
-                f'Processed {len(sorted_files)} files in {elapsed:.2f}s.'
-            )
+        # elapsed = time.time() - start_time
+        # if unindexed_count > 0:
+        #     self.show_status(
+        #         f'Showed {len(sorted_files)} of {len(all_files)} files in {elapsed:.2f}s. '
+        #         f'{unindexed_count} file(s) still unindexed.'
+        #     )
+        # else:
+        #     self.show_status(
+        #         f'Processed {len(sorted_files)} files in {elapsed:.2f}s.'
+        #     )
 
-        logger.info(f'get_files returning {len(files_data)} files data.')
+        # logger.info(f'get_files returning {len(files_data)} files data.')
 
         # Check if all the data is serializable and if not print the non-serializable data
         for file_data in files_data:
@@ -928,6 +933,19 @@ class FileManager:
                 json.dumps(file_data, indent=2)
             except (TypeError, OverflowError) as e:
                 raise ValueError(f'Non-serializable data found in file: {file_data["full_path"]}, error: {e}')
+            
+
+        # Show final status
+        elapsed = time.time() - start_time
+        final_summary = (
+            f'Showed {len(sorted_files)} of {len(all_files)} files in {elapsed:.2f}s. '
+            f'{unindexed_count} file(s) still unindexed.'
+            if unindexed_count > 0
+            else f'Processed {len(sorted_files)} files in {elapsed:.2f}.'
+        )
+        self.show_status(final_summary, force=True)   # force=True bypasses throttle
+
+        logger.info(f'get_files returning {len(files_data)} files data.')
 
         return {
             "files_data": files_data, 

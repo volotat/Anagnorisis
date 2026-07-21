@@ -9,6 +9,8 @@ music:
   rating_update_batch_size: 3000 # Max number of files rated per background run (set to null for no limit)
   description_update_interval_minutes: 30 # How often to proactively describe undescribed files via OmniDescriptor (set to null to disable)
   description_update_batch_size: 10 # Max number of files described per background run
+  embedding_update_batch_size: 1000
+  embedding_update_interval_minutes: 10
   # Tags used by EmbeddingProxyGenerator for zero-shot labelling via CLAP cosine similarity.
   # Only tags whose similarity to the audio embedding meets the threshold are included.
   # Extend or edit this list freely — tag embeddings are recomputed and cached automatically
