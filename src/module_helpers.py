@@ -73,6 +73,13 @@ def make_scheduled_embedding_check(app, label, file_manager: FileManager, engine
     """Return a callable for ``Scheduler`` that finds files without cached
     embeddings and submits an embedding task to ``app.task_manager``.
 
+    The walker is hard-coded to ``osfs:///mnt/media/`` — i.e. LOCAL files only.
+    Embedding models (CLAP/SigLIP) need to read the audio/image content to
+    produce embeddings, so we cannot include remote files here. Remote files
+    only get an embedding if the user explicitly opens them in a context
+    that triggers MemorySystem (direct user action), or if they are
+    accessed through the search hot path which embeds the query on CPU.
+
     Capped per cycle via ``cfg.<cfg_key>.embedding_update_batch_size``
     so a single run cannot monopolise the task queue. Whatever isn't
     processed this cycle is picked up on the next scheduled tick.
@@ -160,6 +167,12 @@ def make_scheduled_rating_check(app, label, file_manager: FileManager, evaluator
 def make_scheduled_description_check(app, label, file_manager: FileManager, metadata_search_engine, cfg, cfg_key):
     """Return a callable for ``Scheduler`` that submits description tasks.
 
+    Walks only local files (OmniDescriptor downloads content); remote files
+    are excluded so the background scheduler never touches them. Remote
+    files are still scored by the rating pipeline (which uses the cache-only
+    ``generate_full_description`` path), and they get a full memory entry 
+    only when the user explicitly rates them (MemorySystem path).
+
     Args:
         app:                      Flask app (must have ``app.task_manager``).
         label:                    Human label, e.g. ``"Images"``.
@@ -169,10 +182,16 @@ def make_scheduled_description_check(app, label, file_manager: FileManager, meta
         cfg_key:                  Config prefix, e.g. ``"images"``.
     """
     def _check_and_submit_description():
-        all_files = file_manager.list_all_files()
+        # all_files = file_manager.list_all_files()
+        all_files = file_manager._walk_files_cached("osfs:///mnt/media/", set(file_manager.media_formats)) 
+        if not all_files: return
+
         candidates = metadata_search_engine.get_undescribed_files(all_files)
         if candidates is None:
-            candidates = all_files
+            candidates = []
+        if not candidates:
+            return
+
         base_name = f'{label}: describe undescribed files'
         batch_size = OmegaConf.select(cfg, f'{cfg_key}.description_update_batch_size', default=100)
         batch_size = min(batch_size, len(candidates))

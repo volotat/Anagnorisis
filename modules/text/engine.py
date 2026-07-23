@@ -215,8 +215,6 @@ class TextSearch(BaseSearchEngine):
         for ind, file_path in enumerate(tqdm(file_paths, desc=f"Processing {self.cache_prefix} files")):
             current_file_embeddings = None
             try:
-                # file_hash = self.get_file_hash(file_path)
-                # cache_key = f"{file_hash}::{self.model_hash}"
                 cache_key = self.make_embedding_cache_key(file_path)
 
                 cached_chunk_embeddings = self._fast_cache.get(cache_key) if not ignore_cache else None

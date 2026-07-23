@@ -1,5 +1,18 @@
 # Change History
 
+
+### Version 0.4.6 (23.07.2026)
+*  **Remote-aware metadata handling:**
+    *   Metadata-based search (`semantic-metadata` mode) no longer triggers silent downloads of remote files. Cache keys for auto-descriptions now use only file stats (path + size + mtime + model hash) instead of a content hash, so the first lookup after a restart — or the first time a remote file is ever seen — only performs a cheap stat, never reads file content.
+    *   For remote files, `MetadataSearch.generate_full_description` (used both by the search hot path and the rating scheduler) now includes only `filename + path + .meta sidecar`. Auto-descriptions, internal file metadata (EXIF / ID3 / moviepy), and embedding proxies are intentionally skipped — they would each require downloading the original file.
+*  **Faster search hot path on first contact:**
+    *   `get_file_hash` is no longer called anywhere on the search hot path. Cache lookups for both `auto_desc::` and `meta::` use stat-only keys, so an empty `.meta` cache directory no longer forces a download of every file just to look up the description.
+*  **Safe background schedulers:**
+    *   `make_scheduled_description_check` no longer crashes: it now iterates only `osfs:///mnt/media/` (local-only) instead of the previously-missing `file_manager.list_all_files()`. Remote files continue to be skipped entirely from the description scheduler.
+    *   Both the description scheduler and the embedding scheduler remain restricted to local files. Only the rating scheduler walks remote files, and only because ratings are derived from the (now-safe) thin description path.
+*  **`.meta` reading is now hard-capped at 32 KB:**
+    *   Previously the cap was `30 000 chars OR 300 lines` — small `.meta` files with very long lines could exceed the byte budget. The new `_MAX_META_BYTES = 128 * 1024` makes the cap unambiguous and matches the documented "downloaded up to N kb" behaviour for remote files.
+
 ### Version 0.4.5 (21.07.2026)
 *  **Search Performance & Reliability:**
     *   "Content-based" semantic search was iterating the full list of matched files on every progress update to count cache hits inside the status callback, making the lookup O(N²) instead of O(N). Replaced the per-iteration list scan with a running counter; subsequent searches over cached embeddings now complete almost immediately.

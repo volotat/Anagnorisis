@@ -43,8 +43,7 @@ from src.app_factory.event_manager import EventManager
 
 
 # How much of a .meta sidecar to read into a memory file.
-_MAX_META_LINES = 300
-_MAX_META_CHARS = 30_000
+_MAX_META_BYTES = 128 * 1024   # 128 KB hard cap, irrespective of line length
 # Internal-metadata string-value length cap (drops base64 cover art, etc.).
 _MAX_META_VALUE_LEN = 1000
 
@@ -221,6 +220,10 @@ class MemorySystem:
         parse (and strip before embedding — see universal_train._parse_memory_file).
         Each section is wrapped defensively so a failed model call or a missing
         file does not lose the rest of the description.
+
+        Only called from ``save_memory``, which is triggered by ``emit_set_file_rating``
+        — i.e. an explicit user action. Downloading remote files is therefore
+        intentional and necessary to build the most informative memory possible.
         """
         # Lazily load embedding/omni models on first use (inside a background task,
         # so this never blocks app startup).
@@ -365,18 +368,17 @@ class MemorySystem:
         with fs.open_fs(base_url) as my_fs:
             if not my_fs.exists(path_in_fs):
                 return ""
-            lines = []
+            
             total = 0
+            data = b""
             with my_fs.open(path_in_fs, 'rb') as f:
                 for i, raw in enumerate(f):
-                    if i >= _MAX_META_LINES:
+                    total += len(raw)
+                    data += raw
+                    if total > _MAX_META_BYTES:
                         break
-                    line = raw.decode('utf-8', errors='ignore')
-                    if total + len(line) > _MAX_META_CHARS:
-                        break
-                    lines.append(line)
-                    total += len(line)
-            return "".join(lines)
+
+            return data.decode('utf-8', errors='ignore')
 
     # ------------------------------------------------------------------
     # Storage

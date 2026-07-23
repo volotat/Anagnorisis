@@ -264,7 +264,7 @@ class BaseSearchEngine(ABC):
         This is useful for storing in the DB alongside file hashes.
         """
         return "md5:v2" # Currently only md5 is implemented; can be extended in subclasses
-    
+
     def get_file_hash(self, file_path: str) -> str:
         logger.debug(f"get_file_hash called with file_path: {file_path}")
 

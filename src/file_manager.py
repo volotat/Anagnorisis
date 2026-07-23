@@ -371,10 +371,16 @@ class FileManager:
         return new_files + stale_paths
 
     # def list_all_files(self) -> list[str]:
-    #     """Return all media file paths currently on disk (no DB, no hashing)."""
+    #     """Return all media file paths currently on disk, local files only.
+
+    #     OmniDescriptor's auto-description pipeline downloads the entire file,
+    #     so this walker is restricted to `osfs:///` mounts. Remote servers are
+    #     intentionally excluded — their descriptions are populated only by the
+    #     MemorySystem path when the user explicitly rates a remote file.
+    #     """
     #     if self.media_directory is None:
     #         return []
-    #     return self._walk_files_cached(self.media_directory, set(self.media_formats))
+    #     return self._walk_files_cached("osfs:///mnt/media/", set(self.media_formats))
 
     # def get_folders(self, path = ""):
     #     # current_path = self.resolve_media_path(path)
