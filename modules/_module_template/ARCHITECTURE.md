@@ -149,16 +149,16 @@ Modules can include any extra `.py` files (e.g. `crawler.py` in the WebSearch mo
 | `src.file_manager.FileManager` | Discovers files in `media_directory`, computes hashes, handles pagination, and coordinates with the search engine for embedding extraction. Also provides `get_unrated_files(evaluator_hash)` and `list_all_files()`. |
 | `src.common_filters.CommonFilters` | Pluggable sorting/filtering system. Built-in filters: `by_text`, `by_file`, `file_size`, `similarity`, `random`, `rating`. Modules can add custom filters (e.g. `recommendation`, `length`). |
 | `src.metadata.search.get_metadata_search` | Returns the process-wide `MetadataSearch`. Builds text descriptions from file metadata (name, path, EXIF/tags, OmniDescriptor captions, `.meta` sidecars) and embeds them for semantic search. Module-independent: it resolves a file's media type from its extension, so it needs nothing from your module. |
-| `src.metadata.media_types.get_registry` | The media-type taxonomy loaded from `media_types/`. Answers "what kind of content is this file", which decides its extensions, tag vocabulary and internal-metadata reader. |
+| `anagnorisis_core.media_types.get_registry` | The media-type taxonomy loaded from `anagnorisis_core/data/media_types/`. Answers "what kind of content is this file", which decides its extensions, tag vocabulary and internal-metadata reader. |
 | `src.scoring_models.Evaluator` | Base neural network for scoring. The universal evaluator (`TransformerEvaluator`) is the preferred variant for cross-module rating. |
 | `src.model_manager.ModelManager` | Wraps ML models for GPU memory-efficient inference with automatic device management and idle timeout. |
 | `src.db_models.db` | The shared SQLAlchemy instance. All modules must import `db` from here. |
-| `src.omni_embedder.get_omni_embedder` | The single embedding model — text, images, audio and video into one shared vector space. Runs in a subprocess to keep the CUDA context out of the Flask process, and unloads when idle. Used by background tasks. |
-| `src.omni_embedder.get_query_embedder` | The same model on the CPU, in-process, for embedding search queries. Searching must never touch the GPU. |
-| `src.omni_descriptor.OmniDescriptor` | Multi-modal captioning model that generates text descriptions from images, audio, video, or text files. |
+| `anagnorisis_core.embedder.get_omni_embedder` | The single embedding model — text, images, audio and video into one shared vector space. Runs in a subprocess to keep the CUDA context out of the Flask process, and unloads when idle. Used by background tasks. |
+| `anagnorisis_core.embedder.get_query_embedder` | The same model on the CPU, in-process, for embedding search queries. Searching must never touch the GPU. |
+| `anagnorisis_core.descriptor.OmniDescriptor` | Multi-modal captioning model that generates text descriptions from images, audio, video, or text files. |
 | `src.task_manager.TaskManager` | Centralised background task queue accessible via `app.task_manager`. Tasks run sequentially with cooperative pause/resume/cancel via `TaskContext`. Progress is broadcast to the frontend `TaskManagerComponent`. |
 | `src.scheduler.schedule_task` | Utility to run a function periodically on a daemon thread with `app.app_context()`. Used by all media modules for background rating and description generation. |
-| `src.caching.TwoLevelCache` | Tiered RAM/disk cache with deferred writes and sharded storage. Used internally by search engines and metadata search. |
+| `anagnorisis_core.caching.TwoLevelCache` | Tiered RAM/disk cache with deferred writes and sharded storage. Used internally by search engines and metadata search. |
 
 ## Shared JavaScript components
 
@@ -297,7 +297,7 @@ To add your module to the universal evaluator:
 
 1. **Ensure your `db_models.py`** has `user_rating` and `file_path` columns.
 2. **Create `train.py`** in your module folder exposing `get_training_pairs(cfg, text_embedder, status_callback)`.
-3. **Give your media type a `metadata_extractor`** in `media_types/media_types.yaml` if its files carry internal metadata worth reading — the reader itself goes in `src/metadata/extractors/`. This is what `generate_full_description()` uses to build the text representation.
+3. **Give your media type a `metadata_extractor`** in `media_types/media_types.yaml` if its files carry internal metadata worth reading — the reader itself goes in `anagnorisis_core/extractors/`. This is what `generate_full_description()` uses to build the text representation.
 
 That's it. No registry entries needed — the pipeline finds your `train.py` automatically.
 

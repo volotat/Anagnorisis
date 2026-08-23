@@ -1,0 +1,192 @@
+{
+  "files_measured": 439,
+  "list_seconds": 0.004,
+  "list_per_file_us": 9.2,
+  "first_call_seconds": 1.4978,
+  "startup_seconds": 1.4938,
+  "listing": {
+    "files": 439,
+    "uncached_s": 0.0237,
+    "cold_s": 0.0053,
+    "warm_s": 0.0045,
+    "warm_stdev_s": 0.0,
+    "uncached_per_file_us": 53.96,
+    "cold_per_file_us": 12.11,
+    "warm_per_file_us": 10.29,
+    "est_uncached_100000_s": 5.4,
+    "est_cold_100000_s": 1.2,
+    "est_warm_100000_s": 1.0
+  },
+  "indexing": {
+    "files": 439,
+    "model_load_s": 12.28,
+    "per_type": {
+      "audio": {
+        "files": 205,
+        "content_raw_s": 298.998,
+        "content_s": 286.72,
+        "content_per_file_s": 1.3986,
+        "descriptions_raw_s": 87.522,
+        "descriptions_s": 75.244,
+        "descriptions_per_file_s": 0.367
+      },
+      "images": {
+        "files": 202,
+        "content_raw_s": 124.403,
+        "content_s": 112.125,
+        "content_per_file_s": 0.5551,
+        "descriptions_raw_s": 86.858,
+        "descriptions_s": 74.58,
+        "descriptions_per_file_s": 0.3692
+      },
+      "text": {
+        "files": 17,
+        "content_raw_s": 18.261,
+        "content_s": 5.983,
+        "content_per_file_s": 0.352,
+        "descriptions_raw_s": 19.686,
+        "descriptions_s": 7.408,
+        "descriptions_per_file_s": 0.4358
+      },
+      "videos": {
+        "files": 15,
+        "content_raw_s": 69.121,
+        "content_s": 56.843,
+        "content_per_file_s": 3.7895,
+        "descriptions_raw_s": 18.324,
+        "descriptions_s": 6.046,
+        "descriptions_per_file_s": 0.4031
+      }
+    },
+    "totals": {
+      "content": {
+        "seconds": 461.67,
+        "per_file_s": 1.0516,
+        "est_100000_s": 105176.5
+      },
+      "descriptions": {
+        "seconds": 163.28,
+        "per_file_s": 0.3719,
+        "est_100000_s": 37205.4
+      }
+    },
+    "resume_s": 0.022,
+    "resume_per_file_ms": 0.05,
+    "est_resume_100000_s": 5.0,
+    "est_total_100000_s": 142374.6
+  },
+  "describing": {
+    "model_load_s": 13.07,
+    "sample_per_type": 3,
+    "per_type": {
+      "audio": {
+        "sampled": 3,
+        "failed": 0,
+        "population": 205,
+        "mean_s": 47.38,
+        "median_s": 45.84,
+        "min_s": 45.02,
+        "max_s": 51.29,
+        "est_all_100000_hours": 1316.2
+      },
+      "images": {
+        "sampled": 3,
+        "failed": 0,
+        "population": 202,
+        "mean_s": 15.63,
+        "median_s": 15.75,
+        "min_s": 14.43,
+        "max_s": 16.71,
+        "est_all_100000_hours": 434.2
+      },
+      "text": {
+        "sampled": 3,
+        "failed": 0,
+        "population": 17,
+        "mean_s": 5.31,
+        "median_s": 0.0,
+        "min_s": 0.0,
+        "max_s": 15.94,
+        "est_all_100000_hours": 147.6
+      },
+      "videos": {
+        "sampled": 3,
+        "failed": 0,
+        "population": 15,
+        "mean_s": 55.93,
+        "median_s": 56.94,
+        "min_s": 52.81,
+        "max_s": 58.03,
+        "est_all_100000_hours": 1553.5
+      }
+    },
+    "blended_per_file_s": 31.43,
+    "est_blended_100000_hours": 873.2,
+    "mix_note": "blended at this set's media mix: audio 205, images 202, text 17, videos 15"
+  },
+  "target": 100000,
+  "warm_runs": 5,
+  "queries": {
+    "name": "winter",
+    "semantic": "a quiet acoustic recording",
+    "metadata": "a quiet acoustic recording"
+  },
+  "speed": [
+    {
+      "mode": "name",
+      "files": 439,
+      "indexed_hits": 439,
+      "model_warmup_s": 0.0,
+      "query_s": 0.0,
+      "cold_score_s": 0.0102,
+      "warm_score_s": 0.0101,
+      "warm_score_stdev_s": 0.0001,
+      "cold_per_file_us": 23.15,
+      "warm_per_file_us": 23.03,
+      "est_cold_100000_s": 2.3,
+      "est_warm_100000_s": 2.3
+    },
+    {
+      "mode": "semantic",
+      "files": 439,
+      "indexed_hits": 439,
+      "model_warmup_s": 9.12,
+      "query_s": 0.3068,
+      "cold_score_s": 0.0225,
+      "warm_score_s": 0.0188,
+      "warm_score_stdev_s": 0.0008,
+      "cold_per_file_us": 51.32,
+      "warm_per_file_us": 42.83,
+      "est_cold_100000_s": 5.4,
+      "est_warm_100000_s": 4.6
+    },
+    {
+      "mode": "metadata",
+      "files": 439,
+      "indexed_hits": 439,
+      "model_warmup_s": 0.272,
+      "query_s": 0.3033,
+      "cold_score_s": 0.0214,
+      "warm_score_s": 0.0215,
+      "warm_score_stdev_s": 0.0019,
+      "cold_per_file_us": 48.78,
+      "warm_per_file_us": 48.99,
+      "est_cold_100000_s": 5.2,
+      "est_warm_100000_s": 5.2
+    }
+  ],
+  "quality": {
+    "metadata": {
+      "sampled": 15,
+      "recall_at_1": 0.6,
+      "recall_at_5": 0.667,
+      "mrr": 0.649
+    },
+    "semantic": {
+      "sampled": 15,
+      "recall_at_1": 0.467,
+      "recall_at_5": 0.8,
+      "mrr": 0.574
+    }
+  }
+}

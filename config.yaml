@@ -69,6 +69,12 @@ omni: # The descriptor: writes the natural-language description of a file.
   max_new_tokens: 256
   do_sample: false
   temperature: 0.2
+  # Stills shown to the descriptor per sampled window. Measured on an 8 GB card,
+  # alongside a full audio window: 4 peaks at 7.47 GB, 6 at 7.76 GB with about
+  # 20 MB spare and no better description, 8 runs out of memory. Four leaves
+  # enough headroom that a background pass survives something else touching the
+  # card. Raise it on a larger card.
+  video_frames_per_window: 4
   video_sample_max_size: 512 # Max dimension (width or height) for video frame sampling to the omni descriptor
   image_max_size: 512 # Max dimension (width or height) for input images to the omni descriptor
   min_free_vram_to_run: 7168 # Refuse to load with less than this much free VRAM,

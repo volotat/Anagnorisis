@@ -32,6 +32,28 @@ ARG MODULE_REQS_CACHE_BUST=1
 COPY modules/ /tmp/module_reqs/
 RUN find /tmp/module_reqs/ -name 'requirements.txt' -exec pip install --no-cache-dir -r {} \; || true
 
+# The engine is a pip package like any other dependency, installed here rather
+# than found by accident on sys.path.
+#
+# Installed editable, and from /app specifically: the repository is bind-mounted
+# there at runtime, so the path pip records resolves to the working tree and the
+# `anagnorisis` / `anag` commands, `pip show` and imports all behave normally
+# while still running the code you are editing. Only pyproject.toml is read at
+# build time, so this copy is not what ends up being imported.
+#
+# --no-deps is load-bearing. The package declares plain `torch`, which now
+# resolves to a CUDA 13 build on PyPI and would replace the cu124 wheels
+# installed above. Dependencies are this image's job; the package only
+# contributes its own code.
+COPY anagnorisis_core/ /app/anagnorisis_core/
+RUN pip install --no-cache-dir --no-deps -e /app/anagnorisis_core
+#
+# The no-Flask boundary is enforced by anagnorisis_core/tests/test_core_boundary.py,
+# which fails if anything under the package imports `src.`, Flask or SQLAlchemy.
+# It used to be backed by an annotator image that installed the package with no
+# Flask present; the data server runs the command line directly now, so the test
+# is the whole of it.
+
 # ── Stage 2: runtime ─────────────────────────────────────────────────────────
 # Clean slim image — only runtime system libs + the pre-built /venv from above.
 FROM python:3.10-slim-bookworm

@@ -1,10 +1,17 @@
-# RClone WebDAV Server for Anagnorisis Data Sharing
+# Sharing a folder
+
+Two independent parts. Serving needs `rclone` and nothing else (no Python, no GPU) so a Raspberry Pi is plenty. Describing needs a GPU and is optional: without it files are still browsable, just harder to search.
+
+## Serving
 
 Host files via `rclone`
 
 ```
 rclone serve webdav "/path/to/your/files/you/want/to/share" --addr 0.0.0.0:6001 --read-only
 ```
+
+`--read-only` is what keeps a client to listing and downloading only.
+
 
 It might be the case the ufw firewall is enabled on your system. Because the main application is running inside a docker container, the local network and particularly port 6001 might not be accessible from its the network. To fix this you would have to allow access to this port via ufw on your host machine. You can do that by running the following command in the terminal:
 
@@ -15,7 +22,35 @@ sudo ufw allow proto tcp from 172.16.0.0/12 to any port 6001
 The `172.16.0.0/12` is the default docker network range.
 This will allow the main application to access the files shared with `rclone` via webdav protocol. Use the IP address of the your host machine to connect to the server from the main application.
 
+## Optional Describing
 
+Writes the `.meta` files that make the folder searchable, using the `anagnorisis-core` command line. See [`anagnorisis_core/README.md`](../anagnorisis_core/README.md) to install it. Then run one of these two commands:
+
+```bash
+# once, then exit
+anag describe /path/to/the/folder --sink meta
+
+# or keep going, describing whatever appears
+anag describe /path/to/the/folder --sink meta --watch --interval 600
+```
+
+`--sink meta` is the part that matters: by default descriptions go to the cache and nothing is written beside your files. Here you want the sidecars, because they are what travels with the media.
+
+Re-running is cheap, a file that already has a `.meta` is skipped without being read, which is also how you resume after stopping. In `--watch` mode a file is left alone until its size and mtime stop changing, so a video that is still copying is never described from a truncated copy.
+
+**Preferably describe on one machine and host on another.** Copy the folder (media and `.meta` together) to whatever serves it; that machine needs only
+`rclone`. Describe using `--watch` flag only when the machine with GPU is also the host.
+
+## The `.meta` files are yours
+
+- **An existing `.meta` is never overwritten**, whoever or whatever wrote it.
+- **Editing is expected** - add what the model could not know. Your edit stays.
+- **To regenerate, delete it and describe again.** No staleness check, no force
+  flag, so nothing can quietly destroy what you wrote.
+
+Generated ones start with an `Anagnorisis-Generated:` line naming the models, so you can tell at a glance which you have since edited. Descriptions are deliberately generic and never include the file's path, so publishing one does not reveal how your server is organised.
+
+<!--
 # Introduction
 
 There are only two responsibilities of the data server:
@@ -37,7 +72,7 @@ Once the server is started you would be prompted to choose the method of descrip
 
 You would also be prompted to select if you want the server to automatically generate descriptions for new files if such would be found. This would require constant cloud API calls or GPU usage, so think in advance how exactly you want your server to operate. However, you can always change this setting later in the configuration file.
 
-<!--
+
 ---
 This folder is for future development of a data server that a user could connect to to see some shared information. The main goal is to create a p2p platform that would allow to do that seamlessly, but for now the server will still be centralized until the proper protocol for handling content sharing is developed. Although anybody should be able to set up such a server and anybody could connect to any other server, so there still some level of decentralization present. 
 

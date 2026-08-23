@@ -30,13 +30,13 @@ from omegaconf import OmegaConf
 import src.file_manager as file_manager
 
 # Import your module's own submodules
-from src.content_search import get_content_search
+from anagnorisis_core.search.content_search import get_content_search
 import modules._module_template.db_models as db_models
 
 # Shared framework utilities
 from src.socket_events import CommonSocketEvents
-from src.common_filters import CommonFilters
-from src.metadata.search import get_metadata_search
+from anagnorisis_core.search.common_filters import CommonFilters
+from anagnorisis_core.search.metadata_search import get_metadata_search
 from src.scheduler import Scheduler
 from src.utils import convert_size, SortingProgressCallback, EmbeddingGatheringCallback
 
@@ -102,7 +102,7 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
     # Anagnorisis uses a single universal evaluator for all modules.
     # Uncomment these lines to enable model-predicted ratings in file listings:
     #
-    from modules.train.universal_train import UniversalEvaluator
+    from anagnorisis_core.ratings.training import UniversalEvaluator
     evaluator = UniversalEvaluator()
     evaluator.load(os.path.join(cfg.main.personal_models_path, 'universal_evaluator.pt'))
 

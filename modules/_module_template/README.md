@@ -68,7 +68,7 @@ search_engine.initiate(models_folder=cfg.main.embedding_models_path)
 
 That gives you `process_files()`, `process_text()`, `compare()`, `get_metadata()`, `get_file_hash()` and the embedding cache, with no per-module code.
 
-If your module handles a kind of content no existing type covers, add it to [`media_types/media_types.yaml`](../../media_types/media_types.yaml) — extensions, which internal-metadata reader to use, and optionally a tag vocabulary in `media_types/tags/`. If it also needs a *new* way of extracting internal metadata, add a reader to `src/metadata/extractors/`.
+If your module handles a kind of content no existing type covers, add it to [`anagnorisis_core/data/media_types/media_types.yaml`](../../anagnorisis_core/data/media_types/media_types.yaml) — extensions, which internal-metadata reader to use, and optionally a tag vocabulary in `anagnorisis_core/data/media_types/tags/`. If it also needs a *new* way of extracting internal metadata, add a reader to `anagnorisis_core/extractors/`.
 
 The base class provides: model downloading, two-level caching, hash computation, and batch processing with progress callbacks.
 

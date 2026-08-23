@@ -13,7 +13,7 @@ Two layers are tested:
    Flask app that reimplements the same middleware logic in isolation —
    keeping this test free from the heavy startup cost of the full app.py.
 
-3. src/file_manager.resolve_subpath() — the module-level guard used when
+3. anagnorisis_core.storage.file_paths.resolve_subpath() — the module-level guard used when
    serving files from media directories.
 """
 import pytest

@@ -37,9 +37,9 @@ except ImportError:
     print("modules.images.train module not found. Image evaluator training will be unavailable.")
 
 try:
-    import modules.train.universal_train
+    import anagnorisis_core.ratings.training
 except ImportError:
-    print("modules.train.universal_train module not found. Universal evaluator training will be unavailable.")
+    print("anagnorisis_core.ratings.training module not found. Universal evaluator training will be unavailable.")
 
 import time
 
@@ -114,7 +114,7 @@ def init_socket_events(socketio, cfg=None, app=None, data_folder='./project_data
             cb = _make_train_callback(ctx, hist_train, hist_test)
             socketio.emit("emit_train_page_status", {"active": True})
             try:
-                modules.train.universal_train.train_universal_evaluator(
+                anagnorisis_core.ratings.training.train_universal_evaluator(
                     cfg, cb,
                     max_steps=max_steps,
                     time_budget_seconds=time_budget_seconds,

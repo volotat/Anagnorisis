@@ -160,17 +160,12 @@ cython_debug/
 #.idea/
 
 
-project_data/
-datasets/
-instance/
-migrations/
-models/
-cache/
-static/tmp/
-static/discarded/
-experiments/
-old_code/
-research/
+/project_data/
+/models/
+/static/tmp/
+/static/discarded/
+/old_code/
+/research/
 
 docker-compose-k.yaml
 docker-compose-m.yaml

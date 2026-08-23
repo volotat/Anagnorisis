@@ -16,18 +16,18 @@ import send2trash
 from omegaconf import OmegaConf
 from flask import send_from_directory
 
-from src.content_search import get_content_search
+from anagnorisis_core.search.content_search import get_content_search
 from src.socket_events import CommonSocketEvents
 from src.file_manager import FileManager
-from src.common_filters import CommonFilters
-from src.metadata.search import get_metadata_search
+from anagnorisis_core.search.common_filters import CommonFilters
+from anagnorisis_core.search.metadata_search import get_metadata_search
 
 import modules.videos.db_models as db_models
-from src.universal_evaluator import UniversalEvaluator
-from src.recommendation_engine import sort_files_by_recommendation
+from anagnorisis_core.models.universal_evaluator import UniversalEvaluator
+from anagnorisis_core.search.recommendation_engine import sort_files_by_recommendation
 
 import src.db_models as main_db_models
-import src.virtual_file_system as vfs
+import anagnorisis_core.storage.virtual_file_system as vfs
 
 from src.utils import convert_size, time_difference, EmbeddingGatheringCallback
 from src.scheduler import Scheduler

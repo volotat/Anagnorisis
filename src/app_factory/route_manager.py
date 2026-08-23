@@ -8,7 +8,7 @@ from .extension_manager import ExtensionManager
 
 import mimetypes
 import fs
-import src.virtual_file_system as vfs
+import anagnorisis_core.storage.virtual_file_system as vfs
 from fs.path import abspath, normpath, basename
 
 class FSFileWrapper:

@@ -1,5 +1,28 @@
 # Change History
 
+### Version 0.4.10 (23.08.2026)
+
+This release is mostly a large refactoring. Everything that describes, embeds and searches files was pulled out of the web app into a standalone package, `anagnorisis_core`, which the app, a new command line and the data server now all share. Around 10,000 lines moved out of `src/`. Little of this is visible in the interface, but it is what makes the command line and the data server possible, and it fixed several bugs that were hiding in the duplicated copies.
+
+*  **Refactoring:**
+    *   The engine is now its own installable package rather than part of the app.
+    *   One description per file instead of three copies that had drifted apart. What you see as "full search description" is exactly what search indexed and what a rating remembers.
+*  **Command line:**
+    *   New `anag` command: describe, index, search, rate, score, sort and train, without opening the app.
+    *   Installs with `pip` on its own, needing no copy of this repository and no config file.
+    *   `anag config set project_config_path ...` once and it is remembered. Point it at the app's `project_config/` and the two share one cache, one set of ratings and one trained model.
+    *   Rate and score plain text, not just files. Useful for teaching the model an opinion you have no file for.
+*  **Descriptions:**
+    *   Audio descriptions were broken and silently wrote nonsense such as "please provide the audio you would like me to describe" into `.meta` files. The model needs exactly thirty seconds of sound and was being handed ten. Fixed, and video soundtracks were affected the same way.
+    *   Answers showing the model never received the file are now discarded, so the file stays undescribed and is tried again later instead of being stuck with fluent nonsense forever.
+    *   Short text files are kept as they are rather than summarised, which is both better and free.
+*  **Training:**
+    *   Training the recommendation model was completely broken and failed on the first file it read. It works now.
+*  **Benchmarks:**
+    *   New `anagnorisis_core/benchmarks/` records search speed and quality so releases can be compared. Indexing 100,000 files takes roughly 39 hours; writing descriptions for them first takes roughly 870h, which is the number that actually decides whether a large library is practical.
+*  **Data server:**
+    *   Sharing a folder is now two plain commands: `rclone` to serve it read-only, and `anag describe` to write the descriptions. Nothing to build and no containers. Add `--watch` and new files are described as they arrive.
+
 ### Version 0.4.9 (17.08.2026)
 *  **Reading files:**
     *   Indexing a text file that began with a web link made the app fetch that link because of how `jina-embeddings-v5-omni-small` works. Now any such external call are explicitly prevented.

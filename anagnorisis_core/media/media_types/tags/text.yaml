@@ -1,0 +1,439 @@
+# Zero-shot tag vocabulary for the "text" media type.
+#
+# Used by the embedding proxy: each tag is embedded once with the media type's
+# embedding model, and the tags closest to a file's embedding are written into
+# its metadata description. That gives files a searchable, ratable text
+# representation before the (much slower) OmniDescriptor pass reaches them.
+#
+# Rows are written as "- [a, b, c]" purely for compactness — the loader
+# flattens them into one flat list of tags.
+#
+# NOTE: the text type has no embedding model in anagnorisis_core/models.py yet — a
+# plain-text file is embedded from its content directly, so it needs no proxy.
+# This vocabulary is here for future use (e.g. classifying a file by kind
+# without reading all of it).
+#
+# Extend freely. Changing the vocabulary changes its hash, which invalidates
+# every cached proxy section and, through it, every metadata embedding that
+# contained one — correct, but it means a full background re-index. Prefer
+# batching edits over trickling them in.
+
+# Source code
+- [source code, python code, javascript code, typescript code, java code, c code, c plus plus code]
+- [c sharp code, go code, rust code, ruby code, php code, swift code, kotlin code, scala code]
+- [shell script, bash script, powershell script, batch file, makefile, dockerfile, sql query]
+- [html document, css stylesheet, react component, vue component, jupyter notebook, r script]
+- [unit test, integration test, test fixture, benchmark script, migration script, build script]
+- [library code, application code, script snippet, code example, boilerplate, generated code]
+
+# Configuration & structured data
+- [configuration file, json data, yaml config, xml document, toml config, ini file, env file]
+- [csv data, tsv data, tabular data, database dump, sql schema, api response, json lines]
+- [package manifest, dependency lock file, requirements list, manifest, gitignore, editor config]
+
+# Logs & diagnostics
+- [log file, application log, server log, error log, access log, debug output, crash dump]
+- [stack trace, exception trace, warning messages, audit trail, system journal, install log]
+- [diff, patch file, git commit log, changelog, release notes, version history, merge conflict]
+
+# Documentation & reference
+- [readme, documentation, api reference, user guide, installation guide, quick start, faq]
+- [tutorial, how-to guide, walkthrough, cheat sheet, glossary, specification, standard, rfc]
+- [architecture notes, design document, technical proposal, runbook, playbook, troubleshooting guide]
+- [license text, terms of service, privacy policy, code of conduct, contribution guide, security policy]
+
+# Personal writing
+- [diary entry, journal, personal notes, scratch notes, brainstorm, idea list, thought dump]
+- [to-do list, task list, checklist, shopping list, packing list, wish list, habit tracker]
+- [meeting notes, lecture notes, study notes, revision notes, book notes, research notes]
+- [recipe, workout plan, meal plan, travel itinerary, budget plan, moving checklist]
+
+# Communication
+- [email, email thread, letter, formal letter, cover letter, memo, announcement, newsletter]
+- [chat log, instant messages, forum thread, comment thread, support ticket, issue report]
+- [transcript, interview transcript, meeting transcript, subtitles, caption file, dialogue script]
+
+# Professional & business
+- [resume, curriculum vitae, job description, job application, performance review, reference letter]
+- [business plan, project proposal, statement of work, requirements document, roadmap, status report]
+- [invoice, quote, purchase order, expense report, budget spreadsheet, financial statement]
+- [contract, agreement, non disclosure agreement, employment contract, lease, terms and conditions]
+- [policy document, procedure, compliance record, incident report, risk assessment, meeting minutes]
+
+# Academic & scientific
+- [academic paper, research article, preprint, abstract, literature review, thesis, dissertation]
+- [lab notes, experiment log, dataset description, methodology, results section, bibliography]
+- [citation list, reference list, lecture handout, problem set, exam paper, solution key, syllabus]
+
+# Creative writing
+- [novel chapter, short story, fan fiction, poetry, poem, song lyrics, screenplay, stage play]
+- [character notes, world building notes, plot outline, story draft, dialogue draft, writing prompt]
+- [blog post, essay, opinion piece, review, travelogue, memoir, biography, obituary]
+
+# Web & publishing
+- [news article, press release, product description, landing page copy, marketing copy, advertisement]
+- [wiki page, knowledge base article, encyclopedia entry, tutorial post, listicle, interview article]
+- [markdown document, latex source, bibtex, restructured text, org mode, asciidoc, plain text]
+
+# Subject matter
+- [technical content, scientific content, medical content, legal content, financial content]
+- [educational content, historical content, political content, religious content, philosophical content]
+- [software topic, hardware topic, networking topic, security topic, data science topic, ai topic]
+- [health topic, fitness topic, cooking topic, travel topic, gaming topic, music topic, art topic]
+- [personal finance, real estate, automotive, gardening, parenting, relationships, career advice]
+
+# Tone, form & quality
+- [formal writing, casual writing, technical writing, academic tone, conversational tone, humorous]
+- [instructional, persuasive, descriptive, narrative, analytical, argumentative, summary]
+- [draft, final version, incomplete text, placeholder text, lorem ipsum, template, boilerplate text]
+- [long document, short note, single paragraph, bullet points, numbered steps, question and answer]
+- [machine translated, AI generated text, transcribed speech, OCR output, garbled text, encoded text]
+
+# Language
+- [English text, Spanish text, French text, German text, Italian text, Portuguese text, Dutch text]
+- [Russian text, Ukrainian text, Polish text, Czech text, Swedish text, Norwegian text, Finnish text]
+- [Chinese text, Japanese text, Korean text, Hindi text, Arabic text, Hebrew text, Turkish text]
+- [Greek text, Vietnamese text, Thai text, Indonesian text, multilingual document, mixed languages]
+
+# Programming languages in depth
+- [assembly code, fortran code, cobol code, pascal code, delphi code, ada code, lisp code]
+- [scheme code, clojure code, haskell code, ocaml code, f sharp code, erlang code, elixir code]
+- [perl script, lua script, tcl script, awk script, sed script, vimscript, emacs lisp]
+- [objective c code, dart code, groovy code, julia code, matlab code, octave script, mathematica]
+- [visual basic, vba macro, applescript, autohotkey script, powershell module, zsh script, fish script]
+- [solidity contract, verilog, vhdl, assembly listing, disassembly output, bytecode dump]
+- [sql select query, stored procedure, database migration, index definition, view definition]
+- [graphql schema, protobuf definition, thrift idl, openapi spec, swagger definition, wsdl]
+- [regular expression, glob pattern, cron expression, jq filter, xpath expression, css selector]
+
+# Frameworks, tools & ecosystems
+- [react code, angular code, vue code, svelte code, next js, nuxt, express server, fastapi app]
+- [django project, flask app, rails app, laravel app, spring boot, dotnet project, node script]
+- [pytorch code, tensorflow code, keras model, scikit learn script, pandas analysis, numpy code]
+- [unity script, unreal blueprint notes, godot script, opengl shader, glsl shader, hlsl shader]
+- [kubernetes manifest, helm chart, terraform config, ansible playbook, docker compose file]
+- [github actions workflow, gitlab ci config, jenkins pipeline, makefile rules, cmake config]
+- [webpack config, vite config, babel config, eslint config, prettier config, tsconfig]
+- [nginx config, apache config, systemd unit, ssh config, firewall rules, dns zone file]
+
+# Data & serialisation formats
+- [json object, nested json, json array, minified json, pretty printed json, jsonl records]
+- [xml tree, svg source, rss feed, atom feed, sitemap xml, plist file, soap envelope]
+- [yaml document, front matter, toml table, ini section, properties file, env variables]
+- [csv with headers, delimited data, fixed width data, tab separated, pipe delimited, log format]
+- [base64 blob, hex dump, binary garbage, encoded payload, url encoded, escaped string]
+- [geojson, kml data, gpx track, ical calendar, vcard contact, bibtex entry, ris citation]
+
+# Log & diagnostic detail
+- [info level log, warning level log, error level log, fatal error, debug trace, verbose output]
+- [timestamped entries, request log, response log, latency measurements, memory usage log]
+- [database query log, slow query, connection error, timeout error, authentication failure]
+- [http status codes, four hundred error, five hundred error, redirect chain, rate limit message]
+- [python traceback, java stack trace, javascript error, segmentation fault, kernel panic]
+- [build output, compiler warnings, linker errors, test failures, coverage report, lint report]
+- [installer log, update log, backup log, sync log, cron output, service restart, boot log]
+
+# Software project files
+- [issue description, bug report, feature request, pull request description, code review comment]
+- [commit message, branch notes, merge notes, release checklist, deployment notes, rollback plan]
+- [architecture decision record, technical debt note, refactor plan, migration plan, postmortem]
+- [api changelog, deprecation notice, breaking change note, upgrade guide, compatibility matrix]
+
+# Academic disciplines
+- [mathematics text, algebra, calculus, statistics, probability, linear algebra, discrete maths]
+- [physics text, quantum mechanics, thermodynamics, astrophysics, particle physics, optics]
+- [chemistry text, organic chemistry, biochemistry, analytical chemistry, materials science]
+- [biology text, genetics, molecular biology, ecology, zoology, botany, microbiology, neuroscience]
+- [medicine text, anatomy, physiology, pharmacology, epidemiology, public health, nursing notes]
+- [psychology text, cognitive science, behavioural science, psychiatry, developmental psychology]
+- [sociology text, anthropology, archaeology, linguistics, political science, international relations]
+- [economics text, macroeconomics, microeconomics, econometrics, finance theory, game theory]
+- [computer science text, algorithms, data structures, complexity theory, cryptography, compilers]
+- [engineering text, mechanical engineering, civil engineering, electrical engineering, chemical engineering]
+- [geology text, meteorology, oceanography, environmental science, climate science, geography text]
+- [history text, ancient history, medieval history, modern history, military history, art history]
+- [philosophy text, ethics, logic, metaphysics, epistemology, aesthetics, political philosophy]
+- [literature text, literary criticism, comparative literature, rhetoric, media studies, film studies]
+- [law text, constitutional law, criminal law, civil law, contract law, intellectual property]
+- [theology text, religious studies, scripture commentary, comparative religion, mythology text]
+
+# Business & organisational documents
+- [strategy document, okr document, kpi report, quarterly review, board update, investor update]
+- [marketing plan, campaign brief, content calendar, seo audit, competitor analysis, persona document]
+- [sales script, pitch outline, proposal draft, pricing sheet, negotiation notes, client brief]
+- [product requirements, user story, acceptance criteria, backlog item, sprint plan, retrospective notes]
+- [support macro, knowledge base draft, escalation procedure, service level agreement, uptime report]
+- [hiring plan, interview scorecard, offer letter draft, onboarding checklist, exit interview notes]
+- [supplier agreement, procurement request, inventory list, logistics plan, warehouse notes]
+
+# Personal & everyday text
+- [password hint file, account list, bookmark export, browser history export, contact list]
+- [family recipe, cleaning schedule, chore rota, medication schedule, appointment list]
+- [car maintenance log, mileage log, fuel log, home inventory, warranty list, insurance notes]
+- [garden log, plant care notes, pet care notes, feeding schedule, training log, weight log]
+- [reading list, watchlist, game backlog, music wishlist, gift ideas, bucket list, goal list]
+- [holiday planning, guest list, seating plan, party checklist, wedding plan, moving plan]
+- [letter to family, thank you note, apology letter, invitation text, condolence message]
+
+# Creative & narrative detail
+- [fantasy fiction, science fiction story, horror story, mystery story, detective fiction, thriller draft]
+- [romance fiction, historical fiction, literary fiction, young adult fiction, children's story]
+- [flash fiction, novella, serial chapter, prologue, epilogue, chapter outline, scene draft]
+- [dialogue only, monologue, stream of consciousness, epistolary, second person narration]
+- [first person narration, third person limited, omniscient narrator, unreliable narrator]
+- [world building bible, magic system notes, timeline of events, family tree, glossary of terms]
+- [character biography, character arc notes, antagonist notes, side character notes, casting notes]
+- [haiku, sonnet, free verse, spoken word poem, limerick, ballad text, epic poem, prose poem]
+- [song lyric draft, chorus draft, verse draft, rhyme scheme notes, melody notes with lyrics]
+- [screenplay scene, shooting script, storyboard notes, treatment, logline, synopsis, pitch document]
+- [game design document, quest text, item description, dialogue tree, lore entry, tutorial text]
+- [role playing campaign notes, session log, character sheet text, encounter notes, world map notes]
+
+# Web & online content
+- [blog article, tutorial article, opinion column, editorial, roundup post, how-to post]
+- [product page copy, category description, meta description, alt text, headline variants]
+- [social media caption, thread draft, post schedule, hashtag list, community guidelines]
+- [forum post, question post, answer post, wiki edit, changelog entry, release announcement]
+- [email newsletter, welcome email, drip campaign, cold outreach, follow up email, unsubscribe copy]
+- [chatbot script, faq entry, help centre article, error message copy, tooltip text, onboarding copy]
+- [scraped web page, saved article, read later item, archived page text, cached page content]
+
+# Formats & encodings of the file itself
+- [plain text file, markdown file, rich text, html source, latex document, org file, wiki markup]
+- [utf-8 text, ascii only, windows line endings, unix line endings, byte order mark, mixed encoding]
+- [very long file, very short file, single line file, empty file, mostly whitespace, mostly numbers]
+- [tabular layout, indented outline, nested bullets, numbered sections, headed sections, no structure]
+- [heavily commented, uncommented, minified, obfuscated, auto formatted, inconsistent formatting]
+- [contains urls, contains email addresses, contains phone numbers, contains file paths, contains code blocks]
+- [contains tables, contains formulas, contains citations, contains footnotes, contains images references]
+
+# Quality, state & provenance
+- [first draft, second draft, final draft, published version, revised version, annotated copy]
+- [work in progress, abandoned draft, notes to self, todo markers, placeholder sections, outline only]
+- [proofread, unproofread, spelling errors, grammatical errors, inconsistent terminology]
+- [copy pasted content, quoted material, plagiarism check, original writing, ghostwritten]
+- [exported from an app, printed to text, converted from pdf, ocr with errors, transcribed by machine]
+- [AI assisted writing, AI generated draft, human edited, collaboratively written, version controlled]
+- [encrypted content, hashed values, redacted names, anonymised data, contains secrets, contains keys]
+
+# Sensitivity & category
+- [personal and private, confidential business, publicly shareable, internal only, client facing]
+- [contains personal data, contains financial data, contains health data, contains credentials]
+- [safe for work, adult content text, explicit language, violent content, sensitive topic]
+
+# Instructional & procedural
+- [step by step instructions, numbered procedure, checklist procedure, decision tree, flow description]
+- [prerequisites section, warnings and cautions, tips and tricks, common mistakes]
+- [worked example, sample input, sample output, expected result, edge case notes, test plan]
+- [command reference, keyboard shortcuts, configuration reference, parameter list, option flags]
+
+# Reference material
+- [dictionary entry, thesaurus entry, encyclopaedia article, almanac data, timeline reference]
+- [conversion table, unit reference, formula sheet, constants list, periodic table data]
+- [country data, currency list, timezone list, language codes, postal codes, area codes]
+- [product specifications, technical parameters, compatibility list, version matrix, feature comparison]
+
+# Correspondence in depth
+- [business email, personal email, complaint letter, request letter, follow up message, reminder]
+- [meeting invitation, agenda, minutes, action items, decision log, status update message]
+- [customer enquiry, support response, refund request, order confirmation text, shipping notification]
+- [job enquiry, recruiter message, networking message, introduction email, recommendation request]
+- [group chat export, direct message export, comment export, review text, feedback form response]
+
+# Additional topic domains
+- [agriculture topic, construction topic, manufacturing topic, logistics topic, retail topic]
+- [energy topic, renewable energy, oil and gas, utilities, mining topic, forestry topic]
+- [transport topic, aviation topic, maritime topic, railway topic, urban planning, architecture topic]
+- [education policy, curriculum design, pedagogy, special education, higher education administration]
+- [nonprofit topic, charity report, volunteering, community organising, activism, fundraising]
+- [sports analysis, coaching notes, training programme, match report, statistics breakdown]
+- [gaming guide, speedrun notes, meta analysis, patch notes, build guide, strategy notes]
+- [craft instructions, knitting pattern, sewing pattern, woodworking plan, electronics schematic notes]
+- [genealogy notes, family history, local history, oral history transcript, archive index]
+- [weather log, astronomy observation log, birdwatching log, dive log, flight log, ham radio log]
+
+# Named ecosystems & platforms mentioned in text
+- [linux notes, windows notes, macos notes, android notes, ios notes, freebsd notes]
+- [aws notes, azure notes, google cloud notes, digitalocean, cloudflare, vercel, netlify]
+- [postgres notes, mysql notes, sqlite notes, mongodb notes, redis notes, elasticsearch notes]
+- [git notes, github notes, gitlab notes, jira notes, confluence page, notion export, obsidian note]
+- [slack export, discord export, teams export, zoom transcript, telegram export, whatsapp export]
+- [wordpress content, shopify content, salesforce notes, sap notes, excel formulas, sheets formulas]
+- [blender notes, photoshop notes, figma notes, autocad notes, solidworks notes, ableton notes]
+
+# Numeric & analytical content
+- [contains statistics, contains percentages, contains currency amounts, contains dates, contains times]
+- [financial model, forecast, projection, trend analysis, cohort analysis, funnel analysis]
+- [survey results, poll results, experiment results, ab test results, benchmark numbers]
+- [measurement log, sensor readings, telemetry data, time series data, coordinates, gps points]
+- [inventory count, stock levels, price list data, order data, transaction list, ledger entries]
+
+# Legal & compliance in depth
+- [gdpr notes, data protection policy, cookie policy, consent record, data processing agreement]
+- [employment law, tenancy law, family law, immigration notes, tax law, corporate governance]
+- [litigation notes, settlement agreement, witness statement, evidence list, case summary]
+- [regulatory filing, licence application, permit application, appeal letter, formal complaint]
+- [trademark filing, copyright notice, patent claims, open source licence, licence compatibility]
+
+# Medical & wellbeing text
+- [symptom diary, treatment plan, therapy notes, referral letter, discharge summary, care plan]
+- [nutrition log, calorie count, allergy list, medication list, dosage instructions, side effects]
+- [fitness log, training plan, injury notes, recovery plan, physiotherapy exercises, sleep log]
+- [mental health journal, mood tracker, gratitude journal, cbt worksheet, mindfulness notes]
+
+# Education & study
+- [class schedule, timetable, assignment brief, marking rubric, feedback on assignment, grade record]
+- [flashcards, mnemonics, summary sheet, revision plan, past paper answers, study group notes]
+- [dissertation proposal, ethics form, supervisor meeting notes, viva preparation, conference abstract]
+
+# Writing craft & editorial
+- [style guide, tone of voice guide, terminology list, translation glossary, localisation notes]
+- [editorial calendar, submission guidelines, manuscript notes, beta reader feedback, query letter]
+- [proofreading marks, track changes text, comment annotations, suggested revisions, redline version]
+
+# Miscellaneous file kinds
+- [licence key file, serial numbers, installation instructions, readme first, disclaimer text]
+- [robots txt, humans txt, hosts file, path list, directory listing, file inventory, checksum list]
+- [subtitle srt, subtitle vtt, lyrics lrc, cue sheet, playlist m3u, bookmark file, session file]
+- [diff output, patch series, merge request notes, conflict markers, rebase notes, cherry pick notes]
+- [temporary scratch file, autosave file, backup copy of text, recovered document, clipboard dump]
+
+# Structure signals
+- [has a title, has headings, has subheadings, has a summary, has a conclusion, has references]
+- [question and answer format, interview format, dialogue format, letter format, report format]
+- [chronological order, alphabetical order, ranked order, grouped by category, tabular comparison]
+- [very technical vocabulary, plain language, jargon heavy, acronym heavy, beginner friendly]
+- [short sentences, long sentences, dense paragraphs, lots of whitespace, bullet heavy, prose heavy]
+
+# Additional practical categories
+- [installation troubleshooting, network troubleshooting, printer troubleshooting, driver notes]
+- [hardware specification, build list, upgrade plan, compatibility check, overclocking notes]
+- [server inventory, ip address list, port list, credential rotation notes, access control list]
+- [disaster recovery plan, backup strategy, retention policy, incident timeline, root cause analysis]
+- [monitoring alert, on call handover, runbook step, escalation contact, maintenance window notice]
+- [cost estimate, invoice reconciliation, subscription list, renewal reminder, cancellation notice]
+- [meeting agenda item, discussion point, open question, parking lot item, follow up owner]
+- [risk register, assumption list, dependency list, constraint list, success criteria, definition of done]
+- [survey questions, interview questions, quiz questions, exam questions, practice problems]
+- [answer key, model answer, worked solution, marking notes, common errors, examiner report]
+- [terms glossary, abbreviation list, naming conventions, coding standards, commit conventions]
+- [accessibility notes, keyboard navigation, screen reader notes, contrast requirements, aria labels]
+- [translation source, translated text, side by side translation, subtitle translation, dubbing script]
+- [transcription with timestamps, speaker labels, verbatim transcript, cleaned transcript, summary of call]
+- [weather forecast text, travel advisory, safety notice, evacuation instructions, emergency contacts]
+- [shopping receipt text, price comparison, product review text, warranty terms, return policy]
+- [recipe ingredients, recipe method, cooking times, substitutions, nutritional information]
+- [workout sets and reps, rest intervals, progression plan, personal records, competition results]
+- [chord chart, setlist, rehearsal notes, gig notes, equipment list, stage plot, technical rider]
+- [garden planting calendar, soil notes, pest notes, harvest record, seed list, propagation notes]
+- [travel packing list, itinerary day by day, booking references, emergency numbers, phrasebook notes]
+- [car service history, parts list, fault codes, repair estimate, mot notes, insurance claim text]
+- [property details, viewing notes, offer letter, survey findings, renovation quotes, snagging list]
+- [wedding vows, speech draft, toast notes, order of service, playlist for event, vendor contacts]
+- [funeral arrangements, eulogy draft, memorial notes, estate inventory, probate notes]
+- [job application tracker, salary research, offer comparison, resignation letter]
+- [freelance brief, client onboarding, scope of work, revision policy, invoice terms, portfolio notes]
+- [course outline, lesson plan, learning objectives, assessment plan, student feedback summary]
+- [research question, hypothesis, methodology notes, data collection plan, analysis plan, limitations]
+- [interview guide, consent form text, participant information, coding frame, thematic analysis notes]
+
+# Further code and repository content
+- [entry point script, main function, class definition, module of helpers, utility functions]
+- [interface definition, abstract class, enum definition, constant definitions, type definitions]
+- [error handling code, logging setup, retry logic, caching layer, rate limiter, queue worker]
+- [authentication code, authorisation rules, session handling, token validation, password hashing]
+- [database access layer, orm models, query builder, transaction handling, connection pooling]
+- [api client, api server routes, middleware, request validation, response serialisation]
+- [background job, scheduled task, cron handler, webhook handler, event listener, message consumer]
+- [state management, reducer, store definition, component props, template markup, style rules]
+- [test suite, mock objects, fixtures, parametrised tests, snapshot test, end to end test]
+- [performance optimisation, memory profiling, algorithm implementation, data structure implementation]
+- [deprecated code, legacy code, dead code, commented out code, experimental branch code]
+
+# Further note taking
+- [zettelkasten note, atomic note, daily note, weekly review, monthly review, annual review]
+- [literature note, permanent note, fleeting note, index note, map of content, backlink list]
+- [scratchpad, quick capture, voice note transcript, whiteboard photo transcript, sketch notes]
+- [pros and cons list, weighted comparison, options table, recommendation summary]
+
+# Correspondence & social
+- [group announcement, event invitation text, rsvp response, thank you message, congratulations message]
+- [get well message, sympathy message, holiday greeting, new year message, birthday wishes]
+- [complaint to a company, escalation message, review response, public apology, community update]
+
+# Long form nonfiction
+- [investigative report, feature article, profile piece, explainer article, opinion essay]
+- [personal essay, travel essay, nature writing, food writing, sports writing, music criticism]
+- [book chapter draft, foreword, preface, introduction chapter, conclusion chapter, afterword]
+- [white paper style report, industry report, market research, trend report, forecast report]
+
+# Data science & analysis
+- [exploratory data analysis, feature engineering notes, model card, evaluation metrics, confusion matrix]
+- [hyperparameter sweep, experiment tracking, dataset statistics, data dictionary]
+- [prompt template, system prompt, few shot examples, evaluation rubric, annotation guidelines]
+- [sql analysis, dashboard specification, metric definition, cohort definition, attribution model]
+
+# Systems and operations
+- [capacity plan, scaling notes, load test results, latency budget, error budget, slo definition]
+- [migration checklist, cutover plan, rollback steps, dry run notes, verification steps, sign off]
+- [access request, permission matrix, key rotation log, certificate renewal, vulnerability report]
+- [asset inventory, license inventory, vendor list, contract renewal dates, support contacts]
+
+# Home & family records
+- [household budget, bill tracker, savings plan, debt payoff plan, subscription audit]
+- [meal planner, grocery list by aisle, freezer inventory, pantry inventory, batch cooking notes]
+- [school run schedule, childcare notes, homework tracker, extracurricular schedule, allowance record]
+- [family calendar, birthday reminders, anniversary list, gift log, card list, holiday traditions]
+- [home maintenance checklist, seasonal tasks, boiler service dates, filter change log, meter readings]
+
+# Hobbies & interests
+- [collection catalogue, want list, trade list, condition notes, valuation notes, insurance schedule]
+- [running log, cycling log, swimming log, hiking log, climbing log, race results, personal bests]
+- [reading journal, quote collection, film journal, album reviews, concert log]
+- [photography notes, shot list, location scouting, gear list, editing recipe, print notes]
+- [brewing notes, fermentation log, tasting notes, cocktail recipes, coffee brewing parameters]
+- [model railway plan, rc setup notes, drone flight log, telescope observation, weather station log]
+- [chess opening notes, game analysis, puzzle solutions, tournament notes, rating progress]
+- [language practice log, vocabulary list, verb conjugations, idioms list, conversation notes]
+
+# Miscellaneous formats
+- [shell history, command snippets, alias definitions, dotfile contents, keyboard mapping]
+- [browser bookmarks list, reading queue, rss feed list, newsletter archive]
+- [licence text of a project, third party notices, attribution list, credits file, authors file]
+- [issue template, pull request template, discussion template, survey template, form template]
+- [seed data, sample dataset, dummy data, test data, anonymised sample, synthetic data]
+- [error catalogue, status code list, exit codes, message catalogue, translation strings]
+
+# Further everyday content
+- [instructions left for someone, note on the fridge, handover note, cover note, out of office text]
+- [rules of a house, terms of a shared flat, cleaning rota, bill splitting notes, shared expenses]
+- [directions to a place, address details, parking instructions, access codes, wifi details]
+- [emergency plan, first aid notes, allergy notes for a carer, medication reminders, contact tree]
+- [pet sitting instructions, plant watering instructions, house sitting notes, key handover]
+- [event running order, timings sheet, script for a host, announcements list]
+- [volunteer rota, shift schedule, on call rota, staffing plan, coverage matrix]
+
+# Further technical topics
+- [operating system internals, file system notes, process management, memory management, scheduling]
+- [compiler notes, interpreter notes, virtual machine notes, garbage collection, jit compilation]
+- [network protocol notes, tcp notes, udp notes, http notes, dns notes, tls notes, routing notes]
+- [distributed systems, consensus algorithms, replication, sharding, eventual consistency, cap theorem]
+- [container notes, orchestration notes, service mesh, observability, tracing, metrics, alerting]
+- [embedded systems, firmware notes, real time systems, interrupt handling, device drivers]
+- [signal processing, image processing, audio processing, compression algorithms, encoding notes]
+- [computer graphics, rendering pipeline, shaders explained, physics engine, collision detection]
+- [robotics notes, control systems, kinematics, sensor fusion, path planning, slam notes]
+- [quantum computing notes, cryptography protocols, blockchain notes, smart contract notes]
+
+# Further writing kinds
+- [manifesto, mission statement, values statement, vision document, positioning statement]
+- [obituary draft, tribute text, award nomination, citation text, introduction of a speaker]
+- [petition text, open letter, letter to an editor, public consultation response, campaign message]
+- [grant proposal, sponsorship request, crowdfunding page text, donation appeal, impact story]
+- [terms of a competition, rules of a game, house rules, scoring system, tie break rules]
+- [safety instructions, evacuation procedure, lockdown procedure, incident escalation, drill notes]
+
+# Text quality descriptors
+- [well structured, poorly structured, easy to skim, hard to follow, repetitive, concise, verbose]
+- [up to date, out of date, superseded content, partially complete, contradictory statements]
+- [heavily edited, lightly edited, raw capture, cleaned up, summarised version, expanded version]

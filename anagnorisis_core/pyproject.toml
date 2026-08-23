@@ -1,0 +1,86 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "anagnorisis-core"
+version = "0.4.10"
+description = "The Anagnorisis engine: describing, embedding and searching files"
+requires-python = ">=3.10"
+
+# This list is the boundary. There is deliberately no Flask, no Flask-SQLAlchemy
+# and no socketio here: the core must be usable by the `anagnorisis` command and
+# by the data server, neither of which has a web app. An import of `src.` would
+# then fail wherever the package is installed without the application — and
+# anagnorisis_core/tests/test_core_boundary.py catches it before that.
+dependencies = [
+    "numpy",
+    # Left unpinned on purpose: which torch is correct depends on the GPU driver,
+    # which a package cannot know. Be aware that plain `torch` from PyPI is now a
+    # CUDA 13 build — on a machine with an older driver, install torch first from
+    # the index matching the driver and let this dependency be satisfied by it.
+    # See "Installing it on the machine itself" in README.md.
+    "torch",
+    "torchaudio",
+    "torchvision",
+    "transformers>=5",
+    "sentence-transformers",
+    "huggingface-hub",
+    "accelerate",
+    "bitsandbytes>=0.46.1",
+    "omegaconf",
+    "PyYAML",
+    "fs",                    # PyFilesystem2 — the VFS layer
+    "fs.webdavfs",
+    "xxhash",
+    "tinytag",
+    "Pillow",
+    "librosa",
+    "soundfile",
+    "opencv-python-headless",
+    "setproctitle",
+]
+
+[project.scripts]
+anagnorisis = "anagnorisis_core.cli:main"
+# Short alias, for typing. Deliberately not `ac`: that name ships in Debian's
+# `acct` package, so it is free only until somebody installs process accounting.
+anag = "anagnorisis_core.cli:main"
+
+# Flat layout: this directory *is* the import package. No src/ wrapper and no
+# anagnorisis_core/src/anagnorisis_core/ — one folder, named once.
+#
+# The data it ships with (defaults.yaml, media_types/) sits beside the modules
+# rather than anywhere clever, which is what lets `dirname(__file__)` find it
+# identically whether the package is installed or run from the tree — no symlink,
+# and no copy generated at build time that could drift. Neither file is meant to
+# be edited: machine settings go to ~/.config/anagnorisis/config.yaml via
+# `anag config set`, and the taxonomy is deliberately not configurable.
+#
+# tests/ and benchmarks/ live here too but are not listed below and have no
+# __init__.py, so they are not part of the distribution. Verified against a built
+# wheel.
+#
+# Install with:  pip install -e ./anagnorisis_core
+[tool.setuptools]
+package-dir = { "anagnorisis_core" = "." }
+packages = [
+    "anagnorisis_core",
+    "anagnorisis_core.media",
+    "anagnorisis_core.media.extractors",
+    "anagnorisis_core.models",
+    "anagnorisis_core.ratings",
+    "anagnorisis_core.search",
+    "anagnorisis_core.storage",
+]
+
+[tool.setuptools.package-data]
+# Each data file sits beside the code that reads it, so `dirname(__file__)` finds
+# it whether the package is installed or run from the tree. defaults.yaml is what
+# makes the package standalone — without it in the wheel, an install with no
+# Anagnorisis checkout cannot start.
+anagnorisis_core = ["defaults.yaml"]
+"anagnorisis_core.media" = [
+    "media_types/*.yaml",
+    "media_types/tags/*.yaml",
+]

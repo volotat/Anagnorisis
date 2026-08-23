@@ -72,7 +72,7 @@ def get_training_pairs(cfg, text_embedder, status_callback=None):
     # Good for summary-based training or when raw file content is impractical.
     # -------------------------------------------------------------------------
     if embedding_method == "metadata":
-        from src.metadata.search import get_metadata_search
+        from anagnorisis_core.search.metadata_search import get_metadata_search
 
         meta_search = get_metadata_search(cfg)
 

@@ -1,0 +1,348 @@
+import os
+import torch
+import numpy as np
+import gc
+
+from anagnorisis_core.progress import (ArbitraryProgressCallback, EmbeddingGatheringCallback,
+                                        SortingProgressCallback)
+
+import rapidfuzz 
+import unicodedata
+import re
+
+import fs
+import anagnorisis_core.storage.virtual_file_system as vfs
+from anagnorisis_core.storage.caching import TwoLevelCache
+
+# Module-level device setting. Defaults to 'cpu'. Call configure_device() at app startup.
+_inference_device: str = 'cpu'
+
+def configure_device(device_str: str) -> None:
+    """Set the device used by compute_distances_batched and other GPU helpers."""
+    global _inference_device
+    _inference_device = device_str
+
+
+def _maybe_empty_cache() -> None:
+    """Clear the CUDA cache only when actually using CUDA."""
+    if torch.device(_inference_device).type == 'cuda':
+        torch.cuda.empty_cache()
+
+
+def compute_distances_batched(embeds_media, batch_size=1024 * 24):
+    """Computes pairwise distances in batches to conserve GPU/CPU memory."""
+    embeds_media = torch.tensor(embeds_media, dtype=torch.float32)
+    num_items = embeds_media.shape[0]
+    distances = torch.zeros((num_items, num_items), dtype=torch.float32)
+    
+    for start_row in range(0, num_items, batch_size):
+        end_row = min(start_row + batch_size, num_items)
+        batch = embeds_media[start_row:end_row].to(_inference_device)
+        
+        for start_col in range(0, num_items, batch_size):
+            end_col = min(start_col + batch_size, num_items)
+            compare_batch = embeds_media[start_col:end_col].to(_inference_device)
+            dists_batch = torch.cdist(batch, compare_batch, p=2).cpu()
+            
+            distances[start_row:end_row, start_col:end_col] = dists_batch
+            if start_col != start_row:
+                distances[start_col:end_col, start_row:end_row] = dists_batch.T
+                
+            del compare_batch, dists_batch
+            _maybe_empty_cache()
+        
+        del batch
+        _maybe_empty_cache()
+    
+    distances.fill_diagonal_(float('inf'))
+    gc.collect()
+    _maybe_empty_cache()
+    return distances.numpy()
+
+def _normalize_text(s: str) -> str:
+    # lowercase
+    s = s.lower()
+    # strip accents
+    s = unicodedata.normalize('NFKD', s)
+    s = ''.join(ch for ch in s if not unicodedata.combining(ch))
+    # replace common separators with spaces, collapse whitespace
+    s = re.sub(r'[\\/._\-]+', ' ', s)
+    s = re.sub(r'\s+', ' ', s).strip()
+    return s
+
+class CommonFilters:
+    def __init__(self, engine, metadata_engine, common_socket_events, media_directory, db_schema):
+        self.engine = engine
+        self.metadata_engine = metadata_engine
+        self.common_socket_events = common_socket_events
+        self.media_directory = media_directory
+        self.db_schema = db_schema
+
+        self.embedding_gathering_callback = EmbeddingGatheringCallback(self.common_socket_events.show_search_status, name="")
+        self.meta_embedding_gathering_callback = ArbitraryProgressCallback(self.common_socket_events.show_search_status, name="metadata")   
+
+        self._fast_cache = TwoLevelCache(cache_dir=None) # Short lived RAM-only cache
+
+    def filter_by_file(self, all_files, text_query):
+        """Rank files by similarity to one target file."""
+        target_path = text_query
+        self.common_socket_events.show_search_status("Extracting embeddings")
+        embeds_files = self.engine.process_files(
+            all_files, callback=self.embedding_gathering_callback,
+            media_folder=self.media_directory, generate_embs_if_not_in_cache=False,
+        )
+        # The target is embedded on demand if it is not already indexed — one
+        # file, asked for by the user, always on the CPU. That is what lets you
+        # drop in any image, clip or track and find things like it.
+        target = self.engine.embed_query_file(target_path)
+        if target is None:
+            self.common_socket_events.show_search_status(
+                "Could not read that file to search with it."
+            )
+            return np.full(len(all_files), np.nan, dtype=np.float32)
+
+        self.common_socket_events.show_search_status("Computing distances between embeddings")
+        # Embeddings are L2-normalised, so ranking by cosine is the same ordering
+        # as ranking by euclidean distance — and it reuses the engine's scorer,
+        # which already returns NaN for files that have not been embedded.
+        return self.engine.compare(embeds_files, target)
+
+    def filter_by_text(self, all_files, text_query, **kwargs):
+        
+        mode = kwargs.get("mode", "file-name")
+
+        if mode not in ('file-name', 'semantic-content', 'semantic-metadata'):
+            raise ValueError(f"Unknown mode: {mode}")
+
+        if mode == 'file-name':
+            q = _normalize_text(text_query)
+            raw_q_lower = text_query.strip().lower()
+
+            # Raw, case-insensitive literal variants for strong priority boosts
+            q_raw = (text_query or '').strip().strip('"').lower()
+            q_raw = q_raw.replace('\\', '/')
+            q_comp = q_raw.strip('/')
+
+            # Prefer tokenized scorer when query has multiple words (order-insensitive)
+            scorer = rapidfuzz.fuzz.token_set_ratio if ' ' in q else rapidfuzz.fuzz.WRatio
+            # If strict reordering handling is desired, consider token_sort_ratio instead of token_set_ratio.
+
+            ranked = []
+            for p in all_files:
+                base = os.path.basename(p)
+                s_full = scorer(q, _normalize_text(p))
+                s_base = scorer(q, _normalize_text(base))
+                combined = max(1.3 * s_base, s_full)  # extra weight to basename
+
+                # give extra points by the length of the perfectly matching characters in p
+                # matches = rapidfuzz.process.extract(text_query.lower(), [p.lower()], scorer=rapidfuzz.fuzz.partial_ratio, score_cutoff=80)
+                # points = 0
+                # for match in matches:
+                #     match_str, match_score, _ = match
+                #     points += len(match_str)
+
+                # # normalize points by the length of the query
+                # normed_points = points / len(q) if len(q) > 0 else 0
+
+                # combined += normed_points * 20  # weight for matching characters
+
+                # ranked.append((combined, p, s_base, s_full))
+
+                # TODO: Rethink the boosting strategy to avoid depending on exact matches as small mistakes should be tolerated.
+                # Strong priority boosts for literal matches (case-insensitive)
+                path_norm = p.replace('\\', '/').lower()
+                base_norm = base.lower()
+                parts_norm = [part for part in path_norm.split('/') if part]
+
+                priority = 0
+                if q_raw and path_norm == q_raw:
+                    priority = 4  # perfect full-path equality
+                elif q_comp and q_comp in parts_norm:
+                    priority = 3  # exact directory/file component match
+                elif q_raw and q_raw and (q_raw in path_norm):
+                    priority = 2  # exact substring anywhere
+                elif q_raw and (path_norm.startswith(q_raw) or path_norm.endswith(q_raw)):
+                    priority = 1  # anchored substring
+
+                # Encode priority as a large offset so they always sort first
+                boosted = priority * 10.0 + combined
+
+                ranked.append((boosted, p, s_base, s_full))
+
+            # Keep scores in original order (aligned with all_files)
+            scores = np.array([r[0] for r in ranked], dtype=np.float32) / 100.0
+
+        if mode == 'semantic-content':
+            # Semantic content search reads each file to compute its embedding —
+            # that would force-download unknown content from remote servers. Restrict
+            # this mode to local files only. 
+            local_indices = [i for i, f in enumerate(all_files) if vfs.is_local_url(f)]
+            skipped_count = len(all_files) - len(local_indices)
+
+            if skipped_count > 0:
+                self.common_socket_events.show_search_status(
+                    f'Skipping {skipped_count} remote file(s) for semantic content search'
+                )
+            if not local_indices:
+                # All files are remote → no semantic search possible. Return NaN
+                # for every entry so FileManager filters them all out.
+                return np.full(len(all_files), np.nan, dtype=np.float32)
+
+            local_files = [all_files[i] for i in local_indices]
+            
+            self.common_socket_events.show_search_status("Extracting embeddings")
+            embeds_text = self.engine.process_text(text_query)
+            embeds_files = self.engine.process_files(
+                local_files, 
+                callback=self.embedding_gathering_callback,
+                media_folder=self.media_directory, 
+                generate_embs_if_not_in_cache=False
+            )
+            local_scores = self.engine.compare(embeds_files, embeds_text) # np.ndarray, NaN for unindexed
+
+            self.common_socket_events.show_search_status("Sorting by relevance")
+
+            # Project local scores back into the full-files index space.
+            scores = np.full(len(all_files), np.nan, dtype=np.float32)
+            for i, idx in enumerate(local_indices):
+                scores[idx] = local_scores[i]
+
+        if mode == 'semantic-metadata':
+            self.common_socket_events.show_search_status("Extracting metadata embeddings")
+            embeds_meta_text = self.metadata_engine.process_query(text_query)
+            embeds_meta_files = self.metadata_engine.process_files(all_files, callback=self.meta_embedding_gathering_callback, generate_embs_if_not_in_cache=False)
+            # embeds_meta_text = embeds_meta_text[None,...] # Wierd hack fix later
+            meta_similarity_scores = self.metadata_engine.compare(embeds_meta_files, embeds_meta_text)
+
+            self.common_socket_events.show_search_status("Sorting by relevance")
+            scores = meta_similarity_scores
+
+        return scores
+
+    def filter_by_file_size(self, all_files, text_query):
+        """
+        Calculates a float32 numpy array of file sizes across all local and remote sources.
+        Uses connection pooling to minimize network handshakes, and caches results 
+        for instant subsequent sorting.
+        """
+        sizes = []
+        opened_fses = {}
+        
+        try:
+            for f in all_files:
+                # 1. Check your existing fast cache first to avoid Disk/Network I/O
+                cache_key = f"FILE_SIZE_OF:{f}"
+                cached_size = self._fast_cache.get(cache_key)
+                
+                if cached_size is not None:
+                    sizes.append(cached_size)
+                    continue
+                
+                # 2. Cache Miss: Fetch the size securely via PyFilesystem2
+                try:
+                    base_url, path_in_fs = vfs.resolve_base_and_path_from_url(f)
+                    
+                    # Open or reuse the filesystem connection
+                    if base_url not in opened_fses:
+                        opened_fses[base_url] = fs.open_fs(base_url)
+                    my_fs = opened_fses[base_url]
+                    
+                    info = my_fs.getinfo(path_in_fs, namespaces=['details'])
+                    size = info.size if info.size is not None else 0
+                    
+                    # Store in TwoLevelCache for instant future sorting
+                    self._fast_cache.set(cache_key, size)
+                    sizes.append(size)
+                except Exception as e:
+                    print(f"[FileManager] Error getting size for {f}: {e}")
+                    sizes.append(0)
+        finally:
+            # 3. Cleanly close all opened connection pools
+            for opened_fs in opened_fses.values():
+                try:
+                    opened_fs.close()
+                except Exception:
+                    pass
+                    
+        return sizes
+
+    def filter_by_random(self, all_files, text_query):
+        scores = np.random.rand(len(all_files)).astype(np.float32)
+        return scores
+
+    def filter_by_rating(self, all_files, text_query):
+        # all_hashes = [self.engine.get_file_hash(f) for f in all_files]
+        # items = self.db_schema.query.filter(self.db_schema.hash.in_(all_hashes)).all()
+        # hash_to_rating = {item.hash: item.user_rating if item.user_rating is not None else item.model_rating for item in items}
+        
+        # all_ratings = [hash_to_rating.get(h) for h in all_hashes]
+        # mean_score = np.mean([r for r in all_ratings if r is not None]) if any(r is not None for r in all_ratings) else 0
+        # all_ratings = [r if r is not None else mean_score for r in all_ratings]
+
+        items = self.db_schema.query.with_entities(self.db_schema.file_path, self.db_schema.user_rating, self.db_schema.model_rating).filter(self.db_schema.file_path.in_(all_files)).all()
+        path_to_rating = {item.file_path: item.user_rating if item.user_rating is not None else item.model_rating for item in items}
+        all_ratings = [path_to_rating.get(f) for f in all_files]
+        
+        return all_ratings
+
+    def filter_by_similarity(self, all_files, text_query):
+        self.common_socket_events.show_search_status("Extracting embeddings for similarity sort")
+        # Cache-only: sorting a folder must never trigger GPU work.
+        chunked = self.engine.process_files(
+            all_files, callback=self.embedding_gathering_callback,
+            media_folder=self.media_directory, generate_embs_if_not_in_cache=False,
+        )
+        dim = self.engine.embedding_dim or 1024
+        # One vector per file — its first chunk stands for the file here.
+        # Unindexed files get a placeholder so the matrix stays rectangular, and
+        # are scored NaN at the end so FileManager drops them. They must not be
+        # left as zero vectors: zeros are mutually distance-0 and would sort to
+        # the *front* of a "least similar first" ordering.
+        indexed = [bool(c) for c in chunked]
+        embeds = np.stack([
+            np.asarray(c[0], dtype=np.float32).ravel() if c else np.zeros(dim, dtype=np.float32)
+            for c in chunked
+        ]) if chunked else np.zeros((0, dim), dtype=np.float32)
+
+        self.common_socket_events.show_search_status("Computing distances between embeddings")
+        distances = compute_distances_batched(embeds)
+        
+        min_distances = np.min(distances, axis=1)
+        target_indices = np.argmin(distances, axis=1)
+        target_min_distances = min_distances[target_indices]
+        # VFS-aware file size gathering (os.path.getsize breaks on VFS URLs).
+        file_sizes = []
+        opened_fses = {}
+        try:
+            for f in all_files:
+                try:
+                    base_url, path_in_fs = vfs.resolve_base_and_path_from_url(f)
+                    if base_url not in opened_fses:
+                        opened_fses[base_url] = fs.open_fs(base_url)
+                    info = opened_fses[base_url].getinfo(path_in_fs, namespaces=['details'])
+                    file_sizes.append(info.size if info.size is not None else 0)
+                except Exception:
+                    file_sizes.append(0)
+        finally:
+            for opened_fs in opened_fses.values():
+                try:
+                    opened_fs.close()
+                except Exception:
+                    pass
+
+        files_with_metrics = list(zip(target_min_distances, min_distances, file_sizes, all_files))
+        sorted_files_with_metrics = sorted(files_with_metrics, key=lambda x: (x[0], x[1], x[2]))
+        
+        # Convert ordering into scores (higher score = earlier in sorted list)
+        max_rank = len(sorted_files_with_metrics)
+        path_to_score = {
+            f: (max_rank - rank)  # simple descending rank score
+            for rank, (_, _, _, f) in enumerate(sorted_files_with_metrics)
+        }
+        scores = np.array([path_to_score[f] for f in all_files], dtype=np.float32)
+
+        # Files with no cached embedding took no part in the distance ranking —
+        # drop them rather than let their placeholder row win a position.
+        scores[~np.asarray(indexed, dtype=bool)] = np.nan
+
+        return scores

@@ -30,9 +30,9 @@ def get_training_pairs(cfg, text_embedder, status_callback=None):
     (np.ndarray of shape [chunks, dim], float)
     """
     import src.db_models as main_db_models
-    from src.metadata.search import get_metadata_search
+    from anagnorisis_core.search.metadata_search import get_metadata_search
     import fs
-    import src.virtual_file_system as vfs
+    import anagnorisis_core.storage.virtual_file_system as vfs
 
     media_dir = getattr(cfg.videos, 'media_directory', None)
     if not media_dir:

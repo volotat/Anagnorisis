@@ -3,11 +3,15 @@
 # Anagnorisis
 [![Anagnorisis Health](https://oss-health-monitor.vercel.app/api/badge/volotat/Anagnorisis?v=2)](https://github.com/volotat/OSS-Health-Monitor)
 
-Anagnorisis - is a local recommendation system that allows you to fine-tune models on your data to predict your data preferences. You can feed it as much of your personal data as you like and not be afraid of it leaking as all of it is stored and processed locally on your own computer. All you need  to run it is 8GB VRAM GPU or 16GB of RAM in CPU-only mode. 
+Anagnorisis - is a local recommendation system that runs on your machine, learns your taste from your own ratings, and belongs to you.
+It allows you to fine-tune models on your data to predict your data preferences. You can feed it as much of your personal data as you like and not be afraid of it leaking as all of it is stored and processed locally on your own computer. Targeted for a PC or Home server with at least 8GB VRAM GPU on the board. 
 
+## Motivation
+Every recommendation system you typically use from the cloud services (i.e. Youtube, Spotify, Tiktok, Twitter (X), Facebook and so on) is owned by someone whose interests aren't yours. It optimizes for engagement and other private metrics, you can't inspect, can't correct, and can't take with you when the service inevitably dies or even use the same recommendation model for different independent applications. This project aims to solve all of that.
 
-The project uses [Flask](https://flask.palletsprojects.com/) libraries for backend and [Bulma](https://bulma.io/) as frontend CSS framework. For all ML-related stuff [Transformers](https://github.com/huggingface/transformers) and [PyTorch](https://pytorch.org/) are used. This is the main technological stack, however there are more libraries used for specific purposes.
+Anagnorisis has the other arrangement that turns the whole client-server architecture upside down. The servers are now pure data-sharing thin hosts and all the main processing, search and recommendations are happening on your machine. You rate local or remote files and other data you own on a scale of 0 to 10. This feedback then used to locally train a recommendation model that scores everything you haven't rated yet automatically. You correct what it got wrong, that correction goes to the next round of training data. You repeat these steps again and again, getting each time model that better and better aligns to your preferences.  
 
+The big vision of this project is to provide a platform that creates a local, private model of your interests. That likes what you like and sees importance where you would see it. Then you can use this model to search and filter local and global information on your behalf in a way you would do it yourself but in a much faster and efficient way. Making this platform (in the future) a go to place to see news, recommendations and insights, and so on, tailored specifically for you. As the internet gets populated with bots and AI slop, a platform like this might create a necessary filter to be able to navigate in this chaotic information space effectively.
 
 To find more about the project and ideas behind it you can read these articles:  
 [Anagnorisis. Part 1: A Vision for Better Information Management.](https://volotat.github.io/p/anagnorisis-part-1-a-vision-for-better-information-management/)  
@@ -19,16 +23,6 @@ And watch these videos:
 [Anagnorisis: Search Your Data Effectively (v0.3.1)](https://www.youtube.com/watch?v=X1Go7yYgFlY) - How to effectively search your data across all modules.  
 [Anagnorisis: Music Module Preview (v0.1.6)](https://www.youtube.com/watch?v=vux7mDaRCeY) - Presentation of 'Music' module usage. To see how the algorithm works in details, please read this wiki page: [Music](wiki/music.md)  
 [Anagnorisis: Images module preview (v0.1.0)](https://www.youtube.com/watch?v=S70Lp0oL7aQ) - Presentation of 'Images' module usage. Or you can read the guide at the [Images wiki](wiki/images.md) page.  
-
-## General
-Here is the main pipeline of working with the project:  
-1. You rate some data such as text, audio, images, video or anything else on the scale from 0 to 10 and all of this is stored in the project database.  
-2. When you acquire some amount of such rated data points you go to the 'Train' page and start the fine-tuning of the model so it could rate the data AS IF it was rated by you.  
-3. New model is used to sort new data by rates from the model and if you do not agree with the scores the model gave, you simply change it.  
-
-You repeat these steps again and again, getting each time model that better and better aligns to your preferences.  
-
-The big vision of this project is to provide a platform that creates a local, private model of your interests. That likes what you like and sees importance where you would see it. Then you can use this model to search and filter local and global information on your behalf in a way you would do it yourself but in a much faster and efficient way. Making this platform (in the future) a go to place to see news, recommendations and insights, and so on, tailored specifically for you. As the internet gets populated with bots and AI slop, a platform like this might create a necessary filter to be able to navigate in this chaotic information space efficiently.
 
 ## How search works
 
@@ -45,13 +39,15 @@ Two rules the project holds to:
 
 Because searching reads from the index rather than building it, files that have not been indexed yet simply do not appear in results. The status bar reports how many are still pending.
 
+The `.meta` sidecars provides a distributed semantic index with no protocol. Just text files next to the main files is enough to search and recommend data from the remote servers with arbitrary data on them.
+
 ## How memory works
 
 Every time you rate a file, the project writes a small Markdown file recording everything it knew about that file at that moment. They accumulate in `project_config/memory/<date>/<soft-hash>.md` and are the material the recommendation model is trained on.
 
 A memory file holds the rating on its first line, then the file's name and path, the zero-shot tags and fingerprint from the embedding model, the descriptor model's description of the content, internal metadata (EXIF, ID3 and so on), and the contents of the file's `.meta` sidecar if it has one. In other words, a written account of the file with text as a proxy of its content.
 
-**Why keep an proxy instead of pointing at the file:** Because the file path is not a reliable place to keep account of. It gets renamed, reorganised, moved to another drive, deleted; if it lives on someone else's server it can disappear without warning. A rating attached to a path would quietly rot. The judgement you made is the part worth keeping, and it stays valid whether or not the original file is still reachable.
+**Why keep an proxy instead of pointing at the file:** Because the file path is not a reliable place to keep account of. It gets renamed, reorganised, moved to another drive, deleted; if it lives on someone else's server it can disappear without warning. A rating attached to a path would quietly rot. Your score stays valid whether or not the original file is still reachable.
 
 The file is identified by a **soft hash**: a fingerprint computed from a few sampled blocks of its content plus its size, rather than the whole file. It is fast even on large files and cheap over a network, and because it describes content rather than location, moving or renaming a file does not lose a memory about rating the file. Memory files are grouped in dated folders, and when the same file has been rated more than once the most recent entry wins, so re-rating something supersedes your earlier opinion instead of contradicting it. In future It might also allow to track the change in the preferences over time and build even better time-dependent recommendations.
 
@@ -62,6 +58,74 @@ Rating a file is **an explicit action you took**, which is why this is the one c
 What comes out is an evaluator model that could predict a rating for a file it has never seen before, stored as its `model_rating` in the DB for fast access. Sorting and recommendation then use your own rating where you have given one and fall back to the model's guess where you have not, so the ranking is your judgement wherever it exists and the model's imitation of it everywhere else. Some modules, such as the `Music` module additionally folds in play counts, skips and how long ago something was last played to build better recommendation list.
 
 This is what creates the loop described at the top of this README: rate some files, train, let the model rate the rest, correct it where it is wrong. Each correction becomes another memory file, and the next round starts from a slightly better model.
+
+## The standalone core engine
+
+The part that describes, embeds and searches files lives in its own library, [`anagnorisis_core`](anagnorisis_core/README.md), with no web server, no database and no browser just an API served as a Python package with CLI on top. The application is a front end over it. Three things use this code: the web application, the `anagnorisis` CLI, and the data server. 
+
+After installing the package the core functions of the app are available as a command line interface with `anag`, or `anagnorisis` pretext.
+Say once where things are kept, and the rest needs no paths:
+
+```bash
+anag config set project_config_path ~/Desktop/Github/Anagnorisis/project_config
+anag config set embedding_models_path ~/Desktop/Github/Anagnorisis/models
+
+anag describe /mnt/media/images                  # write descriptions for files
+anag index    /mnt/media/images                  # embed files and their descriptions them so they can be searched
+anag search   "a quiet street at night" /mnt/media/images --mode semantic
+anag rate     /mnt/media/images/dsc_0021.jpg 9   # save the given score to the memory
+# or: anag rate --text "grainy night photos" 9
+anag score    /mnt/media/images/scr_0091.jpg     # what the model predicts you would rate that  
+# or: anag score --text "a quiet street at night" 
+anag sort     /mnt/media/images --predicted
+anag train
+```
+
+Pointing `project_config_path` at the application's own `project_config/` is what makes the two share one cache, one set of ratings and one trained model, the command line and the app then see the same library. That is also how the data server annotates a shared folder without running any of the web application. See [`data_server/README.md`](data_server/README.md) for the details.
+
+The main goal of the core package is to have single independent reusable peace of code that could be used to create arbitrary applications on top of it that are still share the same memory and recommendation model.
+
+## Benchmarks
+
+The benchmarks exists right now only for tracking purpose. There were not any targeted work done yet on the speed and quality of the search, as the main goal of the project so far was to establish the right infrastructure to build upon. 
+
+Here only a subset of benchmarks are present, see [`anagnorisis_core/benchmarks/README.md`](anagnorisis_core/benchmarks/README.md) for more information and over time tracking.
+
+**Finding the files:**
+
+| Regime | Time | µs/file | Est. @100,000 |
+|---|---|---|---|
+| uncached (cache empty) | 0.0237s | 53.96 | 5.4s |
+| cold (cache on disk) | 0.0053s | 12.11 | 1.2s |
+| warm (cache in RAM) | 0.0045s ±0.0 | 10.29 | 1.0s |
+
+**Building the index:**
+
+| Media type | Files | Content s/file | Descriptions s/file |
+|---|---|---|---|
+| `audio` | 205 | 1.3986 | 0.367 |
+| `images` | 202 | 0.5551 | 0.3692 |
+| `text` | 17 | 0.352 | 0.4358 |
+| `videos` | 15 | 3.7895 | 0.4031 |
+
+| Phase | Total | s/file | Est. @100,000 |
+|---|---|---|---|
+| content | 461.67s | 1.0516 | 105,176s (29.2h) |
+| descriptions | 163.28s | 0.3719 | 37,205s (10.3h) |
+| **both, whole library** | — | — | **142,375s (39.5h)** |
+| re-index, everything already cached | 0.022s | 0.05 ms | 5s |
+
+Embedder load, measured once and excluded from above: 12.28s. 
+
+**Writing the descriptions:**
+
+| Media type | s/file (mean) | median | min–max | n | All 100,000 of this type |
+|---|---|---|---|---|---|
+| `audio` | 47.38 | 45.84 | 45.02–51.29 | 3 | 1316.2h |
+| `images` | 15.63 | 15.75 | 14.43–16.71 | 3 | 434.2h |
+| `text` | 5.31 | 0.0 | 0.0–15.94 | 3 | 147.6h |
+| `videos` | 55.93 | 56.94 | 52.81–58.03 | 3 | 1553.5h |
+
 
 ## Running from Docker
 The preferred way to run the project is from Docker. This should be much more stable than running it from the local environment, especially on Windows.
@@ -228,6 +292,8 @@ The project runs two models:
 All models are downloaded automatically when the project is started for the first time. This might take some time depending on the internet connection. You can see the progress inside `logs/anagnorisis-app_log.txt` file that will appear in the project's root folder if you run the project from the Docker container.
 
 ## Acknowledgments
+
+The project uses [Flask](https://flask.palletsprojects.com/) libraries for backend and [Bulma](https://bulma.io/) as frontend CSS framework. For all ML-related stuff [Transformers](https://github.com/huggingface/transformers) and [PyTorch](https://pytorch.org/) are used. This is the main technological stack, however there are more libraries used for specific purposes.
 
 **Huge thanks to [Dystrio](https://huggingface.co/dystrio) for optimizing the MiniCPM-o-4_5 model (used in the early days of the project) specifically for the Anagnorisis project.**
 

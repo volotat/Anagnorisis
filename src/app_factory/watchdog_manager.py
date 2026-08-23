@@ -42,9 +42,9 @@ class WatchdogManager:
             # Proxy singletons — imported lazily so the watchdog doesn't force them
             # to be created if they were never used.
             _proxy_modules = {
-                'OmniEmbedder':       ('src.omni_embedder',      'OmniEmbedder'),
-                'OmniDescriptor':     ('src.omni_descriptor',    'OmniDescriptor'),
-                'UniversalEvaluator': ('src.universal_evaluator','UniversalEvaluator'),
+                'OmniEmbedder':       ('anagnorisis_core.models.embedder',      'OmniEmbedder'),
+                'OmniDescriptor':     ('anagnorisis_core.models.descriptor',    'OmniDescriptor'),
+                'UniversalEvaluator': ('anagnorisis_core.models.universal_evaluator','UniversalEvaluator'),
             }
             while True:
                 time.sleep(60)

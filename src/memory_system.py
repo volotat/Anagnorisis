@@ -21,27 +21,20 @@ from a remote server), the description is preserved so the model can still
 learn what kind of content was rated how.
 
 Which handling a file gets follows from its media type (see
-src/metadata/media_types.py), so this stays decoupled from the modules: a rated
+anagnorisis_core/media_types.py), so this stays decoupled from the modules: a rated
 file is described the same way whether or not a module owns its content kind.
 """
 
 import os
 import datetime
 import threading
-import fs
 
-import src.virtual_file_system as vfs
-from src.metadata import extractors, models
-from src.metadata.media_types import get_registry
-from src.omni_descriptor import OmniDescriptor
-from src.omni_embedder import get_omni_embedder
+import anagnorisis_core.storage.virtual_file_system as vfs
+from anagnorisis_core.media import description, models
+from anagnorisis_core.media.media_types import get_registry
+from anagnorisis_core.models.descriptor import OmniDescriptor
+from anagnorisis_core.models.embedder import get_omni_embedder
 from src.app_factory.event_manager import EventManager
-
-
-# How much of a .meta sidecar to read into a memory file.
-_MAX_META_BYTES = 128 * 1024   # 128 KB hard cap, irrespective of line length
-# Internal-metadata string-value length cap (drops base64 cover art, etc.).
-_MAX_META_VALUE_LEN = 1000
 
 
 class MemorySystem:
@@ -107,145 +100,62 @@ class MemorySystem:
     # ------------------------------------------------------------------
 
     def build_memory_text(self, file_path, soft_hash, rating):
-        """Assemble the full memory .md content for a file.
+        """Assemble the memory .md content: the rating, then the description.
 
-        The user rating is written as the very first line so it is trivial to
-        parse (and strip before embedding — see universal_train._parse_memory_file).
-        Each section is wrapped defensively so a failed model call or a missing
-        file does not lose the rest of the description.
+        The body is the *same* text metadata search embeds and the UI shows as
+        "full search description" — one call to the shared builder, not a second
+        arrangement of the same sections. That equality is the point: training
+        strips line 1 and embeds the rest, so the evaluator learns on exactly the
+        text it will later score. When the two drifted apart, the model was being
+        trained on one shape and asked to judge another.
 
-        Only called from ``save_memory``, which is triggered by ``emit_set_file_rating``
-        — i.e. an explicit user action. Downloading remote files is therefore
-        intentional and necessary to build the most informative memory possible.
+        Nothing else goes in the header. The soft hash is the filename and the
+        capture date is the containing folder, so writing them into the body
+        would only break that equality to repeat what the path already says.
+
+        Only called from ``save_memory``, which is triggered by
+        ``emit_set_file_rating`` — an explicit user action. Reading a remote file
+        here is therefore intentional, unlike in any background pass.
         """
         # Lazily load embedding/omni models on first use (inside a background task,
         # so this never blocks app startup).
         self._ensure_initialized()
 
-        file_name = os.path.basename(file_path)
         media_type = self.types.for_file(file_path)
+        body = description.build_description(
+            file_path,
+            cfg=self.cfg,
+            media_type=media_type,
+            describe=lambda fp: self._describe_now(fp, media_type),
+        )
+        return f"Rating: {rating}\n" + body
 
-        parts = [
-            f"Rating: {rating}",  # line 1 — parsed & stripped before embedding
-            f"Soft Hash: {soft_hash}",
-            f"Hash Algorithm: {EventManager.soft_hash_algorithm}",
-            f"File Path: {file_path}",
-            f"File Name: {file_name}",
-            f"Captured At: {datetime.datetime.now().isoformat()}",
-            "",
-        ]
+    def _describe_now(self, file_path, media_type):
+        """Describe the file with the omni model, releasing VRAM afterwards.
 
-        # 1. Embedding proxy (tags + fingerprint) — audio (CLAP) / image (SigLIP)
-        parts.extend(self._collect_proxy_section(file_path, media_type))
-
-        # 2. OmniDescriptor natural-language description
-        parts.extend(self._collect_omni_section(file_path, media_type))
-
-        # 3. Internal metadata (TinyTag / PIL size, etc.)
-        parts.extend(self._collect_internal_metadata(file_path, media_type))
-
-        # 4. .meta sidecar
-        parts.extend(self._collect_meta_section(file_path, file_name))
-
-        return "\n".join(parts)
-
-    def _collect_proxy_section(self, file_path, media_type):
-        proxy = models.get_proxy(self.cfg, media_type)
-        if proxy is None:
-            # This media type has no content embedder, so there is no vector to
-            # turn into text.
-            return []
-        try:
-            section = proxy.get_proxy_text(file_path)
-            if section and section.strip():
-                return [section.strip(), ""]
-        except Exception as exc:
-            print(f"[MemorySystem] Proxy section failed for {file_path}: {exc}")
-        return []
-
-    def _collect_omni_section(self, file_path, media_type):
+        Unlike the background passes this generates on demand — the user just
+        rated this file, so it is worth the seconds — and unlike them it is
+        allowed to read a remote file.
+        """
         method_name = models.describe_method_for(media_type.name if media_type else None)
         if method_name is None:
-            return []
+            return ''
         try:
             method = getattr(self._omni, method_name)
             if method_name == 'describe_text':
-                content = self._read_text_content(file_path)
-                description = method(content) if content is not None else ""
+                content = description.read_text_content(file_path)
+                text = method(content) if content is not None else ''
             else:
-                description = method(file_path)
-            self._omni.unload()  # free VRAM as soon as we are done
-            if description and description.strip():
-                return ["# Automatic description:", description.strip(), ""]
+                text = method(file_path)
+            return (text or '').strip()
         except Exception as exc:
             print(f"[MemorySystem] Omni description failed for {file_path}: {exc}")
+            return ''
+        finally:
             try:
-                self._omni.unload()
+                self._omni.unload()  # free VRAM as soon as we are done
             except Exception:
                 pass
-        return []
-
-    def _collect_internal_metadata(self, file_path, media_type):
-        metadata = extractors.read(
-            media_type.metadata_extractor if media_type else None, file_path
-        )
-        if not metadata:
-            return []
-        lines = ["# Internal metadata:"]
-        for key, value in metadata.items():
-            if isinstance(value, str) and len(value) <= _MAX_META_VALUE_LEN and value.strip():
-                lines.append(f"{key}: {value}")
-        lines.append("")
-        return lines if len(lines) > 2 else []
-
-    def _collect_meta_section(self, file_path, file_name):
-        try:
-            meta_text = self._read_meta_sidecar(file_path)
-            if meta_text and meta_text.strip():
-                return [
-                    f"# External metadata from '{file_name}.meta' file:",
-                    meta_text,
-                    "",
-                ]
-        except Exception as exc:
-            print(f"[MemorySystem] .meta read failed for {file_path}: {exc}")
-        return []
-
-    # ------------------------------------------------------------------
-    # VFS-aware file readers
-    # ------------------------------------------------------------------
-
-    @staticmethod
-    def _read_text_content(file_path, cap_chars=30_000):
-        """Read a text file's content (for omni text description), capped."""
-        base_url, path_in_fs = vfs.resolve_base_and_path_from_url(file_path)
-        with fs.open_fs(base_url) as my_fs:
-            with my_fs.open(path_in_fs, 'rb') as f:
-                return f.read(cap_chars).decode('utf-8', errors='ignore')
-
-    @staticmethod
-    def _read_meta_sidecar(file_path):
-        """Read file_path + '.meta' via VFS, capped at _MAX_META_LINES/_CHARS."""
-        meta_url = file_path + '.meta'
-        base_url, path_in_fs = vfs.resolve_base_and_path_from_url(meta_url)
-        with fs.open_fs(base_url) as my_fs:
-            if not my_fs.exists(path_in_fs):
-                return ""
-            
-            total = 0
-            data = b""
-            with my_fs.open(path_in_fs, 'rb') as f:
-                for i, raw in enumerate(f):
-                    total += len(raw)
-                    data += raw
-                    if total > _MAX_META_BYTES:
-                        break
-
-            return data.decode('utf-8', errors='ignore')
-
-    # ------------------------------------------------------------------
-    # Storage
-    # ------------------------------------------------------------------
 
     def _memory_file_path(self, soft_hash, when=None):
         date_folder = (when or datetime.date.today()).isoformat()

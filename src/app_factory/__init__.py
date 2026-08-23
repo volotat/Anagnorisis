@@ -79,7 +79,7 @@ def create_app(root_folder):
     #    configured server. Module-independent, so it lives here rather than in
     #    any module's serve.py. Built after init_socket_events so app.task_manager
     #    exists for Scheduler to register itself in the Task Manager UI.
-    from src.metadata.indexer import MetadataIndexer
+    from src.metadata_indexer import MetadataIndexer
     app.metadata_indexer = MetadataIndexer(app, cfg)
 
     return app, socketio, cfg

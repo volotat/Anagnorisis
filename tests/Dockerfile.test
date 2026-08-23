@@ -32,5 +32,12 @@ RUN pip install --no-cache-dir torch torchvision torchaudio --index-url https://
 RUN pip install --no-cache-dir -r requirements.txt
 RUN pip install --no-cache-dir colorama pytest
 
+# The engine, installed as a package. Editable and from /app, which the test
+# compose bind-mounts, so the tests exercise the working tree while importing it
+# the same way any installed dependency would be. --no-deps keeps pip from
+# re-resolving torch and pulling a CUDA 13 build over the cu124 wheels above.
+COPY anagnorisis_core/ /app/anagnorisis_core/
+RUN pip install --no-cache-dir --no-deps -e /app/anagnorisis_core
+
 # Default command to start an interactive shell
 CMD ["bash"]

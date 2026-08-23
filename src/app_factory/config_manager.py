@@ -2,7 +2,7 @@ import os
 import glob
 from omegaconf import OmegaConf
 
-from src.metadata.media_types import get_registry
+from anagnorisis_core.media.media_types import bundled_media_types_dir, get_registry
 
 class ConfigManager:
     """Handles parsing configuration files and ensuring required directories exist."""
@@ -33,7 +33,14 @@ class ConfigManager:
         # rules as module defaults. Tag vocabularies in media_types/tags/ are
         # deliberately NOT merged here — MediaTypeRegistry loads them, so the
         # bulky lists never reach the config or the embedding subprocesses.
-        media_types_folder = os.path.join(root_folder, 'media_types')
+        # The taxonomy ships inside anagnorisis_core. A `media_types/` folder at
+        # the repository root, if present, overrides it — that is where a user
+        # puts their own extension lists or tag vocabularies without editing the
+        # package.
+        media_types_folder = bundled_media_types_dir()
+        override_folder = os.path.join(root_folder, 'media_types')
+        if os.path.isdir(override_folder):
+            media_types_folder = override_folder
         for types_cfg_path in sorted(glob.glob(os.path.join(media_types_folder, '*.yaml'))):
             cfg = OmegaConf.merge(OmegaConf.load(types_cfg_path), cfg)
             print(f"Merged media type definitions: {types_cfg_path}")

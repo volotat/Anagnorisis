@@ -1,7 +1,7 @@
 from tqdm import tqdm  # noqa: F401
 import numpy as np
 import modules.images.db_models as db_models
-# import src.scoring_models        # Removed: ImageEvaluator training is no longer used
+# import anagnorisis_core.models.scoring_models        # Removed: ImageEvaluator training is no longer used
 # from sklearn.model_selection import train_test_split  # Removed
 import os
 # import pickle  # Removed
@@ -51,9 +51,9 @@ def get_training_pairs(cfg, text_embedder, status_callback=None):
     (np.ndarray of shape [chunks, dim], float)
     """
     import src.db_models as main_db_models
-    from src.metadata.search import get_metadata_search
+    from anagnorisis_core.search.metadata_search import get_metadata_search
     import fs
-    import src.virtual_file_system as vfs
+    import anagnorisis_core.storage.virtual_file_system as vfs
 
     media_dir = getattr(cfg.images, 'media_directory', None)
     if not media_dir:

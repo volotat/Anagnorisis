@@ -6,7 +6,7 @@ import datetime
 import concurrent.futures
 import torch
 
-import src.virtual_file_system as vfs
+import anagnorisis_core.storage.virtual_file_system as vfs
 import fs
 import fs.opener
 
@@ -40,102 +40,29 @@ if not logger.handlers:
 # ---------------------------------------------
 
 
-def get_folder_structure(folder_path, media_extensions=None):
-    # Check if directory exists and return None if not
-    if not os.path.isdir(folder_path):
-        return None
-  
-    def count_files(folder):
-        return sum(1 for f in os.listdir(folder) if os.path.splitext(f)[1].lower() in media_extensions)
-
-    def build_structure(path):
-        folder_dict = {
-        'name': os.path.basename(path),
-        'num_files': count_files(path),
-        'total_files': 0,
-        'subfolders': {}
-        }
-        folder_dict['total_files'] = folder_dict['num_files']
-        
-        for subfolder in os.listdir(path):
-            subfolder_path = os.path.join(path, subfolder)
-            if os.path.isdir(subfolder_path):
-                subfolder_structure = build_structure(subfolder_path)
-                folder_dict['subfolders'][subfolder] = subfolder_structure
-                folder_dict['total_files'] += subfolder_structure['total_files']
-        
-        return folder_dict
-    return build_structure(folder_path)
-
-import subprocess
-import sys
-
-def open_file_in_folder(file_path):
-    file_path = os.path.normpath(file_path)
-    logger.info(f'Opening file with path: "{file_path}"')
-    
-    # Assuming file_path is the full path to the file
-    folder_path = os.path.dirname(file_path)
-    if os.path.isfile(file_path):
-      if sys.platform == "win32":  # Windows
-        subprocess.run(["explorer", "/select,", file_path], check=True)
-      elif sys.platform == "darwin":  # macOS
-        subprocess.run(["open", "-R", file_path], check=True)
-      else:  # Linux and other Unix-like OS
-        # Convert the file path to an absolute path
-        abs_path = os.path.abspath(file_path)
-
-         # Check for the file manager and use the appropriate command on Linux
-        if os.environ.get('XDG_CURRENT_DESKTOP') in ['GNOME', 'Unity']:
-          subprocess.run(['nautilus', '--no-desktop', abs_path])
-        elif os.environ.get('XDG_CURRENT_DESKTOP') == 'KDE':
-          subprocess.run(['dolphin', '--select', abs_path])
-        else:
-          logger.warning("Unsupported desktop environment. Please add support for your file manager.")
-    else:
-      logger.error("File does not exist.")
-
-
+# Path handling — including the traversal guard — lives in the core, so the
+# CLI and the annotator are protected by the same code as the web routes.
+from anagnorisis_core.storage.file_paths import (  # noqa: F401  (re-exported)
+    PathTraversalError, get_folder_structure, open_file_in_folder, resolve_subpath,
+)
 
 
 # ----------------------------------------------------------------------------------
 
 from pathlib import Path
 
-class PathTraversalError(Exception):
-    pass
-
-def resolve_subpath(base_dir: str, user_path: str | None) -> Path:
-    """
-    Safely resolve user_path inside base_dir. Raises PathTraversalError if escape attempt.
-    Empty / None user_path returns base_dir.
-    """
-    base = Path(base_dir).resolve()
-    candidate = base if not user_path else (base / user_path)
-    try:
-        resolved = candidate.resolve()
-        resolved.relative_to(base)  # raises ValueError if outside
-    except Exception:
-        raise PathTraversalError(f"[FileManager] Invalid path: {user_path}")
-    return resolved
-
-# filters = {
-#    "by_file": by_file_sort_function,
-#    "by_text": by_text_sort_function,
-#    "custom": custom_sort_function,
-#    ...
-# }
-
 from src.socket_events import CommonSocketEvents
 import time
 import numpy as np
-from src.utils import convert_size, weighted_shuffle
-from src.caching import get_two_level_cache
-from src.file_walker import get_file_walker
+from src.utils import convert_size
+from anagnorisis_core.search.ranking import weighted_shuffle
+from anagnorisis_core.storage.caching import get_two_level_cache
+from anagnorisis_core.storage.file_walker import get_file_walker
 import src.db_models as db_models
 from src.db_models import FilesLibrary
 
 import fs
+
 
 class FileManager:
     def __init__(self, app, cfg, media_directory, engine=None, module_name="FileManager", media_formats=None, socketio=None, db_schema=None):
@@ -154,7 +81,7 @@ class FileManager:
 
         # Traversal, the directory cache and server availability are shared
         # process-wide — see src/file_walker.py.
-        self._walker = get_file_walker(app, cfg)
+        self._walker = get_file_walker(app.user_cfg.servers, cfg.main.cache_path)
         self.servers = self._walker.servers
 
         # Folder tree cache (persisted across many instances of FileManager as a singleton object)

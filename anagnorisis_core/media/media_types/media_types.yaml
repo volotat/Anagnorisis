@@ -1,0 +1,41 @@
+# media_types.yaml — the content-kind taxonomy every part of the app shares.
+#
+# A media type is a kind of content, never a model. Nothing in this file names
+# an embedding model, so replacing CLAP/SigLIP with a single omni model is a
+# change to anagnorisis_core/models.py and needs no edit here.
+#
+# This file is merged into the root config at startup, before config.yaml, so
+# any field can be overridden from there. YAML lists REPLACE rather than merge,
+# so overriding `extensions` means restating the whole list.
+#
+#   extensions          The file extensions that belong to this type. Must be
+#                       unique across all types — a duplicate is a startup error.
+#   metadata_extractor  Which internal-metadata reader to use, by name from
+#                       anagnorisis_core/extractors/. Omit for filename/path only.
+#   tags_threshold      Cosine-similarity cutoff for zero-shot tags.
+#                       Omit or null to always take the top 15 tags.
+#
+# Tag vocabularies live next to this file in tags/<type>.yaml — dropping a file
+# in there is all it takes to give a type its vocabulary.
+
+media_types:
+  audio:
+    extensions: [.mp3, .flac, .wav, .ogg, .aac, .m4a, .opus]
+    metadata_extractor: audio    # TinyTag — ID3 / Vorbis / MP4 tags
+    tags_threshold: null
+
+  images:
+    extensions: [.jpg, .jpeg, .png, .gif, .bmp, .webp, .tiff]
+    metadata_extractor: images   # PIL — size, mode, EXIF
+    tags_threshold: null
+
+  videos:
+    extensions: [.mp4, .webm, .avi, .mov, .wmv, .flv, .mkv, .ogv, .mpeg, .mpg]
+
+  text:
+    extensions: [.txt, .md, .htm, .html]
+    metadata_extractor: stat     # filesystem stat only — never reads content
+
+  documents:
+    extensions: [.pdf, .epub, .doc, .docx, .odt, .rtf]
+    metadata_extractor: stat

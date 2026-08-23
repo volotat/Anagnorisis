@@ -1,0 +1,498 @@
+# Zero-shot tag vocabulary for the "documents" media type.
+#
+# Used by the embedding proxy: each tag is embedded once with the media type's
+# embedding model, and the tags closest to a file's embedding are written into
+# its metadata description. That gives files a searchable, ratable text
+# representation before the (much slower) OmniDescriptor pass reaches them.
+#
+# Rows are written as "- [a, b, c]" purely for compactness — the loader
+# flattens them into one flat list of tags.
+#
+# NOTE: the documents type has no embedding model in anagnorisis_core/models.py yet,
+# so this vocabulary is currently unused. It is here so that the day a document
+# embedder (or a page-render + image embedder) is added, the taxonomy already
+# exists.
+#
+# Extend freely. Changing the vocabulary changes its hash, which invalidates
+# every cached proxy section and, through it, every metadata embedding that
+# contained one — correct, but it means a full background re-index. Prefer
+# batching edits over trickling them in.
+
+# Personal admin — the bulk of what accumulates on a home machine
+- [bank statement, credit card statement, payslip, tax return, tax form, insurance policy]
+- [utility bill, phone bill, invoice, receipt, purchase confirmation, order confirmation, warranty]
+- [rental agreement, lease, mortgage document, loan agreement, pension statement, benefits letter]
+- [medical record, prescription, test results, vaccination record, doctor letter, hospital discharge]
+- [school report, exam certificate, diploma, transcript of records, enrolment letter, tuition invoice]
+
+# Identity & travel
+- [passport scan, identity card, driving licence, birth certificate, marriage certificate, visa]
+- [boarding pass, flight ticket, train ticket, hotel booking, travel itinerary, travel insurance]
+- [event ticket, concert ticket, museum pass, parking permit, membership card, loyalty card]
+
+# Business & legal
+- [contract, service agreement, non disclosure agreement, employment contract, terms and conditions]
+- [purchase order, quotation, statement of work, invoice template, expense claim, delivery note]
+- [company registration, articles of association, shareholder agreement, board minutes, annual report]
+- [power of attorney, will and testament, deed, court filing, legal notice, affidavit, patent filing]
+- [compliance report, audit report, risk assessment, incident report, policy document, procedure]
+
+# Work & professional
+- [resume, curriculum vitae, cover letter, reference letter, job offer, performance review]
+- [project proposal, business plan, pitch deck, presentation slides, meeting minutes, status report]
+- [timesheet, org chart, process document, training material, onboarding pack, handbook]
+
+# Academic & scientific
+- [academic paper, journal article, conference paper, preprint, thesis, dissertation, research report]
+- [lecture slides, lecture handout, course syllabus, problem set, exam paper, marking scheme]
+- [literature review, grant application, ethics approval, dataset documentation, poster presentation]
+
+# Technical & engineering
+- [user manual, installation guide, service manual, repair guide, datasheet, specification sheet]
+- [technical drawing, schematic, wiring diagram, blueprint, floor plan, assembly instructions]
+- [standard document, protocol specification, api documentation, release notes, changelog]
+- [safety data sheet, inspection report, certificate of conformity, calibration certificate]
+
+# Publishing & reading
+- [ebook, novel, non-fiction book, textbook, reference book, cookbook, travel guide, dictionary]
+- [magazine, newspaper, newsletter, journal issue, comic book, graphic novel, manga volume, zine]
+- [sheet music, score, songbook, tablature, libretto, play script, screenplay, poetry collection]
+- [catalogue, price list, brochure, product leaflet, menu, programme, prospectus, annual calendar]
+
+# Marketing & design
+- [flyer, poster, banner, advertisement, press kit, brand guidelines, style guide, media kit]
+- [case study, white paper, ebook lead magnet, infographic sheet, one pager, fact sheet]
+
+# Forms & templates
+- [blank form, filled form, application form, registration form, consent form, feedback form]
+- [survey, questionnaire, checklist, template document, letterhead, envelope template, label sheet]
+- [resume template, certificate template, agenda template, report template]
+
+# Layout & structure
+- [single page document, multi page document, long document, cover page, title page, table of contents]
+- [index, appendix, footnotes, endnotes, bibliography, glossary, header and footer, page numbers]
+- [two column layout, three column layout, portrait orientation, landscape orientation, booklet]
+- [text heavy document, image heavy document, table heavy document, form layout, slide layout]
+- [chart in document, table in document, diagram in document, photograph in document, signature]
+
+# Provenance & quality
+- [scanned document, photographed document, born digital, exported from word, exported from web page]
+- [searchable text, image only pdf, OCR processed, handwritten document, typewritten document]
+- [skewed scan, low quality scan, high quality scan, faded print, stamped document, watermarked]
+- [signed document, unsigned draft, redacted document, confidential, draft version, final version]
+- [password protected, corrupted file, incomplete document, duplicate copy, archived copy]
+
+# Language
+- [English document, Spanish document, French document, German document, Italian document]
+- [Russian document, Ukrainian document, Polish document, Dutch document, Swedish document]
+- [Chinese document, Japanese document, Korean document, Arabic document, Hebrew document]
+- [multilingual document, translated document, bilingual document, official translation]
+
+# Government, civic & official
+- [tax assessment, tax notice, council tax bill, benefits statement, pension forecast, social security]
+- [electoral registration, census form, planning application, building permit, land registry extract]
+- [police report, accident report, incident statement, fine notice, penalty charge, appeal form]
+- [immigration form, residence permit, work permit, naturalisation certificate, consular document]
+- [military record, discharge papers, veteran benefits, service certificate, security clearance]
+- [licence renewal, vehicle registration, road tax, mot certificate, insurance certificate]
+- [court summons, judgement, subpoena, restraining order, custody agreement, divorce decree]
+
+# Banking, finance & insurance
+- [mortgage statement, loan schedule, amortisation table, credit report, credit score summary]
+- [investment statement, portfolio report, fund factsheet, dividend statement, brokerage confirmation]
+- [pension scheme document, annuity quote, life insurance policy, health insurance policy]
+- [car insurance policy, home insurance policy, travel insurance certificate, claim form]
+- [payment plan, direct debit mandate, standing order form, remittance advice, payment reminder]
+- [budget report, cash flow statement, profit and loss, balance sheet, trial balance, general ledger]
+- [audit trail, expense policy, reimbursement claim, petty cash record, payroll summary, p60]
+
+# Healthcare in depth
+- [referral form, appointment letter, consent to treatment, surgical report, pathology report]
+- [radiology report, blood test results, allergy record, immunisation card, dental chart]
+- [physiotherapy plan, occupational therapy notes, dietitian plan, mental health assessment]
+- [care home agreement, advance directive, do not resuscitate, medical power of attorney]
+- [clinical trial protocol, patient information leaflet, drug information sheet, dosage chart]
+
+# Education in depth
+- [school report card, attendance record, parent teacher notes, individual education plan]
+- [university offer letter, module handbook, reading list, coursework brief, plagiarism policy]
+- [exam timetable, results notification, graduation programme, alumni newsletter, scholarship award]
+- [training certificate, cpd record, apprenticeship agreement, professional accreditation]
+- [research ethics application, data management plan, funding award letter, project report]
+
+# Engineering, construction & manufacturing
+- [structural calculation, load analysis, bill of materials, parts catalogue, tolerance sheet]
+- [as built drawing, general arrangement drawing, detail drawing, section drawing, isometric drawing]
+- [method statement, risk assessment sheet, permit to work, site diary, snag list, handover pack]
+- [quality control report, non conformance report, test certificate, material certificate]
+- [maintenance schedule, service record, spare parts list, lubrication chart, fault tree analysis]
+- [energy performance certificate, environmental impact assessment, waste transfer note]
+
+# IT & software documentation
+- [software licence agreement, end user licence, subscription terms, service description]
+- [system architecture document, network diagram document, security policy, penetration test report]
+- [disaster recovery document, business continuity plan, backup policy, data retention schedule]
+- [user acceptance test plan, release notes document, deployment runbook, configuration baseline]
+
+# Publishing & long form
+- [hardback scan, paperback scan, first edition scan, out of print book, public domain book]
+- [academic monograph, edited volume, conference proceedings, festschrift, review article]
+- [children's picture book, activity book, colouring book, workbook, revision guide, past papers]
+- [manual for appliance, manual for vehicle, manual for software, quick reference card, warranty booklet]
+- [cookbook pages, craft pattern book, field guide, atlas, road atlas, phone directory, yearbook]
+- [religious text, prayer book, hymnal, liturgy, sacred scripture, commentary volume]
+- [graphic novel pages, comic strip collection, manga chapter, artbook, photo book, coffee table book]
+
+# Historic & archival documents
+- [historical letter, wartime document, ration book, ship manifest, census return, parish record]
+- [birth register, marriage register, death register, will from archive, land deed, title deed]
+- [old newspaper clipping, obituary notice, playbill, concert programme, vintage advertisement]
+- [typewritten manuscript, carbon copy, telegram, memorandum from archive, declassified document]
+- [ancient manuscript scan, illuminated page, papyrus fragment, inscription rubbing, palimpsest]
+
+# Presentation & visual documents
+- [slide deck, pitch presentation, conference slides, training slides, sales deck, board deck]
+- [poster document, conference poster, exhibition panel, signage artwork, roll up banner artwork]
+- [certificate of achievement, award document, recognition letter, invitation card, greeting card]
+- [wedding invitation, save the date, order of service, seating chart, menu card, place card]
+
+# Maps, plans & spatial documents
+- [site survey, topographic sheet, cadastral map, nautical chart document, aeronautical chart]
+- [evacuation plan, fire escape plan, seating plan document, wiring plan, plumbing plan, hvac plan]
+- [garden design plan, landscape plan, kitchen design, bathroom design, furniture layout]
+
+# Structure & production detail
+- [single sided, double sided, spreads, facing pages, print ready, bleed marks, crop marks]
+- [colour print, black and white print, greyscale, high resolution scan, low resolution scan]
+- [portrait pages, landscape pages, mixed orientation, a4 size, letter size, a3 size, poster size]
+- [embedded fonts, missing fonts, vector graphics inside, raster images inside, transparency]
+- [hyperlinked contents, bookmarks pane, form fields, digital signature field, comments layer]
+- [tagged pdf, accessible pdf, reading order defined, alt text present, no text layer]
+
+# Condition of the scan or export
+- [straight scan, rotated pages, upside down page, cut off edges, shadow on page, finger in scan]
+- [creased paper, torn page, stained page, mould damage, ink bleed, faded ink, pencil annotations]
+- [highlighted passages, margin notes, sticky notes attached, stamped received, hole punched]
+- [photocopy of a photocopy, fax quality, thermal paper receipt, dot matrix printout, carbon paper]
+
+# Subject matter of the document
+- [technology subject, software subject, hardware subject, networking subject, security subject]
+- [science subject, mathematics subject, physics subject, chemistry subject, biology subject]
+- [medicine subject, psychology subject, nutrition subject, fitness subject, wellbeing subject]
+- [law subject, finance subject, accounting subject, economics subject, insurance subject]
+- [education subject, pedagogy subject, linguistics subject, history subject, geography subject]
+- [art subject, design subject, architecture subject, photography subject, music subject]
+- [literature subject, philosophy subject, religion subject, politics subject, sociology subject]
+- [agriculture subject, environment subject, energy subject, transport subject, manufacturing subject]
+- [sports subject, travel subject, cooking subject, gardening subject, parenting subject, pets subject]
+- [gaming subject, film subject, television subject, fashion subject, beauty subject, automotive subject]
+
+# Audience & purpose
+- [for beginners, for professionals, for children, for students, for teachers, for managers]
+- [for internal use, for customers, for regulators, for investors, for the public, for members]
+- [instructional document, reference document, persuasive document, informational document]
+- [legal obligation document, marketing document, administrative document, archival document]
+- [decision document, approval document, notification document, agreement document, record document]
+
+# Document lifecycle
+- [draft one, draft two, reviewed draft, approved version, superseded version, obsolete document]
+- [effective from date, expiry date, review date, version number, revision history, amendment record]
+- [signed and dated, countersigned, witnessed, notarised, apostilled, certified copy, true copy]
+- [received stamp, filed copy, submitted copy, returned document, rejected application]
+
+# Common personal archive contents
+- [old school work, childhood drawing scan, family recipe scan, letter from a relative, postcard scan]
+- [ticket stub scan, programme from an event, membership certificate, club newsletter, team sheet]
+- [photograph album page, photo index, negatives sleeve, slide inventory, camera manual]
+- [holiday brochure, map from a trip, guidebook page, hotel receipt, currency exchange receipt]
+- [house deeds copy, boiler service record, appliance manual, paint colour reference, key inventory]
+- [vehicle handbook, service book, purchase invoice for a car, tyre receipt, breakdown cover document]
+- [pet vaccination card, pet insurance, adoption papers, microchip registration, vet invoice]
+- [gym membership contract, class timetable, nutrition plan, personal training plan, race entry]
+- [bank card replacement letter, address change confirmation, utility switch confirmation]
+- [charity donation receipt, membership renewal, subscription confirmation, cancellation confirmation]
+
+# Business functions
+- [human resources document, finance document, legal document, operations document, it document]
+- [procurement document, logistics document, quality document, health and safety document]
+- [customer service document, sales document, product document, research document]
+- [facilities document, security document, training document, communications document]
+
+# Industry specific
+- [construction industry, healthcare industry, education sector, public sector, financial services]
+- [retail sector, hospitality sector, transport sector, energy sector, agriculture sector]
+- [manufacturing sector, technology sector, media sector, telecommunications, pharmaceuticals]
+- [aviation industry, maritime industry, automotive industry, defence sector, mining sector]
+- [real estate sector, insurance sector, legal sector, consulting sector, nonprofit sector]
+
+# Numeric & tabular content
+- [contains a table of figures, contains a price table, contains a schedule, contains a timetable]
+- [contains charts, contains graphs, contains photographs, contains diagrams, contains screenshots]
+- [contains formulas, contains code listings, contains legal citations, contains references]
+- [contains signatures, contains stamps, contains a barcode, contains a qr code, contains a watermark]
+- [contains handwriting, contains checkboxes, contains form fields, contains blank spaces to fill]
+
+# Length & density
+- [one page, two pages, a few pages, ten to fifty pages, over one hundred pages, very long document]
+- [dense text, sparse text, mostly images, mostly tables, mostly forms, mixed content]
+- [executive summary present, abstract present, index present, appendices present, no structure]
+
+# Language & localisation
+- [British English document, American English document, translated from another language]
+- [dual language document, side by side translation, localised for a region, international edition]
+- [uses metric units, uses imperial units, uses local currency, uses local date format]
+
+# Additional common kinds
+- [meeting pack, briefing note, position paper, consultation response, public comment]
+- [service manual for appliance, troubleshooting guide, parts diagram, warranty claim form]
+- [tender document, request for proposal, request for quotation, bid submission, evaluation matrix]
+- [franchise agreement, distribution agreement, partnership agreement, joint venture document]
+- [shareholder letter, annual accounts, sustainability report, diversity report]
+- [safety inspection, fire risk assessment, electrical certificate, gas safety certificate]
+- [tenancy inventory, deposit protection, rent statement, eviction notice, landlord notice]
+- [study permit, exchange programme document, transcript request, credential evaluation]
+- [conference badge, agenda booklet, speaker biography, abstract book, exhibitor list]
+
+# Named formats & software origin
+- [pdf document, word document, open document text, rich text document, plain text export]
+- [excel workbook, spreadsheet export, powerpoint deck, keynote deck, google docs export]
+- [publisher file, indesign export, illustrator export, canva export, latex output, scanned tiff]
+- [epub ebook, mobi ebook, azw ebook, djvu scan, comic book archive, xps document, postscript]
+- [generated by a printer driver, exported from a browser, saved from email, mobile scan app]
+
+# Typography & layout detail
+- [serif body text, sans serif body text, monospace text, handwriting font, decorative headings]
+- [large print, small print, dense footnotes, marginal notes, drop caps, pull quotes, callout boxes]
+- [company letterhead, official crest, watermark background, coloured header bar, footer with page numbers]
+- [table of figures, list of tables, list of abbreviations, numbered headings, unnumbered headings]
+- [justified text, left aligned text, centred title page, multi column newsletter, magazine layout]
+
+# Financial detail
+- [contains an amount due, contains a total, contains vat, contains tax breakdown, contains discount]
+- [contains an account number, contains a sort code, contains an iban, contains a reference number]
+- [contains a due date, contains a payment method, contains bank details, contains a purchase order number]
+- [monthly statement, quarterly statement, annual statement, interim statement, final statement]
+- [overdue notice, payment received, credit note, debit note, adjustment note, refund confirmation]
+
+# Identity & personal data cues
+- [contains a full name, contains an address, contains a date of birth, contains a national number]
+- [contains a photograph of a person, contains a signature image, contains contact details]
+- [contains next of kin, contains emergency contact, contains employment details, contains salary]
+- [anonymised document, pseudonymised, partially redacted, fully redacted section, sensitive personal data]
+
+# Additional practical kinds
+- [gym induction form, club membership form, school consent form, trip permission slip]
+- [complaint response, apology letter from a company, goodwill gesture, compensation offer]
+- [meter reading record, energy usage report, water usage report, waste collection schedule]
+- [neighbourhood notice, community newsletter, residents association minutes, noticeboard poster]
+- [voting instructions, ballot information, referendum information, candidate leaflet]
+- [recall notice, product safety notice, ingredient list, allergen information, care label]
+- [assembly manual, exploded parts diagram, tool list, torque settings, safety warnings]
+- [travel visa application, embassy letter, invitation letter for travel, proof of funds]
+- [proof of address, proof of identity, employment reference, tenancy reference, character reference]
+- [charity annual review, grant report, impact report, volunteer handbook, safeguarding policy]
+- [religious certificate, baptism record, confirmation record, memorial service booklet]
+- [sports club fixture list, league table, competition rules, entry form, results sheet]
+- [music exam syllabus, grade certificate, practice diary, ensemble parts, conductor score]
+- [art portfolio sheet, exhibition catalogue, artwork provenance, condition report, valuation]
+- [antique appraisal, auction catalogue, lot description, bidding record, sale receipt]
+- [genealogy chart, family tree document, ancestry report, dna results summary, archive request]
+- [scientific poster, lab protocol, standard operating procedure, calibration record, batch record]
+- [veterinary certificate, animal passport, breeding record, show entry, pedigree certificate]
+- [boat registration, mooring agreement, flight logbook, pilot licence, dive certification]
+- [allotment agreement, planting plan document, seed catalogue, soil test report, harvest record]
+
+# Everyday admin, continued
+- [parking fine, congestion charge notice, toll invoice, speeding notice, points notification]
+- [passport application, passport renewal, id renewal reminder, biometric appointment letter]
+- [gp registration form, dentist registration, optician prescription, hearing test result]
+- [prescription repeat slip, pharmacy label, sick note, fit note, occupational health report]
+- [nursery agreement, childminder contract, school admission letter, bursary application]
+- [student loan statement, grant confirmation, accommodation contract, campus card application]
+- [broadband contract, mobile contract, tv licence, streaming subscription receipt, domain renewal]
+- [gym cancellation, insurance renewal quote, no claims proof, breakdown membership, warranty extension]
+- [removal quote, storage agreement, cleaning quote, gardener invoice, builder estimate]
+- [wedding supplier contract, photographer agreement, catering quote, venue hire agreement]
+- [funeral invoice, memorial order, headstone specification, grave deed, cremation certificate]
+
+# Workplace paperwork
+- [contract amendment, salary review letter, bonus letter, promotion letter, secondment agreement]
+- [holiday request, sickness record, return to work form, flexible working request, parental leave]
+- [disciplinary notice, grievance form, mediation notes, settlement agreement, redundancy notice]
+- [expenses policy, travel policy, remote work policy, equipment loan form, asset register entry]
+- [health and safety induction, ppe issue record, accident book entry, near miss report]
+- [staff survey results, engagement report, appraisal form, development plan, training record]
+
+# Technical & scientific reporting
+- [feasibility study, technical evaluation, options appraisal, cost benefit analysis, business case]
+- [prototype report, field trial report, validation report, verification matrix, traceability matrix]
+- [calibration certificate document, uncertainty budget, measurement report, tolerance analysis]
+- [failure analysis, root cause report, corrective action plan, preventive action, lessons learned]
+- [environmental monitoring report, emissions report, noise survey, air quality report, water testing]
+- [geotechnical report, structural survey, condition survey, asbestos survey, damp report]
+
+# Reference & catalogue documents
+- [parts catalogue page, price catalogue, colour chart, size chart, material sample sheet]
+- [component datasheet, chip datasheet, motor specification, cable specification, connector pinout]
+- [drug formulary, medical coding reference, diagnostic criteria, dosage tables, interaction chart]
+- [legal precedent summary, statute extract, regulation extract, guidance note, code of practice]
+- [standards index, iso standard, en standard, ansi standard, ieee standard, rfc document]
+
+# Additional layout & presentation
+- [cover letter page, executive summary page, glossary page, acknowledgements page, disclaimer page]
+- [revision table, approval signatures block, distribution list, confidentiality footer, page of pages]
+- [numbered clauses, lettered subclauses, schedules and annexes, exhibits, appendices with data]
+- [side by side columns, form with boxes, grid of cells, checklist with ticks, matrix layout]
+- [colour coded sections, highlighted total, boxed warning, shaded rows, alternating row colours]
+
+# Additional provenance
+- [downloaded from a portal, emailed attachment, printed and rescanned, faxed and scanned]
+- [photographed with a phone, scanned on a flatbed, scanned with a feeder, exported from an app]
+- [merged from several files, split from a larger file, extracted pages, combined pack, appendix only]
+- [password removed, flattened pdf, compressed for email, optimised for web, print ready export]
+
+# Named document families
+- [invoice from a supplier, invoice to a client, proforma invoice, recurring invoice, final invoice]
+- [receipt for goods, receipt for services, till receipt, online order receipt, donation receipt]
+- [quotation for work, estimate for repair, budget quote, revised quote, accepted quote]
+- [statement of account, remittance, aged debtor report, aged creditor report, reconciliation sheet]
+- [packing slip, goods received note, returns note, customs declaration, bill of lading]
+- [certificate of origin, export licence, import permit, phytosanitary certificate, dangerous goods note]
+
+# Institutional correspondence
+- [letter from a bank, letter from an insurer, letter from a solicitor, letter from a landlord]
+- [letter from an employer, letter from a school, letter from a hospital, letter from a council]
+- [letter from a utility, letter from a debt collector, letter from a government department]
+- [confirmation letter, rejection letter, acknowledgement letter, reminder letter, final notice]
+
+# Meeting & governance
+- [agenda document, minutes document, action log, decision register, attendance sheet, apologies]
+- [terms of reference, constitution, bylaws, standing orders, delegation of authority, quorum notes]
+- [annual general meeting pack, extraordinary meeting notice, proxy form, voting record, resolution]
+
+# Project documentation
+- [project charter, scope document, work breakdown structure, schedule document, milestone plan]
+- [resource plan, budget breakdown, change request, variation order, progress report, closure report]
+- [stakeholder map, communication plan, raid log, benefits realisation, handover document]
+
+# Marketing collateral
+- [brand book, logo usage guide, colour palette sheet, typography guide, photography guide]
+- [campaign report, media plan, advertising proof, print proof, packaging artwork, label artwork]
+- [event programme, sponsorship pack, exhibitor manual, delegate pack, press release document]
+
+# Content characteristics
+- [formal register, informal register, legalese, plain english, technical language, marketing language]
+- [contains bullet lists, contains numbered steps, contains long paragraphs, contains short entries]
+- [contains a summary at the top, contains a conclusion, contains recommendations, contains next steps]
+- [contains contact information, contains a website address, contains social media handles]
+- [contains terms and conditions, contains small print, contains a privacy notice, contains a disclaimer]
+
+# Physical origin cues
+- [bound document, stapled pages, ring binder pages, folded leaflet, tri fold brochure, booklet fold]
+- [perforated section, tear off slip, carbon copy pages, pre printed form, filled in by hand]
+- [official stamp, embossed seal, holographic security, security paper, serial numbered page]
+- [envelope window layout, address block, franking mark, postmark visible, barcode for sorting]
+
+# Additional sensitive categories
+- [contains medical information, contains financial information, contains legal advice]
+- [contains trade secrets, contains client data, contains employee data, contains children's data]
+- [restricted distribution, internal only marking, commercial in confidence, official sensitive]
+- [publicly available, open licence, creative commons, public domain document, freedom of information]
+
+# Further everyday paperwork
+- [gas bill, electricity bill, water bill, internet bill, mobile phone bill, tv subscription bill]
+- [service charge statement, ground rent demand, management pack, freeholder correspondence]
+- [building insurance schedule, contents insurance schedule, excess details, policy wording]
+- [bank welcome pack, card terms, overdraft notice, interest rate change, account closure]
+- [savings account statement, isa statement, bond certificate, share certificate, dividend voucher]
+- [payslip breakdown, tax code notice, national insurance record, student loan deduction]
+- [self assessment calculation, vat return, corporation tax computation, capital gains summary]
+- [charitable giving statement, gift aid declaration, payroll giving, legacy pledge]
+
+# Further institutional documents
+- [hospital appointment card, clinic letter, screening invitation, results letter, waiting list update]
+- [school newsletter, term dates, uniform list, trip letter, parents evening booking, ofsted report]
+- [university handbook, module specification, exam regulations, appeals procedure, fee schedule]
+- [library membership, borrowing record, interlibrary loan, archive access request, reading room rules]
+- [museum membership, gallery guide, exhibition leaflet, audio guide transcript, collection catalogue]
+- [sports club constitution, membership rules, fixture card, coaching qualification, first aid certificate]
+- [church newsletter, parish magazine, service rota, baptism certificate, wedding banns]
+
+# Further business documentation
+- [supplier onboarding pack, vendor questionnaire, due diligence checklist, credit application]
+- [master service agreement, schedule of rates, service credits, exit plan, transition agreement]
+- [data sharing agreement, processor agreement, subprocessor list, transfer impact assessment]
+- [insurance certificate for business, professional indemnity, employers liability, public liability]
+- [health and safety policy, environmental policy, quality policy, equal opportunities policy]
+- [modern slavery statement, anti bribery policy, whistleblowing policy, conflict of interest form]
+- [asset disposal form, capital expenditure request, purchase requisition, budget transfer]
+
+# Further technical documents
+- [commissioning report, handover certificate, operation and maintenance manual, spares recommendation]
+- [factory acceptance test, site acceptance test, snagging report, defects liability, warranty period]
+- [drawing register, document register, transmittal note, revision cloud, hold point, witness point]
+- [instrument index, cable schedule, loop diagram, piping and instrumentation diagram, isometrics]
+- [software bill of materials, dependency report, vulnerability scan, penetration test summary]
+
+# Further layout and content cues
+- [contains a cover image, contains a company logo, contains an org chart, contains a map]
+- [contains a timeline, contains a flow diagram, contains a gantt chart, contains a matrix]
+- [contains a photograph of a building, contains product photos]
+- [contains a signature block, contains initials boxes, contains a date field, contains a tick box]
+- [contains a footer disclaimer, contains a header with page numbers, contains a document reference]
+
+# Further condition and handling
+- [archived in a folder, filed by date, filed by category, duplicate in another folder, misfiled]
+- [awaiting signature, awaiting payment, awaiting approval, completed and filed, superseded copy]
+- [needs action, no action required, for information only, for review, for approval, for records]
+- [urgent, time sensitive, deadline stated, expires soon, expired, renewed, cancelled]
+
+# Additional named forms
+- [claim form for insurance, warranty claim, refund request form, chargeback form, dispute form]
+- [direct debit cancellation, address change form, name change deed, marriage notice, civil partnership]
+- [power of attorney registration, deputyship order, guardianship papers]
+- [tenancy application, guarantor form, right to rent check, inventory check in, check out report]
+- [mortgage application, affordability assessment, valuation report, offer of loan, redemption statement]
+- [job application form, equal opportunities monitoring, right to work check, dbs certificate]
+- [visa application form, sponsorship certificate, tuberculosis test certificate, police clearance]
+- [driving test booking, theory test result, licence application, provisional licence, penalty points]
+- [vehicle sale receipt, transfer of ownership, scrappage certificate, import documentation]
+- [planning permission decision, building regulations approval, completion certificate, party wall notice]
+
+# Additional reports
+- [annual report of a charity, trustees report, financial statements audited, independent examiner report]
+- [school inspection report, care quality report, food hygiene report, fire safety report]
+- [energy audit, water audit, waste audit, carbon footprint report, sustainability assessment]
+- [customer satisfaction report, net promoter summary, complaints analysis, service performance]
+- [market analysis, competitor benchmark, pricing study, consumer research, focus group findings]
+- [clinical audit, incident analysis, mortality review, infection control report, medication review]
+
+# Additional certificates
+- [training certificate for first aid, food hygiene certificate, manual handling certificate]
+- [fire warden certificate, forklift licence, cscs card, gas safe registration, electrical competence]
+- [language proficiency certificate, teaching qualification, lifeguard certificate]
+- [product certification, ce marking declaration, ukca declaration, rohs compliance, reach compliance]
+- [organic certification, fair trade certification, iso certification, quality mark, safety approval]
+
+# Additional publishing detail
+- [isbn page, copyright page, dedication page, epigraph, list of contributors, editorial board]
+- [chapter opener, part divider, running head, colophon, errata slip, review quotes page]
+- [subscription card, reply card, insert leaflet, wraparound cover, dust jacket, spine text]
+
+# Additional archival items
+- [minutes from decades ago, historic ledger, rent book, apprenticeship indenture, guild record]
+- [war diary, regimental record, medal citation, casualty list, prisoner record, evacuation record]
+- [emigration record, naturalisation record, passenger list, workhouse record, asylum record]
+- [school log book, admission register, punishment book, attendance ledger, prize list]
+- [estate map, tithe map, enclosure award, manorial record, court roll, charter, indenture]
+
+# Additional structural descriptors
+- [numbered paragraphs, lettered schedules, cross references, defined terms, interpretation clause]
+- [recitals, operative provisions, boilerplate clauses, governing law, jurisdiction clause]
+- [signature page separate, execution block, counterparts clause, witness block, seal affixed]
+- [appendices with drawings, annex with pricing, exhibit with correspondence]
+
+# Additional quality descriptors
+- [professionally typeset, desktop published, plainly formatted, hastily assembled, template based]
+- [consistent styling, inconsistent styling, mixed fonts, mixed page sizes, mismatched scans]
+- [clean copy, marked up copy, annotated by hand, corrections in red, approved with comments]

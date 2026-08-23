@@ -2,22 +2,42 @@
 
 Automated tests live in `tests/` and are split into tiers based on their hardware requirements. See `tests/commands.sh` for exact Docker run commands.
 
-### Tier 1 — Pure-logic tests (no GPU, no model downloads)
+### Two suites, split along the engine boundary
 
-Run the full suite in one command:
-```
-docker-compose -f tests/docker-compose.test.yml run --rm anagnorisis-test pytest tests/ -v
-```
+`pytest.ini` points at both, so a bare `pytest` runs everything. Running one at a
+time tells you which side of the boundary a failure is on.
 
-| Test file | What it covers |
-|-----------|----------------|
+**`anagnorisis_core/tests/` — the engine.** These must pass with no Flask, no
+database and no browser present, because that is exactly the situation anyone
+who installs the package on its own is in — the data server included. Verified
+by copying only
+`anagnorisis_core/` into an empty tree and running them there.
+
+| Test file | Covers |
+|---|---|
+| `test_caching.py` | `RAMCache` TTL & thread-safety; `DiskCache` round-trip, TTL, corrupt-shard recovery (live cache, fresh reader, and reusability afterwards), atomic writes, warming callback, write-back; `TwoLevelCache` RAM-first / disk-fallback |
+| `test_cache_multiprocess.py` | Two real processes writing one cache directory: neither loses its entries. Guards the read-modify-write race that file locking now prevents |
+| `test_core_boundary.py` | No module under `anagnorisis_core` imports `src`, Flask or SQLAlchemy — by AST, so a mention in a docstring does not count. Also that the media-type taxonomy ships with the package |
+| `test_model_hash.py` | The model fingerprint is stable across processes, changes when weights/task/dimension change, and is computable **without loading the model** — the property the search path depends on |
+| `test_embedder_no_network.py` | The embedding model never fetches a URL it finds inside text. Includes a test that the *unpatched* code does reach the network, so the suite cannot pass vacuously |
+| `test_description.py` | The one canonical description: section order, the injected describer, the remote-file branch, the data server's two omissions, and the sidecar reader's caps |
+| `test_api_search_and_ratings.py` | Name search without an index; unindexed files dropped rather than ranked last; results are VFS URLs; hidden directories skipped; remote paths refused rather than downloaded; ratings survive a rename; your rating outranks the model's |
+| `test_sinks_and_describe.py` | `.meta` is never overwritten, deletion regenerates it, no path is published, no `.partial` files remain, and a file still being copied is not described |
+| `test_training_pairs.py` | Reading memory files: the rating comes off line 1 and never reaches the embedder; the gather loop reads every usable file |
+| `test_metadata_proxy.py` | `quantize_embedding()` — zero embedding, output length, alphabet, histogram equalisation, similar/orthogonal embeddings |
+| `test_file_paths.py` | `resolve_subpath()` — `../`, multi-hop, URL-encoded and double-encoded traversal, absolute escape, symlinks; `get_folder_structure()` |
+| `test_common_filters.py` | `_normalize_text()` — accents, separators, case folding; `filter_by_text(mode='file-name')` |
+
+**`tests/` — the application, and the seam.**
+
+| Test file | Covers |
+|---|---|
 | `test_config_loader.py` | `${VAR:-default}` substitution, plain `$VAR`, missing env vars, nested YAML, invalid YAML |
-| `test_caching.py` | `RAMCache` TTL & thread-safety; `DiskCache` round-trip, TTL, corrupted-shard recovery, atomic writes, warming callback, write-back; `TwoLevelCache` RAM-first / disk-fallback |
-| `test_metadata_proxy.py` | `quantize_embedding()` — zero embedding, output length, alphabet, histogram-equalisation, similar/orthogonal embeddings, typical model dimensions |
-| `test_file_manager.py` | `resolve_subpath()` — valid paths, None/empty, `../`, multi-hop, URL-decoded & double-encoded traversal, absolute escape, symlinks; `get_folder_structure()` — missing dir, extension counting, subfolder totals |
-| `test_common_filters.py` | `_normalize_text()` — accent stripping, separator normalisation, case folding; `filter_by_text(mode='file-name')` — exact-match boost, fuzzy match, unicode, empty query, unknown mode |
-| `test_task_manager.py` | Task submission, FIFO order, exception handling (worker survives), cancel running/queued tasks, pause/resume, history, `get_state()` structure |
-| `test_db_models.py` | `export_db_to_csv()` — header format, row count, excluded columns, datetime; `import_db_from_csv()` — new rows, update-by-hash, unknown columns skipped, round-trip, empty CSV |
+| `test_task_manager.py` | Task submission, FIFO order, worker survives an exception, cancel, pause/resume, history, `get_state()` |
+| `test_db_models.py` | `export_db_to_csv()` / `import_db_from_csv()` round-trips |
+| `test_description_consumers.py` | The seam: the text search embeds, the text the UI shows, and a memory file's body are one string |
+| `test_core_reexports.py` | The application's re-exports of moved engine code still resolve, and its soft hash is identical to the engine's |
+| `test_routes_smoke.py` | Every page answers without a 500. **Opt-in** (`ANAGNORISIS_ROUTE_TESTS=1`): building the real app leaves background threads running, so pytest would not exit |
 
 ### Tier 3 — Security tests (no GPU required)
 
@@ -36,7 +56,7 @@ docker-compose -f tests/docker-compose.test.yml run --rm anagnorisis-test pytest
 These run the `__main__` blocks of each subprocess worker to verify model loading and inference produce valid output.
 
 ```
-python3 -m src.omni_descriptor
+python3 -m anagnorisis_core.descriptor
 python3 -m src.universal_evaluator
 python3 -m src.recommendation_engine
 python3 -m src.share_api
@@ -46,7 +66,7 @@ The three per-modality embedders and the four per-module engines no longer exist
 one model and one engine replaced them. They have no `__main__` self-tests yet;
 what is worth covering instead is:
 
-- `src.omni_embedder` — load the model, embed one file of each media type, check
+- `anagnorisis_core.embedder` — load the model, embed one file of each media type, check
   the dimension and that the CPU query tower agrees with the GPU worker (they
   must produce interchangeable vectors, or search silently stops matching).
 - `src.content_search` — embed and compare a known file; confirm the cache key
@@ -57,7 +77,7 @@ what is worth covering instead is:
 - **Migrate `__main__` scripts to pytest** so model tests produce structured pass/fail output and can be filtered with `-k`.
 - **Shared test fixtures** — create `tests/fixtures/` with one real JPEG, WAV, and TXT file reused across all engine tests instead of generating synthetic data per test.
 - **Two-tier CI** — run Tier 1 & 3 tests in GitHub Actions on every push (no GPU needed); keep Tier 2 as manual Docker-only tests.
-- **`src/omni_embedder.py` self-test** — the checks listed under Tier 2 above; the CPU/GPU agreement check in particular is load-bearing and currently only verified by hand.
+- **`anagnorisis_core/models/embedder.py` self-test** — the checks listed under Tier 2 above; the CPU/GPU agreement check in particular is load-bearing and currently only verified by hand.
 - **`src/metadata/search.py` integration test** — the full `generate_full_description()` pipeline (extractor → proxy → embedder → description) on a known file, verifying caching on the second call.
 - **A GPU-isolation regression test** — assert that no search path invokes the GPU worker. This is easy to check by stubbing `OmniEmbedder._execute` to raise, and easy to break accidentally.
 - **`src/media_types` coverage** — the registry rejects duplicate extensions across types and derives each module's `media_formats`; both are startup-critical and untested.
