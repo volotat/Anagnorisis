@@ -658,7 +658,7 @@ class FileManager:
             f'Showed {len(sorted_files)} of {len(all_files)} files in {elapsed:.2f}s. '
             f'{unindexed_count} file(s) still unindexed.'
             if unindexed_count > 0
-            else f'Processed {len(sorted_files)} files in {elapsed:.2f}.'
+            else f'Processed {len(sorted_files)} files in {elapsed:.2f}s.'
         )
         self.show_status(final_summary, force=True)   # force=True bypasses throttle
 

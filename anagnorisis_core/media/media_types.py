@@ -169,6 +169,13 @@ def _optional_float(value) -> Optional[float]:
     return None if value is None else float(value)
 
 
+# libyaml's parser where it is available, which it usually is. The vocabularies
+# are nine thousand tags across five files and every process reads all of them
+# before it can do anything: measured 0.352s with the pure-Python loader against
+# 0.032s with this one, for an identical parse.
+_SAFE_LOADER = getattr(yaml, 'CSafeLoader', yaml.SafeLoader)
+
+
 def _load_tags(path: str) -> tuple[str, ...]:
     """Load and flatten a tag vocabulary file; missing file means no tags.
 
@@ -179,7 +186,7 @@ def _load_tags(path: str) -> tuple[str, ...]:
         return ()
     try:
         with open(path, 'r', encoding='utf-8') as f:
-            rows = yaml.safe_load(f) or []
+            rows = yaml.load(f, Loader=_SAFE_LOADER) or []
     except Exception as exc:
         print(f"[MediaTypes] Failed to read tag vocabulary {path}: {exc}")
         return ()

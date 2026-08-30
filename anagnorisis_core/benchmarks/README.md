@@ -65,6 +65,80 @@ Each entry records the version, the machine, and how many files were actually me
 
 <!-- Append a new block per release. Do not edit old ones: the point is the trend. -->
 
+### 0.4.11 — 2026-08-24
+
+- **Machine:** NVIDIA GeForce RTX 3070 Laptop GPU 8GB, 30GB RAM, media on an external HDD drive
+- **Measured on:** 439 indexed files (demo set); 100,000-file figures are extrapolated from the per-file cost
+- **Listing the files:** 0.0046s for 439 files (10.4 µs/file) through the cache
+- **Process startup:** the first `collect_files` in a fresh process took 0.0838s, of which ~0.0793s is one-time imports (pyfilesystem, the media-type taxonomy) rather than walking. A CLI invocation pays this once; the app pays it at boot.
+
+**Finding the files on the drive**, cached per directory by mtime, so three regimes:
+
+| Regime | Time | µs/file | Est. @100,000 |
+|---|---|---|---|
+| uncached (cache empty) | 0.0191s | 43.61 | 4.4s |
+| cold (cache on disk) | 0.0051s | 11.56 | 1.2s |
+| warm (cache in RAM) | 0.0046s ±0.0001 | 10.42 | 1.0s |
+
+The *uncached* row is measured with our cache empty but the operating system's own directory cache were likely warm, so it is a floor rather than a true first-ever scan.
+
+**Building the index**: embedding each file's content, and embedding its description text. This does *not* include writing the description in the first place; that is the table below, and it dominates.
+
+| Media type | Files | Content s/file | Descriptions s/file |
+|---|---|---|---|
+| `audio` | 205 | 0.4285 | 0.4505 |
+| `images` | 202 | 0.2144 | 0.4409 |
+| `text` | 17 | 0.0833 | 1.4209 |
+| `videos` | 15 | 1.5251 | 1.6546 |
+
+| Phase | Total | s/file | Est. @100,000 |
+|---|---|---|---|
+| content | 155.45s | 0.3541 | 35,425s (9.8h) |
+| descriptions | 230.39s | 0.5248 | 52,496s (14.6h) |
+| **both, whole library** | — | — | **87,920s (24.4h)** |
+| re-index, everything already cached | 0.012s | 0.03 ms | 2.8s |
+
+Embedder load, measured once and excluded above: 14.74s. The *re-index* row is what a scheduled background pass costs on a library that is already up to date, which is the case that runs over and over.
+
+**Writing the descriptions**: the descriptor model, sampled per media type (3 files each). This is the real cost of indexing a fresh library, and it is measured in hours:
+
+| Media type | s/file (mean) | median | min–max | n | All 100,000 of this type |
+|---|---|---|---|---|---|
+| `audio` | 19.93 | 20.42 | 18.92–20.43 | 3 | 553.5h |
+| `images` | 14.26 | 14.13 | 13.99–14.66 | 3 | 396.2h |
+| `text` | 4.54 | 0.0 | 0.0–13.61 | 3 | 126.1h |
+| `videos` | 23.68 | 23.33 | 23.12–24.60 | 3 | 657.9h |
+
+At this set's media mix (16.85s per file on average), 100,000 files would take **468.1 hours**. The mix is what varies between libraries, so the per-type rows are the ones that travel.
+
+Descriptor load, once: 11.66s.
+
+**Searching**, once the files are known:
+
+| Mode | Indexed | Query (constant) | Score cold | Score warm (avg 5) | Cold µs/file | Warm µs/file | Est. cold @100,000 | Est. warm @100,000 |
+|---|---|---|---|---|---|---|---|---|
+| `name` | 439/439 | 0.0s | 0.0087s | 0.0092s ±0.0002 | 19.84 | 20.92 | 2.0s | 2.1s |
+| `semantic` | 439/439 | 0.3173s | 0.0199s | 0.0131s ±0.0009 | 45.41 | 29.84 | 4.9s | 3.3s |
+| `metadata` | 439/439 | 0.2955s | 0.0190s | 0.0116s ±0.0013 | 43.32 | 26.38 | 4.6s | 2.9s |
+
+| Mode | recall@1 | recall@5 | MRR | sampled |
+|---|---|---|---|---|
+| `metadata` | 0.533 | 0.8 | 0.639 | 15 |
+| `semantic` | 0.6 | 0.8 | 0.689 | 15 |
+
+Model warm-up, excluded from the timings above: name 0.0s, semantic 9.693s, metadata 0.311s.
+Queries used: `name`: "winter", `semantic`: "a quiet acoustic recording", `metadata`: "a quiet acoustic recording".
+
+#### What this run says
+
+Every figure above comes from a single run against an empty cache on an otherwise idle GPU, so the rows are internally consistent and comparable with 0.4.10, which was measured the same way on the same 439 files.
+
+- **Describing is 46% cheaper**, 873.2h → 468.1h per 100,000 files. Audio and video carry it: 47.38s → 19.93s and 55.93s → 23.68s, both about 58% off. Those two are described from three sampled windows folded into one final description, and the window descriptions were being generated at the full 256-token budget and then truncated to 1024 characters before the fold. They now get 96 tokens (`omni.segment_max_new_tokens`) while the final description keeps its full budget. Generation runs at 16 to 22 tokens per second whatever the media, so the token count is the bill.
+- **Content embedding is 66% cheaper**, 1.0516 → 0.3541 s/file, or 29.2h → 9.8h per 100,000. Three causes: audio was decoded in full and then truncated by the model to the 30 seconds it can actually see; video frames were pulled by sixteen separate seeks where one sequential ffmpeg pass does the same job; and images and frames now arrive already reduced to a 512px long side instead of being scaled back up by the processor.
+- **Search is 30-46% faster** on the two modes that matter, semantic 42.83 → 29.84 µs/file and metadata 48.99 → 26.38. Both engines had been scoring with a Python loop over files containing `sims[owners == file_index]`, which rescans the whole array every iteration, so scoring was quadratic in the library rather than linear. It is now one grouped pass with identical output. Metadata also stopped doing a cache lookup per file for a value that cannot change while the process runs.
+- **Startup is 19x faster**, 1.4938s → 0.0793s, because nothing in the main process imports torch any more; it loads inside the worker subprocesses that actually run a model. The tag taxonomy also parses with libyaml now, 0.352s → 0.032s.
+- **Whole-library indexing is 38% cheaper**, 39.5h → 24.4h per 100,000, and a scheduled pass over an up-to-date library is down to 0.03 ms/file.
+
 ### 0.4.10 — 2026-08-21
 
 - **Machine:** NVIDIA GeForce RTX 3070 Laptop GPU 8GB, 30GB RAM, media on an external HDD drive
@@ -136,3 +210,4 @@ Queries used: `name`: "winter", `semantic`: "a quiet acoustic recording", `metad
 - **A scheduled pass over an up-to-date library is four times cheaper**, 0.205 → 0.05 ms/file, or five seconds for 100,000 files. This is what the background passes do almost every time they run.
 
 The headline for anyone planning a library: **describing still dominates by a factor of twenty**. 39.5 hours to embed 100,000 files, against 873 hours to describe them first, and that blend is 47% audio. A library of video would be 1,553 hours; a library of short text files, close to nothing.
+

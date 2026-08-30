@@ -60,7 +60,16 @@ embedder: # The single model that embeds everything — text, images, audio and 
   # Video is sampled to frames before encoding — handing the model a path makes
   # it decode the entire file into memory first, which OOMs on small clips.
   video_frames: 16 # Evenly spaced frames per video (the model accepts up to 32)
-  video_frame_max_size: 512 # Longest side of each sampled frame, in pixels
+  # Longest side, in pixels, that any image or video frame is reduced to before
+  # the model sees it. The processor is capped to match, so nothing is scaled
+  # back up: left to itself it enforces a *minimum* of 512 square and would
+  # enlarge a 512x288 frame to about 672x384, undoing the downscale and paying
+  # for the extra visual tokens. Part of the embedder's fingerprint, since it
+  # changes the vector.
+  video_frame_max_size: 512
+  # The model truncates audio at 30s regardless (Whisper's window), so decoding
+  # more than this is pure waste. Raising it changes nothing but the cost.
+  audio_seconds: 30
   idle_timeout_seconds: 120 # Unload the model after this long without use, to free VRAM
 omni: # The descriptor: writes the natural-language description of a file.
   # That description is what metadata search indexes, what the evaluator rates
@@ -80,6 +89,15 @@ omni: # The descriptor: writes the natural-language description of a file.
   # taught and what it is asked about always match.
   text_verbatim_max_chars: 4000
   max_new_tokens: 256
+  # Budget for the per-window descriptions of a long audio or video file, which
+  # are intermediate: three of them are written, then folded into one final
+  # description by a fourth pass that gets the full max_new_tokens above. Only
+  # that final pass is stored and searched. Generation is essentially the whole
+  # cost of describing (measured 16-22 tokens/s across every media type), so
+  # 3x256+256 against 3x96+256 is the difference between 873 and 560 hours per
+  # 100k files. The window text was already being truncated to 1024 characters
+  # before the fold, so most of what the longer budget bought was discarded.
+  segment_max_new_tokens: 96
   do_sample: false
   temperature: 0.2
   # Stills shown to the descriptor per sampled window. Measured on an 8 GB card,

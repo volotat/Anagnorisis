@@ -60,6 +60,20 @@ def read_meta_snippet(meta_path: str) -> tuple[str, bool]:
     lines: list[str] = []
     total = 0
     truncated = False
+
+    # Almost every file is asked this and almost none has a sidecar, and
+    # fs.open_fs costs about 535µs against 1.6µs for os.path.exists. Answering
+    # "no" the cheap way saves roughly half a millisecond per file on both the
+    # describe-write and the metadata-index paths. Remote paths still go the
+    # long way round, because only a filesystem can answer for them.
+    if vfs.is_local_url(meta_path):
+        try:
+            local_path, _temp = vfs.resolve_to_local_path(meta_path)
+            if not os.path.exists(local_path):
+                return '', False
+        except Exception:
+            pass
+
     try:
         base_url, path_in_fs = vfs.resolve_base_and_path_from_url(meta_path)
         with fs.open_fs(base_url) as my_fs:

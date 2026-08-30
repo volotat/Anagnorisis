@@ -33,7 +33,6 @@ import queue
 from typing import Optional, List, Dict, Sequence
 
 import numpy as np
-import torch
 import setproctitle
 
 import anagnorisis_core.storage.virtual_file_system as vfs
@@ -148,6 +147,8 @@ class _OmniDescriptorImpl:
         self.model = None
         self.processor = None
         self.model_name = cfg.omni.model_name
+        import torch
+
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.model_hash = None
 
@@ -182,6 +183,8 @@ class _OmniDescriptorImpl:
         required_mb = self.cfg.omni.get('min_free_vram_to_run', None)
         if not required_mb or self.device.type != 'cuda':
             return
+        import torch
+
         free_bytes, _total = torch.cuda.mem_get_info()
         free_mb = free_bytes / (1024 * 1024)
         if free_mb < required_mb:
@@ -198,6 +201,7 @@ class _OmniDescriptorImpl:
 
     def _load_model(self, local_path: str):
         """Load Gemma 4, quantised and split to fit on a consumer card."""
+        import torch
         from transformers import (AutoProcessor, AutoModelForMultimodalLM,
                                   BitsAndBytesConfig)
 
@@ -254,7 +258,8 @@ class _OmniDescriptorImpl:
             local_path,
             self.model_name,
             omni.get('load_in_4bit', True),
-            omni.get('max_new_tokens', 512),
+            omni.get('max_new_tokens', 256),
+            omni.get('segment_max_new_tokens', 96),
             omni.get('do_sample', False),
             omni.get('temperature', 0.3),
             omni.get('image_prompt', ''),
@@ -280,6 +285,8 @@ class _OmniDescriptorImpl:
         message, because everything here is already in memory: PIL frames
         pulled out of a video, waveforms sliced out of a track.
         """
+        import torch
+
         if not self.model:
             raise RuntimeError("OmniDescriptor not initiated.")
 
@@ -309,7 +316,7 @@ class _OmniDescriptorImpl:
         ).to(self.model.device)
 
         gen_kwargs = {
-            'max_new_tokens': max_new_tokens or self.cfg.omni.get('max_new_tokens', 512),
+            'max_new_tokens': max_new_tokens or self.cfg.omni.get('max_new_tokens', 256),
             'do_sample': self.cfg.omni.get('do_sample', False),
         }
         # Passing temperature alongside greedy decoding is a warning in
@@ -317,16 +324,18 @@ class _OmniDescriptorImpl:
         if gen_kwargs['do_sample']:
             gen_kwargs['temperature'] = self.cfg.omni.get('temperature', 0.3)
 
-        try:
-            with torch.no_grad():
-                out = self.model.generate(**inputs, **gen_kwargs)
-            # Decode only what was generated; the prompt is echoed back
-            # otherwise, and it would end up stored as the file's description.
-            generated = out[0][inputs['input_ids'].shape[-1]:]
-            text = self.processor.decode(generated, skip_special_tokens=True).strip()
-        finally:
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
+        # No empty_cache() here. Handing the allocator's pool back to the driver
+        # after every generation makes the next one re-allocate from scratch, and
+        # this path runs up to four times per audio or video file. VRAM is
+        # released properly by unload(), which terminates the whole worker; the
+        # one place it is still worth calling is the OOM handler in
+        # _describe_segments, where there is genuinely a pool to reclaim.
+        with torch.inference_mode():
+            out = self.model.generate(**inputs, **gen_kwargs)
+        # Decode only what was generated; the prompt is echoed back
+        # otherwise, and it would end up stored as the file's description.
+        generated = out[0][inputs['input_ids'].shape[-1]:]
+        text = self.processor.decode(generated, skip_special_tokens=True).strip()
 
         # Vetted here rather than at each caller, because this is the one place
         # every description passes through — a segment, a synthesis, and a
@@ -390,12 +399,21 @@ class _OmniDescriptorImpl:
         A single unreadable segment should cost that segment, not the file: a
         video whose middle is corrupt is still worth describing from the rest.
         """
+        # These descriptions are intermediate: _synthesise folds them into the
+        # one description that actually gets stored, and the fold below already
+        # truncated them to 1024 characters. Generating them at the full budget
+        # spent tokens on text that was thrown away before it was read.
+        import torch
+
+        segment_tokens = self.cfg.omni.get('segment_max_new_tokens', 96)
+
         descriptions: List[str] = []
         for idx, (start_s, end_s, images, audio) in enumerate(segments):
             print(f"OmniDescriptor (Worker): {media} segment {idx + 1} "
                   f"[{start_s:.1f}s – {end_s:.1f}s] …")
             try:
-                desc = self._generate(prompt, images=images, audio=audio)
+                desc = self._generate(prompt, images=images, audio=audio,
+                                      max_new_tokens=segment_tokens)
                 if not desc:
                     # Vetted away by _generate. Keeping it would be worse than
                     # dropping it: _synthesise summarises whatever it is handed,
@@ -508,19 +526,29 @@ class _OmniDescriptorImpl:
             raise ValueError(f"[OmniDescriptor] [Error: file not found — {audio_path}]")
 
         try:
-            waveform, sr = librosa.load(local_path, sr=16000, mono=True)
-            total_s = len(waveform) / sr
+            # Ask for the duration rather than decoding the file to measure it.
+            # Decoding a whole track to slice three 30-second windows out of it
+            # costs seconds per file, and it grows with the track while the
+            # useful work does not: a 70-minute album spent about 104s decoding
+            # in order to use 90s of audio.
+            total_s = float(librosa.get_duration(path=local_path))
 
             # Short enough to hear whole — no need to sample it at all.
             if total_s <= AUDIO_WINDOW_SECONDS:
+                waveform, _ = librosa.load(local_path, sr=16000, mono=True,
+                                           duration=AUDIO_WINDOW_SECONDS)
                 return self._generate(prompt, audio=[waveform])
 
-            width = int(sample_duration_s * sr)
             segments = []
             for start_s in self._segment_starts(total_s, n_samples, sample_duration_s):
-                start = int(start_s * sr)
-                end = min(start + width, len(waveform))
-                segments.append((start / sr, end / sr, None, [waveform[start:end]]))
+                clip, _ = librosa.load(local_path, sr=16000, mono=True,
+                                       offset=start_s, duration=sample_duration_s)
+                if not len(clip):
+                    continue
+                segments.append((start_s, start_s + len(clip) / 16000, None, [clip]))
+
+            if not segments:
+                raise RuntimeError("Failed to read any audio window.")
 
             # One window needs no synthesis pass: describe it and be done.
             if len(segments) == 1:
@@ -587,15 +615,35 @@ class _OmniDescriptorImpl:
             if total_s <= 0:
                 raise RuntimeError(f"Could not determine duration of: {video_path}")
 
-            segments = []
-            for start_s in self._segment_starts(total_s, n_samples, sample_duration_s):
-                end_s = min(start_s + sample_duration_s, total_s)
-                frames = self._extract_frames(local_path, start_s, end_s, frames_per_segment)
+            # Pull the windows concurrently. Each one is an ffmpeg subprocess
+            # doing its own decoding, so they do not contend for the GPU and
+            # they overlap almost perfectly; done in sequence this was several
+            # seconds of the file's cost with nothing else happening. Ordered
+            # by start time afterwards so the descriptions still read in order.
+            from concurrent.futures import ThreadPoolExecutor
+
+            windows = [(s, min(s + sample_duration_s, total_s))
+                       for s in self._segment_starts(total_s, n_samples,
+                                                     sample_duration_s)]
+
+            def pull(window):
+                start_s, end_s = window
+                frames = self._extract_frames(local_path, start_s, end_s,
+                                              frames_per_segment)
                 if not frames:
-                    print(f"  No frames extracted at {start_s:.1f}s — skipping segment.")
+                    return None
+                return (start_s, end_s, frames,
+                        self._extract_audio(local_path, start_s, end_s))
+
+            with ThreadPoolExecutor(max_workers=len(windows) or 1) as pool:
+                pulled = list(pool.map(pull, windows))
+
+            segments = []
+            for window, result in zip(windows, pulled):
+                if result is None:
+                    print(f"  No frames extracted at {window[0]:.1f}s — skipping segment.")
                     continue
-                audio = self._extract_audio(local_path, start_s, end_s)
-                segments.append((start_s, end_s, frames, audio))
+                segments.append(result)
 
             if not segments:
                 raise RuntimeError(f"Could not extract any frames from: {video_path}")
@@ -641,8 +689,21 @@ class _OmniDescriptorImpl:
             if max_size else None
         )
 
-        frames = []
-        for t in timestamps:
+        # One ffmpeg for the whole window rather than one per frame. Spawning a
+        # process per frame re-opens the container and re-initialises the
+        # decoder every time: measured 3.81s for four frames against 1.05s for
+        # the same four in a single call, and a default video wants twelve.
+        # The frames are not always bit-identical to the per-frame path — where
+        # `select` lands on the next frame after the step boundary it can differ
+        # by a few tens of milliseconds — but they come from the same window at
+        # the same nominal offsets, which is all the sampling ever claimed.
+        batched = self._extract_frames_batched(
+            local_path, timestamps[0], step, count, scale_filter)
+        if len(batched) == count:
+            return batched
+
+        frames = list(batched)
+        for t in timestamps[len(frames):]:
             # Option order is load-bearing: -ss and -hwaccel configure the
             # input and must precede -i, while -vf describes the output and
             # must follow it. Putting the filter first makes ffmpeg reject the
@@ -677,6 +738,46 @@ class _OmniDescriptorImpl:
                         resample=PILImage.BICUBIC,
                     )
                 frames.append(image)
+        return frames
+
+    def _extract_frames_batched(self, local_path: str, first_t: float, step: float,
+                                count: int, scale_filter: Optional[str]) -> List:
+        """All frames of one window from a single ffmpeg call.
+
+        Seeks once to the first wanted timestamp and then lets `select` take a
+        frame every *step* seconds, which reproduces the evenly-spaced offsets
+        the per-frame path asks for without paying to start the decoder again
+        for each one. Returns fewer frames than asked for, or none, if anything
+        goes wrong; the caller falls back to extracting the rest one at a time.
+        """
+        import io
+        import subprocess
+        from PIL import Image as PILImage
+
+        select = (f"select='isnan(prev_selected_t)"
+                  f"+gte(t-prev_selected_t\\,{step:.6f})'")
+        vf = f"{select},{scale_filter}" if scale_filter else select
+        cmd = ['ffmpeg', '-loglevel', 'error', '-hide_banner',
+               '-hwaccel', 'none', '-err_detect', 'ignore_err',
+               '-ss', f"{first_t:.6f}", '-t', f"{(count + 1) * step:.6f}",
+               '-i', local_path,
+               '-vf', vf, '-vsync', '0', '-frames:v', str(count),
+               '-pix_fmt', 'rgb24', '-f', 'image2pipe', '-vcodec', 'png', 'pipe:1']
+        try:
+            proc = subprocess.run(cmd, capture_output=True, timeout=300)
+        except Exception:
+            return []
+        if proc.returncode != 0 or not proc.stdout:
+            return []
+
+        from anagnorisis_core.models.media_io import split_png_stream
+
+        frames = []
+        for chunk in split_png_stream(proc.stdout):
+            try:
+                frames.append(PILImage.open(io.BytesIO(chunk)).convert('RGB'))
+            except Exception:
+                break
         return frames
 
     def _extract_audio(self, local_path: str, start_s: float, end_s: float) -> Optional[List]:
@@ -796,7 +897,10 @@ class OmniDescriptor:
         self._lock = threading.Lock()
 
         # State mirroring
-        self.device = torch.device('cpu')  # Updated to actual device after initiate()
+        # A plain string, not a torch.device: this is the main process, and it
+        # must not import torch just to name a device. Updated from the worker's
+        # reported device after initiate().
+        self.device = 'cpu'
         self.model = "ProxyModel"  # Dummy to satisfy checks
         self._models_folder = None
         self.model_hash = None

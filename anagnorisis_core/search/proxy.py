@@ -31,7 +31,6 @@ import re
 from typing import List, Optional, Protocol, Sequence
 
 import numpy as np
-import torch
 
 from anagnorisis_core.storage.caching import get_two_level_cache
 
@@ -296,6 +295,8 @@ class EmbeddingProxyGenerator:
 
         norms = np.linalg.norm(arr, axis=1, keepdims=True)
         arr = arr / np.where(norms > 0, norms, 1.0)
+        import torch
+
         torch.save(torch.from_numpy(arr), path)
         self._tag_embs = arr
         self._tag_embs_hash = model_hash
@@ -325,6 +326,8 @@ class EmbeddingProxyGenerator:
         tag_embs_path = self._tag_embs_path_for(model_hash)
         if os.path.exists(tag_embs_path):
             try:
+                import torch
+
                 data = torch.load(tag_embs_path, map_location='cpu', weights_only=True)
                 arr  = (
                     data.numpy().astype(np.float32)
@@ -392,6 +395,8 @@ class EmbeddingProxyGenerator:
         # L2-normalise; the model does not guarantee unit-length outputs.
         norms = np.linalg.norm(arr, axis=1, keepdims=True)
         arr   = arr / np.where(norms > 0, norms, 1.0)
+
+        import torch
 
         torch.save(torch.from_numpy(arr), tag_embs_path)
         self._tag_embs = arr

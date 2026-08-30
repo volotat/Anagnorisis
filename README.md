@@ -87,7 +87,7 @@ The main goal of the core package is to have single independent reusable peace o
 
 ## Benchmarks
 
-The benchmarks exists right now only for tracking purpose. There were not any targeted work done yet on the speed and quality of the search, as the main goal of the project so far was to establish the right infrastructure to build upon. 
+The benchmarks exist for tracking purpose. Note that only minor work has been done on speed, as the main goal of the project so far was to establish the right infrastructure to build upon. 
 
 Here only a subset of benchmarks are present, see [`anagnorisis_core/benchmarks/README.md`](anagnorisis_core/benchmarks/README.md) for more information and over time tracking.
 
@@ -95,36 +95,38 @@ Here only a subset of benchmarks are present, see [`anagnorisis_core/benchmarks/
 
 | Regime | Time | µs/file | Est. @100,000 |
 |---|---|---|---|
-| uncached (cache empty) | 0.0237s | 53.96 | 5.4s |
-| cold (cache on disk) | 0.0053s | 12.11 | 1.2s |
-| warm (cache in RAM) | 0.0045s ±0.0 | 10.29 | 1.0s |
+| uncached (cache empty) | 0.0191s | 43.61 | 4.4s |
+| cold (cache on disk) | 0.0051s | 11.56 | 1.2s |
+| warm (cache in RAM) | 0.0046s ±0.0001 | 10.42 | 1.0s |
 
 **Building the index:**
 
 | Media type | Files | Content s/file | Descriptions s/file |
 |---|---|---|---|
-| `audio` | 205 | 1.3986 | 0.367 |
-| `images` | 202 | 0.5551 | 0.3692 |
-| `text` | 17 | 0.352 | 0.4358 |
-| `videos` | 15 | 3.7895 | 0.4031 |
+| `audio` | 205 | 0.4285 | 0.4505 |
+| `images` | 202 | 0.2144 | 0.4409 |
+| `text` | 17 | 0.0833 | 1.4209 |
+| `videos` | 15 | 1.5251 | 1.6546 |
 
 | Phase | Total | s/file | Est. @100,000 |
 |---|---|---|---|
-| content | 461.67s | 1.0516 | 105,176s (29.2h) |
-| descriptions | 163.28s | 0.3719 | 37,205s (10.3h) |
-| **both, whole library** | — | — | **142,375s (39.5h)** |
-| re-index, everything already cached | 0.022s | 0.05 ms | 5s |
+| content | 155.45s | 0.3541 | 35,425s (9.8h) |
+| descriptions | 230.39s | 0.5248 | 52,496s (14.6h) |
+| **both, whole library** | — | — | **87,920s (24.4h)** |
+| re-index, everything already cached | 0.012s | 0.03 ms | 2.8s |
 
-Embedder load, measured once and excluded from above: 12.28s. 
+Embedder load, measured once and excluded from above: 14.74s. The *descriptions* row also carries a one-off computation: indexing embeds the tag vocabularies up front, about 9,000 tags. It is paid once, and the whole-library figure includes it. 
 
 **Writing the descriptions:**
 
 | Media type | s/file (mean) | median | min–max | n | All 100,000 of this type |
 |---|---|---|---|---|---|
-| `audio` | 47.38 | 45.84 | 45.02–51.29 | 3 | 1316.2h |
-| `images` | 15.63 | 15.75 | 14.43–16.71 | 3 | 434.2h |
-| `text` | 5.31 | 0.0 | 0.0–15.94 | 3 | 147.6h |
-| `videos` | 55.93 | 56.94 | 52.81–58.03 | 3 | 1553.5h |
+| `audio` | 19.93 | 20.42 | 18.92–20.43 | 3 | 553.5h |
+| `images` | 14.26 | 14.13 | 13.99–14.66 | 3 | 396.2h |
+| `text` | 4.54 | 0.0 | 0.0–13.61 | 3 | 126.1h |
+| `videos` | 23.68 | 23.33 | 23.12–24.60 | 3 | 657.9h |
+
+Descriptor load, once: 11.66s.
 
 
 ## Running from Docker

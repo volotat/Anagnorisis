@@ -55,6 +55,19 @@ let chart_loss = (() => {
             borderWidth: 4,
             borderDash: [5, 5],
             label: { enabled: true, content: 'Baseline' },
+          }, {
+            // The best test accuracy so far, which is also the epoch whose
+            // weights were checkpointed. Drawn so the gap between the moving
+            // test curve and the score that would actually be kept stays
+            // visible while the run is still going.
+            type: 'line',
+            mode: 'horizontal',
+            scaleID: 'y',
+            value: 0,
+            borderColor: CHART_COLORS.purple,
+            borderWidth: 2,
+            borderDash: [10, 4],
+            label: { enabled: true, content: 'Best test' },
           }],
         },
       },
@@ -137,10 +150,18 @@ function update_chart(data) {
     test_accuracy_hist.map((v, i) => ({ x: i, y: v })), 400
   );
 
+  // Derived here rather than sent: the full test history is already on the
+  // wire, and the best is simply its maximum. Reduced rather than spread into
+  // Math.max, which takes one argument per epoch and would grow with the run.
+  const best_test = test_accuracy_hist.reduce((a, b) => (b > a ? b : a), 0);
+
   chart_loss.data.labels = decimated_train.map(p => p.x);
   chart_loss.data.datasets[0].data = decimated_train;
   chart_loss.data.datasets[1].data = decimated_test;
   chart_loss.options.plugins.annotation.annotations[0].value = baseline_accuracy;
+  chart_loss.options.plugins.annotation.annotations[1].value = best_test;
+  chart_loss.options.plugins.annotation.annotations[1].label.content =
+    `Best test ${best_test.toFixed(2)}%`;
   chart_loss.update();
 
   $('#fine_tuning_progress').val(percent);

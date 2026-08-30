@@ -39,6 +39,20 @@ def media(tmp_path):
 
 
 @pytest.fixture
+def media_needing_model(tmp_path):
+    """A tree whose file is too long to keep verbatim.
+
+    Short text is its own description and never reaches the descriptor, which
+    is deliberate but makes it useless for testing anything about a model being
+    loaded, released or failing to load.
+    """
+    d = tmp_path / 'data'
+    d.mkdir(parents=True)
+    (d / 'essay.txt').write_text('A cat asleep on a mat. ' * 400, encoding='utf-8')
+    return d
+
+
+@pytest.fixture
 def stub(monkeypatch):
     """Stand in for both models; records which files were described."""
     described = []
@@ -180,7 +194,7 @@ class TestModelSwitching:
         assert 'initiate' not in calls, 'initiate() loads then unloads — pure waste here'
 
     def test_the_sidecar_is_written_after_the_descriptor_is_released(
-            self, cfg, media, monkeypatch):
+            self, cfg, media_needing_model, monkeypatch):
         """Assembly can touch the caches, so it must not run with the descriptor
         resident — that is how both models ended up in memory together."""
         order = []
@@ -203,13 +217,64 @@ class TestModelSwitching:
         monkeypatch.setattr(api, 'get_omni_embedder',
                             lambda cfg: type('E', (), {'unload': lambda self: None})())
 
-        api.describe([str(media)], cfg=cfg, sink=RecordingSink(cfg))
+        api.describe([str(media_needing_model)], cfg=cfg, sink=RecordingSink(cfg))
 
         assert 'written' in order and 'descriptor_unloaded' in order, order
         assert order.index('descriptor_unloaded') < order.index('written'), (
             f'the sidecar was written while the descriptor was still loaded: {order}')
 
-    def test_batch_size_zero_means_a_single_pass(self, cfg, media, monkeypatch):
+    def test_short_text_does_not_load_the_descriptor(self, cfg, media, monkeypatch):
+        """Short text is its own description, so nothing should be loaded.
+
+        The load costs about 13 seconds and the model would never be called:
+        body_for_text returns the words unchanged below the verbatim limit.
+        """
+        loads = []
+
+        class FakeDescriptor:
+            def __init__(self, cfg): pass
+            def initiate(self, models_folder): loads.append('load')
+            def unload(self): pass
+            def describe_text(self, text, prompt=None):
+                raise AssertionError('the model was called for short text')
+
+        monkeypatch.setattr(api, 'OmniDescriptor', FakeDescriptor)
+        monkeypatch.setattr(api, '_embed_batch', lambda *a, **k: None)
+        monkeypatch.setattr(api, 'get_omni_embedder',
+                            lambda cfg: type('E', (), {'unload': lambda self: None})())
+
+        report = api.describe([str(media)], cfg=cfg, sink=MetaSink(cfg))
+
+        assert loads == [], f'the descriptor was loaded for short text: {loads}'
+        assert report.written == 2, report
+
+    def test_a_type_nothing_can_describe_is_skipped_not_failed(self, cfg, tmp_path,
+                                                               monkeypatch):
+        """A PDF has no describe method, so it is not a failure — nothing was
+        ever attempted. It must also not drag the descriptor into memory."""
+        d = tmp_path / 'docs'
+        d.mkdir()
+        (d / 'paper.pdf').write_bytes(b'%PDF-1.4 not really a pdf')
+
+        loads = []
+
+        class FakeDescriptor:
+            def __init__(self, cfg): pass
+            def initiate(self, models_folder): loads.append('load')
+            def unload(self): pass
+
+        monkeypatch.setattr(api, 'OmniDescriptor', FakeDescriptor)
+        monkeypatch.setattr(api, '_embed_batch', lambda *a, **k: None)
+        monkeypatch.setattr(api, 'get_omni_embedder',
+                            lambda cfg: type('E', (), {'unload': lambda self: None})())
+
+        report = api.describe([str(d)], cfg=cfg, sink=MetaSink(cfg))
+
+        assert loads == [], f'loaded a model for a type it cannot describe: {loads}'
+        assert report.failed == 0, report
+        assert report.skipped_unsupported == 1, report
+
+    def test_batch_size_zero_means_a_single_pass(self, cfg, media_needing_model, monkeypatch):
         """The fewest possible switches: two model loads for the whole run."""
         loads = []
 
@@ -224,7 +289,7 @@ class TestModelSwitching:
         monkeypatch.setattr(api, 'get_omni_embedder',
                             lambda cfg: type('E', (), {'unload': lambda self: None})())
 
-        api.describe([str(media)], cfg=cfg, sink=MetaSink(cfg), batch_size=0)
+        api.describe([str(media_needing_model)], cfg=cfg, sink=MetaSink(cfg), batch_size=0)
         assert len(loads) == 1, f'expected one descriptor load, got {len(loads)}'
 
 
@@ -304,7 +369,7 @@ class TestWorkerCleanup:
     """
 
     def test_a_failed_initiate_still_unloads_the_descriptor(
-            self, cfg, media, monkeypatch):
+            self, cfg, media_needing_model, monkeypatch):
         """initiate() spawns the worker *before* it can fail — the VRAM guard
         raises from inside it — so the failure path has to unload. It did not,
         and a guarded run left a worker holding VRAM and hung on exit.
@@ -323,7 +388,7 @@ class TestWorkerCleanup:
         monkeypatch.setattr(api, 'get_omni_embedder',
                             lambda cfg: type('E', (), {'unload': lambda self: None})())
 
-        report = api.describe([str(media)], cfg=cfg, sink=MetaSink(cfg))
+        report = api.describe([str(media_needing_model)], cfg=cfg, sink=MetaSink(cfg))
 
         assert 'unload' in calls, (
             f'a failed initiate left the worker running: {calls}')

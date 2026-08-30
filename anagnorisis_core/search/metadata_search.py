@@ -22,7 +22,6 @@ import traceback
 from typing import Optional
 
 import numpy as np
-import torch
 
 import anagnorisis_core.storage.virtual_file_system as vfs
 from anagnorisis_core.media import description as description_mod
@@ -30,8 +29,9 @@ from anagnorisis_core.storage.caching import get_two_level_cache
 from anagnorisis_core.media import models
 from anagnorisis_core.media.media_types import MediaType, get_registry
 from anagnorisis_core.models.descriptor import OmniDescriptor
-from anagnorisis_core.search.content_search import _as_query_vector
-from anagnorisis_core.models.embedder import cosine_similarity, get_omni_embedder, get_query_embedder
+from anagnorisis_core.search.content_search import _as_query_vector, smooth_max_by_owner
+from anagnorisis_core.models.embedder import (cosine_similarity, get_omni_embedder,
+                                              get_query_embedder, is_tensor)
 
 
 class MetadataSearch:
@@ -39,6 +39,10 @@ class MetadataSearch:
 
     def __init__(self, cfg):
         self.cfg = cfg
+        # Memoised answer for "what hash did a previous session leave behind",
+        # which is constant until the descriptor is actually loaded. '' means
+        # "asked, and there is none"; None means "not asked yet".
+        self._cold_omni_hash: Optional[str] = None
         self.types = get_registry(cfg)
         # The GPU worker builds the index; the CPU tower answers queries.
         self.embedder = get_omni_embedder(cfg)
@@ -87,10 +91,18 @@ class MetadataSearch:
         mh = self.omni_descriptor.model_hash
         if mh:
             return mh
+        # Falling through here happens once per file on every search and index
+        # pass, for a value that cannot change while the process runs and the
+        # descriptor stays unloaded. Remember it rather than paying a cache
+        # lookup per file to be told the same thing again.
+        if self._cold_omni_hash is not None:
+            return self._cold_omni_hash or None
         model_name = getattr(getattr(self.cfg, 'omni', None), 'model_name', None)
-        if model_name:
-            return self._fast_cache.get(f"omni_model_hash::{model_name}")
-        return None
+        if not model_name:
+            return None
+        cached = self._fast_cache.get(f"omni_model_hash::{model_name}")
+        self._cold_omni_hash = cached or ''
+        return cached
 
     def load_descriptor(self) -> Optional[str]:
         """Load OmniDescriptor if needed and return its model hash.
@@ -108,6 +120,9 @@ class MetadataSearch:
             self._fast_cache.set(
                 f"omni_model_hash::{self.cfg.omni.model_name}", descriptor.model_hash
             )
+            # The live hash now wins in _get_omni_model_hash, but drop the
+            # memoised cold-start answer so it can never shadow a newer one.
+            self._cold_omni_hash = None
         return descriptor.model_hash
 
     def make_description_cache_key(self, file_path: str) -> str:
@@ -157,6 +172,16 @@ class MetadataSearch:
         if not generate_desc_if_not_in_cache:
             return None
 
+        # Short text is its own description, so decide that *before* loading a
+        # descriptor. api._describe_one already works this way; this path did
+        # not, so a folder of notes paid a full model run each, and
+        # build_description then ignored the result and used the words anyway.
+        text_content = None
+        if method_name == 'describe_text':
+            text_content = description_mod.read_text_content(file_path).strip()
+            if len(text_content) <= description_mod.text_verbatim_limit(self.cfg):
+                return text_content
+
         # Loading the descriptor changes the model hash, and with it the cache
         # key — so recompute the key afterwards rather than caching under a key
         # built from a 'None' hash.
@@ -166,7 +191,7 @@ class MetadataSearch:
         try:
             method = getattr(self.omni_descriptor, method_name)
             if method_name == 'describe_text':
-                description = method(description_mod.read_text_content(file_path))
+                description = method(text_content)
             else:
                 description = method(file_path)
         except Exception as e:
@@ -361,8 +386,8 @@ class MetadataSearch:
         # 1. Normalize the query embedding once on the calling side. It may be
         #    None if the CPU query tower could not encode the input, in which
         #    case there are simply no results rather than an exception.
-        if isinstance(query_embedding, torch.Tensor):
-            query_embedding = query_embedding.detach().to(torch.float32).cpu().numpy()
+        if is_tensor(query_embedding):
+            query_embedding = query_embedding.detach().float().cpu().numpy()
         query_np = _as_query_vector(query_embedding)
         if query_np is None:
             return scores
@@ -389,22 +414,9 @@ class MetadataSearch:
         flat_sims = cosine_similarity(big_array, query_np)
         flat_sims = np.asarray(flat_sims, dtype=np.float32)
 
-        # 4. Smooth-max per file. Indexing by mask is O(N_files × avg_chunks),
-        #    not O(N_files × N_total_chunks) like a per-file Python loop.
-        beta = 16.0
-        chunk_file_indices = np.asarray(chunk_file_indices, dtype=np.int64)
-        for file_idx in range(n_files):
-            chunk_sims = flat_sims[chunk_file_indices == file_idx]
-            if chunk_sims.size == 0:
-                continue  # all of this file's chunks were zero → stays NaN
-
-            m = float(chunk_sims.max())
-            x = beta * (chunk_sims - m)
-            x = np.clip(x, -50.0, None)
-            lse_centered = np.log(np.exp(x).sum())
-            smooth = m + (lse_centered - np.log(len(chunk_sims))) / beta 
-            scores[file_idx] = float(smooth)
-
+        # 4. Smooth-max per file. Shared with the content engine, which scored
+        #    the same way: one grouped pass rather than a scan per file.
+        smooth_max_by_owner(flat_sims, chunk_file_indices, scores)
         return scores
 
     # ------------------------------------------------------------------

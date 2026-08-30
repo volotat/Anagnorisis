@@ -19,6 +19,7 @@ from collections import Counter
 from sklearn.model_selection import train_test_split
 from anagnorisis_core.models.universal_evaluator import UniversalEvaluator
 from anagnorisis_core.models.embedder import get_omni_embedder
+from anagnorisis_core.storage.caching import get_two_level_cache
 
 
 # ---------------------------------------------------------------------------
@@ -66,6 +67,38 @@ def _parse_memory_file(text):
     return rating, description.strip()
 
 
+def _format_eta(seconds: float) -> str:
+    """A short, human-readable remaining time for a status line."""
+    seconds = max(0.0, float(seconds))
+    if seconds < 60:
+        return f"{seconds:.0f}s"
+    if seconds < 3600:
+        return f"{seconds / 60:.0f}m {seconds % 60:.0f}s"
+    return f"{seconds // 3600:.0f}h {(seconds % 3600) / 60:.0f}m"
+
+
+def _epoch_status(epoch, total_epochs, *, elapsed, time_budget_seconds,
+                  best_accuracy, best_epoch, current_accuracy) -> str:
+    """The status line for one training epoch.
+
+    Says how far along the run is and what the best score so far is, because
+    the number worth watching is the best rather than the current one: that is
+    the epoch whose weights get kept.
+    """
+    remaining = max(total_epochs - epoch, 0)
+    per_epoch = elapsed / epoch if epoch else 0.0
+    eta = remaining * per_epoch
+
+    # The loop stops at whichever limit comes first, so the estimate has to
+    # respect both or it promises time the run will not take.
+    if time_budget_seconds is not None:
+        eta = min(eta, max(time_budget_seconds - elapsed, 0.0))
+
+    return (f'Epoch {epoch}/{total_epochs}, {remaining} left (~{_format_eta(eta)}). '
+            f'Best {best_accuracy * 100:.2f}% at epoch {best_epoch}, '
+            f'now {current_accuracy * 100:.2f}%.')
+
+
 def _gather_from_memory(cfg, text_embedder, status_callback=None):
     """Collect (chunk_embeddings, score) pairs from the memory folder.
 
@@ -82,30 +115,45 @@ def _gather_from_memory(cfg, text_embedder, status_callback=None):
         print(f"[UniversalTrain] Memory folder not found: {memory_path}")
         return [], []
 
+    def report(message):
+        """Hand a status line upwards.
+
+        Called on every iteration rather than every N. Both consumers throttle
+        already (the task context at 0.25s, the socket emit at 1s).
+        """
+        if status_callback:
+            status_callback(message)
+
     # Date folders sort chronologically: YYYY-MM-DD. Walk oldest -> newest so
     # that newer files overwrite older ones for the same soft hash.
     date_dirs = sorted(
         (d for d in glob.glob(os.path.join(memory_path, '*')) if os.path.isdir(d))
     )
 
-    hash_to_entry = {}  # soft_hash -> (rating, description)
+    # Listed up front so every message below can say what it counts towards.
+    report("Looking for memory files...")
+    md_paths = []
     for date_dir in date_dirs:
-        for md_path in glob.glob(os.path.join(date_dir, '*.md')):
-            try:
-                with open(md_path, 'r', encoding='utf-8') as f:
-                    text = f.read()
-            except Exception as exc:
-                print(f"[UniversalTrain] Could not read {md_path}: {exc}")
-                continue
-            # The filename *is* the soft hash — memory files are written as
-            # <soft_hash>.md — so the parser does not need to return it. It used
-            # to be unpacked from here anyway, which raised ValueError on the
-            # first file and meant training could not run at all.
-            soft_hash = os.path.splitext(os.path.basename(md_path))[0]
-            rating, description = _parse_memory_file(text)
-            if rating is None or description is None or len(description) < 10:
-                continue
-            hash_to_entry[soft_hash] = (rating, description)  # latest wins
+        md_paths.extend(sorted(glob.glob(os.path.join(date_dir, '*.md'))))
+
+    hash_to_entry = {}  # soft_hash -> (rating, description)
+    for i, md_path in enumerate(md_paths, 1):
+        report(f"Reading memory files ({i}/{len(md_paths)})...")
+        try:
+            with open(md_path, 'r', encoding='utf-8') as f:
+                text = f.read()
+        except Exception as exc:
+            print(f"[UniversalTrain] Could not read {md_path}: {exc}")
+            continue
+        # The filename *is* the soft hash — memory files are written as
+        # <soft_hash>.md — so the parser does not need to return it. It used
+        # to be unpacked from here anyway, which raised ValueError on the
+        # first file and meant training could not run at all.
+        soft_hash = os.path.splitext(os.path.basename(md_path))[0]
+        rating, description = _parse_memory_file(text)
+        if rating is None or description is None or len(description) < 10:
+            continue
+        hash_to_entry[soft_hash] = (rating, description)  # latest wins
 
     if not hash_to_entry:
         print("[UniversalTrain] No usable memory files found.")
@@ -113,23 +161,58 @@ def _gather_from_memory(cfg, text_embedder, status_callback=None):
 
     print(f"[UniversalTrain] {len(hash_to_entry)} unique rated memory entries.")
 
+    # Memory files never change: the filename is the soft hash of the file it
+    # describes, and a new opinion is written as a new file in a new date
+    # folder. So an embedding of one is valid forever, for as long as the model
+    # that produced it is the model in use. Without this every training run
+    # re-embedded the whole corpus from scratch.
+    cache = get_two_level_cache(
+        cache_dir=os.path.join(cfg.main.cache_path, 'memory_embeddings'),
+        name="memory_training",
+    )
+    model_hash = getattr(text_embedder, 'model_hash', None) or 'unknown-model'
+
     all_embeddings = []
     all_scores = []
     count = 0
-    for rating, description in hash_to_entry.values():
-        if count % 100 == 0 and status_callback:
-            status_callback(f"Gathering memory pairs ({count})...")
-        # embed_long_text is the real name; embed_text is an alias for it on the
-        # embedder. Spelled out here so it is obvious that a long description is
-        # chunked and every chunk kept, rather than truncated.
-        chunk_embeddings = text_embedder.embed_long_text(description)
-        if chunk_embeddings is None or len(chunk_embeddings) == 0:
-            continue
-        all_embeddings.append(np.array(chunk_embeddings, dtype=np.float32))
+    reused = 0
+    total = len(hash_to_entry)
+    started = time.time()
+
+    for i, (soft_hash, (rating, description)) in enumerate(hash_to_entry.items(), 1):
+        # An estimate from one or two samples is worse than none: the first item
+        # carries the whole warm-up and reads as "0s left" right before a
+        # ten-minute wait. Wait until the average means something.
+        elapsed = time.time() - started
+        if i > 5 and elapsed > 0:
+            eta = (total - i + 1) * (elapsed / (i - 1))
+            tail = f", {_format_eta(eta)} left"
+        else:
+            tail = ""
+        report(f"Embedding memory descriptions ({i}/{total}{tail})...")
+
+        cache_key = f"memory_emb::{soft_hash}::{model_hash}"
+        chunk_embeddings = cache.get(cache_key)
+        if chunk_embeddings is None:
+            # embed_long_text is the real name; embed_text is an alias for it on
+            # the embedder. Spelled out here so it is obvious that a long
+            # description is chunked and every chunk kept, rather than truncated.
+            chunk_embeddings = text_embedder.embed_long_text(description)
+            if chunk_embeddings is None or len(chunk_embeddings) == 0:
+                continue
+            chunk_embeddings = np.array(chunk_embeddings, dtype=np.float32)
+            cache.set(cache_key, chunk_embeddings)
+        else:
+            chunk_embeddings = np.array(chunk_embeddings, dtype=np.float32)
+            reused += 1
+
+        all_embeddings.append(chunk_embeddings)
         all_scores.append(float(rating))
         count += 1
 
-    print(f"[UniversalTrain] Collected {count} training pairs from memory.")
+    print(f"[UniversalTrain] Collected {count} training pairs from memory "
+          f"({reused} reused from cache, {count - reused} newly embedded) "
+          f"in {time.time() - started:.1f}s.")
     return all_embeddings, all_scores
 
 
@@ -161,8 +244,16 @@ def train_universal_evaluator(cfg, callback=None, max_steps=None, time_budget_se
     print("=" * 60)
 
     # 1. Initialise text embedder (shared across all memory description embeds)
+    #
+    # Loading the model takes on the order of ten seconds and used to happen
+    # with nothing said, so the page sat on whatever it had shown before and
+    # the run looked stuck before it had even started.
+    if callback:
+        callback('Loading the embedding model...', 0, 0)
+    load_started = time.time()
     text_embedder = get_omni_embedder(cfg)
     text_embedder.initiate(models_folder=cfg.main.embedding_models_path)
+    print(f"[UniversalTrain] Embedding model ready in {time.time() - load_started:.1f}s.")
 
     # 2. Gather (chunk_embeddings, score) pairs from the durable memory folder.
     #    Descriptions come from memory/<date>/<soft_hash>.md; ratings are joined
@@ -191,8 +282,10 @@ def train_universal_evaluator(cfg, callback=None, max_steps=None, time_budget_se
 
     # 3. Split into train / test sets FIRST (on original, unaugmented data)
     #    so the test set is a clean, unseen holdout with no duplicates.
-    status = 'Training the universal evaluator model...'
-    print(f"[UniversalTrain] {status}")
+    print("[UniversalTrain] Training the universal evaluator model...")
+
+    if callback:
+        callback(f'Preparing {len(valid_embeddings)} training pairs...', 0, 0)
 
     evaluator = UniversalEvaluator()
     evaluator.reinitialize()
@@ -302,16 +395,47 @@ def train_universal_evaluator(cfg, callback=None, max_steps=None, time_budget_se
     print(f"[UniversalTrain] Starting training loop for up to {total_epochs} epochs via subprocess...")
     print(f"[UniversalTrain] Training samples: {len(X_train)}, Baseline Accuracy: {baseline_accuracy * 100:.2f}%")
 
+    # Mirrors the subprocess's own rule for "best": the highest test accuracy
+    # seen so far, which is also the epoch whose weights were checkpointed.
+    best = {'accuracy': 0.0, 'epoch': 0}
+    loop_started = time.time()
+
     def _progress_handler(data):
-        """Relay subprocess progress messages to the caller's callback."""
+        """Relay subprocess progress messages to the caller's callback.
+
+        Reports the running best and how far along the run is, rather than one
+        fixed sentence for the whole loop. Thousands of epochs behind a status
+        that never changes gives no sign of whether the model is improving, or
+        indeed still moving.
+        """
         if callback is None:
             return
+
         if data['type'] == 'initial_eval':
-            # Epoch-0 baseline point for the UI chart
-            callback(status, 0, baseline_accuracy, data['train_acc'], data['test_acc'])
-        elif data['type'] == 'epoch':
-            percent = (data['epoch'] + 1) / total_epochs
-            callback(status, percent, baseline_accuracy, data['train_acc'], data['test_acc'])
+            # Epoch-0 baseline point for the UI chart.
+            callback(f'Scoring before training, epoch 0 of {total_epochs}...',
+                     0, baseline_accuracy, data['train_acc'], data['test_acc'])
+            return
+
+        if data['type'] != 'epoch':
+            return
+
+        epoch = data['epoch'] + 1
+        if data['test_acc'] > best['accuracy']:
+            best['accuracy'] = data['test_acc']
+            best['epoch'] = epoch
+
+        callback(
+            _epoch_status(
+                epoch, total_epochs,
+                elapsed=time.time() - loop_started,
+                time_budget_seconds=time_budget_seconds,
+                best_accuracy=best['accuracy'], best_epoch=best['epoch'],
+                current_accuracy=data['test_acc'],
+            ),
+            epoch / total_epochs, baseline_accuracy,
+            data['train_acc'], data['test_acc'],
+        )
 
     result = evaluator.train_full(
         X_train, y_train, X_test, y_test,

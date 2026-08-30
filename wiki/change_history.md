@@ -1,5 +1,36 @@
 # Change History
 
+### Version 0.4.11 (30.08.2026)
+
+This release is mostly about speed improvements. Here is roughly what you can expect from the app now:
+
+| Improvements | Measured |
+|---|---|
+| describing ~2x | 873.2h → 468.1h (1.87x) |
+| audio/video ~58% | 47.38→19.93s, 55.93→23.68s |
+| indexing ~3x | 1.0516 → 0.3541 s/file (2.97x) |
+| 29h → 10h | 29.2h → 9.8h |
+| metadata 46%, semantic 30% | 48.99→26.38, 42.83→29.84 µs/file |
+| ~2s → ~0.5s startup | CLI `--help` wall 0.595s |
+
+*  **Core Describing:**
+    *   About twice as fast. 100,000 files fall from roughly 870 hours to 470. Audio and video dominate that figure and are both around 58% faster.
+    *   Audio and video are described from three sampled windows. Those samples were being written out at full length and then cut short before anything read them, so most of that writing was thrown away.
+    *   A long track was decoded in full in order to listen to ninety seconds of it, and video frames were pulled one process at a time.
+*  **Core Indexing:**
+    *   Content indexing is about three times faster. 100,000 files fall from roughly 29 hours to 10.
+    *   Audio was decoded in full even though the model only ever hears the first thirty seconds.
+    *   Images and video frames are now shrunk before the model sees them, rather than being shrunk and then enlarged again.
+*  **Core Search:**
+    *   Metadata search is about 46% faster and semantic about 30%. The fix produces exactly the same scores, just without the wasted work.
+*  **Core Startup:**
+    *  CLI now starts in about half a second instead of about two. Nothing outside the model workers loads the machine learning framework any more.
+*  **Core Training:**
+    *   Descriptions are no longer re-read and re-embedded from scratch on every training run. The first run is unchanged, every run after it is nearly instant.
+    *   Progress now updates every second instead of every hundredth file, so a long run no longer looks frozen. Loading the model and reading the files are reported too, which they were not before.
+*  **Core Benchmarks:**
+    *   Every number above is recorded in `anagnorisis_core/benchmarks/README.md`, measured in one run against an empty cache.
+
 ### Version 0.4.10 (23.08.2026)
 
 This release is mostly a large refactoring. Everything that describes, embeds and searches files was pulled out of the web app into a standalone package, `anagnorisis_core`, which the app, a new command line and the data server now all share. Around 10,000 lines moved out of `src/`. Little of this is visible in the interface, but it is what makes the command line and the data server possible, and it fixed several bugs that were hiding in the duplicated copies.

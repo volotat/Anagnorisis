@@ -447,11 +447,20 @@ class DiskCache:
                 return value
 
         with lock:
+            with self._shard_data_lock:
+                was_resident = shard in self._shard_data
+
             # Prefer in-memory shard cache over reading from disk on every call.
             data, removed = self._get_or_load_shard(shard, shard_path)
 
-            # Warm RAM with the whole shard (throttled)
-            self._maybe_warm_ram(shard, data)
+            # Warm RAM only when the shard actually came off disk. Doing it on
+            # every get meant rebuilding a dict over the whole shard and
+            # re-setting every entry into the RAM tier, holding the shard lock
+            # throughout, even though the value had just been served from
+            # memory. On a miss-heavy indexing run that is up to 256 full-shard
+            # copies a minute for nothing.
+            if not was_resident:
+                self._maybe_warm_ram(shard, data)
 
             entry = data.get(key)
             if entry is None:

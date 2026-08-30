@@ -144,7 +144,13 @@ class MemorySystem:
             method = getattr(self._omni, method_name)
             if method_name == 'describe_text':
                 content = description.read_text_content(file_path)
-                text = method(content) if content is not None else ''
+                # Short text is its own description. Summarising it spends a
+                # model run to produce something less informative than the words
+                # it started with, which is the same rule api._describe_one and
+                # MetadataSearch apply. Injected rather than called directly so
+                # this decides whether to spend model time, not how.
+                text, _summarised = description.body_for_text(
+                    content or '', cfg=self.cfg, summarise=method)
             else:
                 text = method(file_path)
             return (text or '').strip()

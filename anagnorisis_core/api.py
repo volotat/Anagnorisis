@@ -32,11 +32,13 @@ class DescribeReport:
     written: int = 0
     failed: int = 0
     skipped_unstable: int = 0
+    skipped_unsupported: int = 0
     errors: list = field(default_factory=list)
 
     def __str__(self):
         return (f"{self.written} written, {self.already_done} already had one, "
-                f"{self.failed} failed, {self.skipped_unstable} still changing "
+                f"{self.failed} failed, {self.skipped_unstable} still changing, "
+                f"{self.skipped_unsupported} of a type nothing can describe "
                 f"(of {self.considered} considered)")
 
 
@@ -144,6 +146,65 @@ def _describe_one(descriptor, file_path: str, cfg, media_type) -> str:
     return (method(file_path) or '').strip()
 
 
+class _NoDescriptorNeeded:
+    """Stands in for the descriptor on a batch that cannot possibly need it.
+
+    Reaching for an attribute here means the size check in
+    :func:`_may_need_generation` was wrong, which should be impossible: it only
+    answers "no" when the file is smaller in *bytes* than the verbatim limit is
+    in characters, and UTF-8 never uses fewer bytes than characters. Failing
+    loudly beats loading a model nobody expected to load.
+    """
+
+    def __getattr__(self, name):
+        raise RuntimeError(
+            f"descriptor.{name} was called for a batch judged not to need it")
+
+
+def _write_described(described, sink, report, ctx) -> None:
+    """Persist finished descriptions. Assumes no model is resident."""
+    for fp, text in described:
+        ctx.check()
+        try:
+            if sink.write(fp, text):
+                report.written += 1
+            else:
+                report.failed += 1
+        except Exception as exc:
+            report.failed += 1
+            report.errors.append(f'{fp}: {exc}')
+
+
+def _may_need_generation(file_path: str, cfg, media_type) -> bool:
+    """Whether describing this file could actually reach the model.
+
+    Loading the descriptor costs about 13 seconds, and two kinds of file never
+    call it: types with no describe method at all (a PDF today), and short text,
+    which is kept verbatim because the words are already its best description.
+
+    Deliberately biased towards True. A wrong True costs the load we pay today
+    anyway; a wrong False would silently skip a description.
+    """
+    method_name = models.describe_method_for(
+        media_type.name if media_type else None)
+    if method_name is None:
+        return False
+    if method_name != 'describe_text':
+        return True
+
+    # Size in bytes is never smaller than the decoded character count, so a
+    # file under the limit is certainly kept verbatim. Read nothing: this runs
+    # over the whole batch, and remote files must not be fetched to answer it.
+    if not vfs.is_local_url(file_path):
+        return True
+    try:
+        # Safe for local URLs: this only strips the scheme and never downloads.
+        local_path, _temp = vfs.resolve_to_local_path(file_path)
+        return os.path.getsize(local_path) >= description.text_verbatim_limit(cfg)
+    except Exception:
+        return True
+
+
 def describe(
     paths: Iterable[str],
     *,
@@ -179,6 +240,15 @@ def describe(
             continue
         if require_stable and not _is_stable(fp, _stability_state if _stability_state is not None else {}):
             report.skipped_unstable += 1
+            continue
+        # A type with no describe method can never produce anything. Dropping
+        # it here rather than failing it per file keeps a folder of PDFs from
+        # loading a 5.5B model once per batch to write nothing, and stops them
+        # being counted as failures when nothing was ever attempted.
+        media_type = registry.for_file(fp)
+        if models.describe_method_for(
+                media_type.name if media_type else None) is None:
+            report.skipped_unsupported += 1
             continue
         todo.append(fp)
 
@@ -216,6 +286,28 @@ def describe(
         # still resident, and assembly can touch the embedding caches — so the two
         # large models would overlap for no reason.
         described: list[tuple[str, str]] = []
+
+        # A batch of short text files is described from its own words and never
+        # reaches the model, so loading 13 seconds of descriptor for it is pure
+        # cost. Assemble those directly and skip the load when nothing is left.
+        needs_model = [fp for fp in batch
+                       if _may_need_generation(fp, cfg, registry.for_file(fp))]
+        if not needs_model:
+            for fp in batch:
+                try:
+                    text = _describe_one(_NoDescriptorNeeded(), fp, cfg,
+                                         registry.for_file(fp))
+                except Exception as exc:
+                    report.errors.append(f'{fp}: {exc}')
+                    report.failed += 1
+                    continue
+                if text:
+                    described.append((fp, text))
+                else:
+                    report.failed += 1
+            _write_described(described, sink, report, ctx)
+            continue
+
         try:
             descriptor.initiate(models_folder)
         except Exception as exc:
@@ -246,16 +338,7 @@ def describe(
             descriptor.unload()
 
         # ---- phase 3: assemble and write, with no model resident ----
-        for fp, text in described:
-            ctx.check()
-            try:
-                if sink.write(fp, text):
-                    report.written += 1
-                else:
-                    report.failed += 1
-            except Exception as exc:
-                report.failed += 1
-                report.errors.append(f'{fp}: {exc}')
+        _write_described(described, sink, report, ctx)
 
     ctx.update(1.0, str(report))
     return report
@@ -363,10 +446,17 @@ def index(paths, *, cfg, ctx=None, recursive=True, batch_size=200,
                     report.content_embedded += len(batch)
                 except Exception as exc:
                     report.errors.append(f'{type_name} content batch: {exc}')
-        get_omni_embedder(cfg).unload()
+        # No unload here. Both passes use the same embedder singleton and the
+        # same weights, and the descriptor is never resident during index, so
+        # dropping it between them bought nothing and cost a 12.3s reload.
 
     if metadata:
         search = get_metadata_search(cfg)
+        # The descriptions pass reads tag vocabularies through the proxy. If
+        # they have not been embedded yet, the fallback path embeds them one
+        # tag at a time on the CPU, about 1900 per media type. describe() warms
+        # them up front for exactly this reason; index() needs it too.
+        _warm_tag_vocabularies(files, cfg=cfg, registry=registry, ctx=ctx)
         for start in range(0, len(files), batch_size):
             ctx.check()
             batch = files[start:start + batch_size]
@@ -377,6 +467,9 @@ def index(paths, *, cfg, ctx=None, recursive=True, batch_size=200,
                 report.descriptions_embedded += len(batch)
             except Exception as exc:
                 report.errors.append(f'description batch: {exc}')
+
+    # One unload for the whole run, whichever passes ran.
+    if content or metadata:
         get_omni_embedder(cfg).unload()
 
     ctx.update(1.0, str(report))

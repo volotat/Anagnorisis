@@ -16,14 +16,14 @@ import threading
 from typing import Optional
 
 import numpy as np
-import torch
 
 from anagnorisis_core.storage.caching import get_two_level_cache
 from anagnorisis_core.search.content_cache import (CACHE_PREFIX, CONTENT_ALGORITHM_VERSION,
                                             embedding_cache_key)
 from anagnorisis_core.media.media_types import MediaType
 from anagnorisis_core.search.proxy import EmbeddingProxyGenerator
-from anagnorisis_core.models.embedder import get_omni_embedder, get_query_embedder
+from anagnorisis_core.models.embedder import (get_omni_embedder, get_query_embedder,
+                                              is_tensor)
 
 
 # Media types whose files can be embedded from their content. Types absent here
@@ -106,7 +106,7 @@ class _ProxySource:
             if not value:
                 return None
             value = value[0]
-        if isinstance(value, torch.Tensor):
+        if is_tensor(value):
             return value.detach().cpu().numpy().ravel().astype(np.float32)
         return np.asarray(value, dtype=np.float32).ravel()
 
