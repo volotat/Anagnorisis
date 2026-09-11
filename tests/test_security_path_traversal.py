@@ -3,7 +3,7 @@ Security tests — path traversal prevention (Tier 3)
 
 Two layers are tested:
 
-1. app.py middleware helpers (_looks_like_path, _has_parent_segment)
+1. src.app_factory.security_manager.py middleware helpers (_looks_like_path, _has_parent_segment)
    These pure functions are inlined here so we don't need to bootstrap the
    full Flask application.  If the logic in app.py ever diverges, the tests
    will catch it because we also cross-validate with the Flask test client
@@ -22,7 +22,7 @@ from flask import Flask, jsonify, request, abort
 
 
 # ===========================================================================
-# Inlined helpers from app.py (test the logic directly, no app bootstrap)
+# Inlined helpers from that file (test the logic directly, no app bootstrap)
 # ===========================================================================
 
 def _looks_like_path(s: str) -> bool:
