@@ -17,6 +17,8 @@ import fs
 import anagnorisis_core.storage.virtual_file_system as vfs
 
 from src.utils import SortingProgressCallback, EmbeddingGatheringCallback
+from src.app_factory.path_guard import PathNotAuthorized
+import src.app_factory.path_guard as path_guard
 
 # -------------------------------------------------------------------------
 # MODULE-SPECIFIC HELPER FUNCTIONS
@@ -389,7 +391,12 @@ class TextModuleServer:
         file_path = data.get('file_path')
         full_path = file_path
 
-        base_url, path_in_fs = vfs.resolve_base_and_path_from_url(file_path)
+        try:
+            base_url, path_in_fs = path_guard.authorize_client_url(self.app, file_path)
+        except PathNotAuthorized as e:
+            print(f"[TextModuleServer] Blocked unauthorized read: {e}")
+            self.socketio.emit('emit_text_page_show_file_content', {"content": "Error loading file.", "file_path": file_path})
+            return
         try:
             with fs.open_fs(base_url) as my_fs:
                 # Read as binary and decode manually
@@ -403,14 +410,16 @@ class TextModuleServer:
 
     def handle_save_file(self, data):
         """Saves the content of a text file sent from the frontend."""
-        # TODO: Check if the file is writable and locally accessible before attempting to write.
-        # Otherwise, emit an error event back to the frontend.
 
         file_path = data.get('file_path')
-        text_content = data.get('text_content')
+        text_content = data.get('text_content') or ''
         full_path = file_path
 
-        base_url, path_in_fs = vfs.resolve_base_and_path_from_url(file_path)
+        try:
+            base_url, path_in_fs = path_guard.authorize_client_url(self.app, file_path)
+        except PathNotAuthorized as e:
+            print(f"[TextModuleServer] Blocked unauthorized write: {e}")
+            return
         try:
             with fs.open_fs(base_url) as my_fs:
                 # Open as binary 'wb' to write encoded text bytes safely

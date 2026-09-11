@@ -183,7 +183,7 @@ class VideoModuleServer:
 
         # .meta sidecar handlers + full description handler (shared helper)
         register_meta_handlers(
-            self.socketio, 'videos', self.metadata_search_engine
+            self.socketio, 'videos', self.metadata_search_engine, app=self.app
         )
 
         # HLS streaming Flask routes

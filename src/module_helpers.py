@@ -9,17 +9,23 @@ import os
 from omegaconf import OmegaConf
 import random
 
+from src.app_factory.path_guard import PathNotAuthorized
+import src.app_factory.path_guard as path_guard
+
 # ---------------------------------------------------------------------------
 # .meta file handlers + full description handler
 # ---------------------------------------------------------------------------
 
-def register_meta_handlers(socketio, module_name, metadata_search):
+def register_meta_handlers(socketio, module_name, metadata_search, app=None):
     """Register get/save .meta and get_full_description socket handlers.
 
     Args:
         socketio:        Flask-SocketIO instance.
-        module_name:     e.g. ``"images"`` — used to build event names.
+        module_name:     e.g. "images" — used to build event names.
         metadata_search: MetadataSearch instance.
+        app:             Flask app (needed for path authorization; callers that
+                         register the handlers from within a module server
+                         should pass self.app).
     """
     prefix = f'emit_{module_name}_page'
 
@@ -28,10 +34,14 @@ def register_meta_handlers(socketio, module_name, metadata_search):
         metadata_file_path = file_path + ".meta"
         content = ""
         try:
+            if app is not None:
+                path_guard.authorize_client_url(app, file_path)
             if os.path.exists(metadata_file_path):
                 with open(metadata_file_path, 'r', encoding='utf-8') as f:
                     content = f.read()
             print(f"Read external metadata for {file_path}")
+        except PathNotAuthorized as e:
+            print(f"[MetaHandlers] Blocked unauthorized read: {e}")
         except Exception as e:
             print(f"Error reading external metadata for {file_path}: {e}")
         return {"content": content, "file_path": file_path}
@@ -42,6 +52,8 @@ def register_meta_handlers(socketio, module_name, metadata_search):
         metadata_content = data['metadata_content']
         metadata_file_path = file_path + ".meta"
         try:
+            if app is not None:
+                path_guard.authorize_client_url(app, file_path)
             os.makedirs(os.path.dirname(metadata_file_path), exist_ok=True)
             with open(metadata_file_path, 'w', encoding='utf-8') as f:
                 f.write(metadata_content)
@@ -51,20 +63,11 @@ def register_meta_handlers(socketio, module_name, metadata_search):
             # remote file), so the one place that knows it changed drops the
             # stale embedding here.
             metadata_search.invalidate(file_path)
+        except PathNotAuthorized as e:
+            print(f"[MetaHandlers] Blocked unauthorized write: {e}")
         except Exception as e:
             print(f"Error saving metadata for {file_path}: {e}")
 
-    @socketio.on(f'{prefix}_get_full_metadata_description')
-    def get_full_metadata_description(file_path):
-        content = metadata_search.generate_full_description(
-            file_path, generate_desc_if_not_in_cache=False
-        )
-        return {"content": content, "file_path": file_path}
-
-
-# ---------------------------------------------------------------------------
-# Scheduled task factories
-# ---------------------------------------------------------------------------
 
 from src.file_manager import FileManager
 
