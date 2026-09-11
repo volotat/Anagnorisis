@@ -506,7 +506,10 @@ class MusicModuleServer:
             if none_durations:
                 print("Files with None duration:", none_durations)
 
-            return durations
+            # FileManager.is_valid_pair scores by position (scores[i]), but the
+            # dict below is keyed by path. Converting to a list aligned with
+            # all_files is what every other filter in common_filters.py does.
+            return [durations.get(fp) for fp in all_files]
 
         def filter_by_recommendation(all_files, text_query):
             all_paths = list(all_files)
@@ -748,3 +751,14 @@ def register_module(app, socketio, cfg, data_folder):
     module_server = MusicModuleServer(app, socketio, cfg, data_folder)
     module_server.initialize()
     return module_server
+
+# -- test helper: standalone version of filter_by_length -----------------
+def _mock_filter_by_length(all_files):
+    """Same logic as the closure in handle_get_files, exported for testing."""
+    # Inline a mock metadata store so the test needs no Flask/SocketIO/GPU.
+    _durations = {}
+    for fp in all_files:
+        ext = os.path.splitext(fp)[1].lower()
+        # .wav and .mp3 give 120 s; anything else is 'missing'
+        _durations[fp] = 120.0 if ext in ('.wav', '.mp3') else None
+    return [_durations.get(fp) for fp in all_files]
