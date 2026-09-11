@@ -1,5 +1,5 @@
 """
-Tests for src/common_filters.py
+Tests for anagnorisis_core/search/common_filters.py
 
 Covers:
   - _normalize_text(): accent stripping, separator normalisation, case folding,

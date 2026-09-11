@@ -305,7 +305,7 @@ Searching is expected to stay responsive no matter what the background tasks are
 | Database tables not created | Ensure `db_models.py` imports `db` from `src.db_models`, not a new `SQLAlchemy()` instance |
 | Module crashes on startup | Check the Docker/app logs; `init_socket_events` runs in a background thread, errors may be swallowed |
 | Files 404 in the browser | Verify the Flask route path matches what the frontend requests (e.g. `/my_module_files/...`) |
-| Stale embeddings after a model change | Bump `CONTENT_ALGORITHM_VERSION` in `src/content_search.py`; the model hash is already part of the cache key, so a genuine model swap invalidates on its own |
+| Stale embeddings after a model change | Bump `CONTENT_ALGORITHM_VERSION` in `anagnorisis_core/search/content_cache.py`; the model hash is already part of the cache key, so a genuine model swap invalidates on its own |
 | Your files are never indexed | Check that the extensions are listed under a media type in `media_types/media_types.yaml`, and that your module declares that type in `media_types:` |
 | `config.defaults.yaml` not being merged | Verify the file is at `modules/my_module/config.defaults.yaml` (not nested deeper) and the top-level YAML key matches the module folder name |
 | Scheduled tasks not running | Check that the interval in config is a positive number, not `null`. Verify `schedule_task()` is called after `init_socket_events` finishes setup |

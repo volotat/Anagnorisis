@@ -455,7 +455,7 @@ class UniversalEvaluator:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Self-test (run directly: python src/universal_evaluator.py)
+# Self-test (run directly: python -m anagnorisis_core.models.universal_evaluator)
 # ─────────────────────────────────────────────────────────────────────────────
 
 if __name__ == '__main__':
