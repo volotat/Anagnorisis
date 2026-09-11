@@ -60,7 +60,7 @@ my_module:
 and asks for the shared engine, scoped to that type:
 
 ```python
-from src.content_search import get_content_search
+from anagnorisis_core.search.content_search import get_content_search
 
 search_engine = get_content_search(cfg, 'images')
 search_engine.initiate(models_folder=cfg.main.embedding_models_path)

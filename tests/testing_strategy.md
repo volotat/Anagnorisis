@@ -56,20 +56,23 @@ docker-compose -f tests/docker-compose.test.yml run --rm anagnorisis-test pytest
 These run the `__main__` blocks of each subprocess worker to verify model loading and inference produce valid output.
 
 ```
-python3 -m anagnorisis_core.descriptor
-python3 -m src.universal_evaluator
-python3 -m src.recommendation_engine
-python3 -m src.share_api
+python3 -m anagnorisis_core.models.descriptor
+python3 -m anagnorisis_core.models.universal_evaluator
+python3 -m anagnorisis_core.search.recommendation_engine
 ```
+
+There is no `src.share_api` any more. Serving is `rclone` and describing a shared
+folder is the command line, so the data server has no subprocess worker of its
+own to self-test — see `data_server/README.md`.
 
 The three per-modality embedders and the four per-module engines no longer exist —
 one model and one engine replaced them. They have no `__main__` self-tests yet;
 what is worth covering instead is:
 
-- `anagnorisis_core.embedder` — load the model, embed one file of each media type, check
+- `anagnorisis_core.models.embedder` — load the model, embed one file of each media type, check
   the dimension and that the CPU query tower agrees with the GPU worker (they
   must produce interchangeable vectors, or search silently stops matching).
-- `src.content_search` — embed and compare a known file; confirm the cache key
+- `anagnorisis_core.search.content_search` — embed and compare a known file; confirm the cache key
   written matches the one the embedding proxy rebuilds.
 
 ### TODO — Structural improvements (future work)
@@ -78,9 +81,9 @@ what is worth covering instead is:
 - **Shared test fixtures** — create `tests/fixtures/` with one real JPEG, WAV, and TXT file reused across all engine tests instead of generating synthetic data per test.
 - **Two-tier CI** — run Tier 1 & 3 tests in GitHub Actions on every push (no GPU needed); keep Tier 2 as manual Docker-only tests.
 - **`anagnorisis_core/models/embedder.py` self-test** — the checks listed under Tier 2 above; the CPU/GPU agreement check in particular is load-bearing and currently only verified by hand.
-- **`src/metadata/search.py` integration test** — the full `generate_full_description()` pipeline (extractor → proxy → embedder → description) on a known file, verifying caching on the second call.
+- **`anagnorisis_core/search/metadata_search.py` integration test** — the full `generate_full_description()` pipeline (extractor → proxy → embedder → description) on a known file, verifying caching on the second call.
 - **A GPU-isolation regression test** — assert that no search path invokes the GPU worker. This is easy to check by stubbing `OmniEmbedder._execute` to raise, and easy to break accidentally.
-- **`src/media_types` coverage** — the registry rejects duplicate extensions across types and derives each module's `media_formats`; both are startup-critical and untested.
+- **`anagnorisis_core/media/media_types.py` coverage** — the registry rejects duplicate extensions across types and derives each module's `media_formats`; both are startup-critical and untested.
 
 ---
 

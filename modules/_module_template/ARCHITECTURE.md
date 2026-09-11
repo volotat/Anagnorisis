@@ -93,7 +93,7 @@ Tables are auto-created and auto-migrated via Flask-Migrate.
 
 ### Content search — shared, not per-module
 
-Modules no longer ship an `engine.py`. One multimodal model embeds every kind of content, and `src.content_search.ContentSearch` serves all of them; `get_content_search(cfg, media_type)` hands you an instance scoped to your media type. It provides:
+Modules no longer ship an `engine.py`. One multimodal model embeds every kind of content, and `anagnorisis_core.search.content_search.ContentSearch` serves all of them; `get_content_search(cfg, media_type)` hands you an instance scoped to your media type. It provides:
 
 - **Model downloading** from HuggingFace Hub → local `models/` directory, on first use
 - **Two-level caching** (in-memory + on-disk) in one shared `content` namespace, keyed by `(path, model_hash, version)`
@@ -145,20 +145,20 @@ Modules can include any extra `.py` files (e.g. `crawler.py` in the WebSearch mo
 | Module | Purpose |
 |--------|---------|
 | `src.socket_events.CommonSocketEvents` | Throttled status/progress broadcasting. Two methods: `show_loading_status()` (init phase) and `show_search_status()` (runtime). |
-| `src.content_search.get_content_search` | Returns the shared content-search engine, scoped to a media type. Embeds and compares file *content*. Replaces the per-module engines. |
+| `anagnorisis_core.search.content_search.get_content_search` | Returns the shared content-search engine, scoped to a media type. Embeds and compares file *content*. Replaces the per-module engines. |
 | `src.file_manager.FileManager` | Discovers files in `media_directory`, computes hashes, handles pagination, and coordinates with the search engine for embedding extraction. Also provides `get_unrated_files(evaluator_hash)` and `list_all_files()`. |
-| `src.common_filters.CommonFilters` | Pluggable sorting/filtering system. Built-in filters: `by_text`, `by_file`, `file_size`, `similarity`, `random`, `rating`. Modules can add custom filters (e.g. `recommendation`, `length`). |
-| `src.metadata.search.get_metadata_search` | Returns the process-wide `MetadataSearch`. Builds text descriptions from file metadata (name, path, EXIF/tags, OmniDescriptor captions, `.meta` sidecars) and embeds them for semantic search. Module-independent: it resolves a file's media type from its extension, so it needs nothing from your module. |
-| `anagnorisis_core.media_types.get_registry` | The media-type taxonomy loaded from `anagnorisis_core/data/media_types/`. Answers "what kind of content is this file", which decides its extensions, tag vocabulary and internal-metadata reader. |
-| `src.scoring_models.Evaluator` | Base neural network for scoring. The universal evaluator (`TransformerEvaluator`) is the preferred variant for cross-module rating. |
-| `src.model_manager.ModelManager` | Wraps ML models for GPU memory-efficient inference with automatic device management and idle timeout. |
+| `anagnorisis_core.search.common_filters.CommonFilters` | Pluggable sorting/filtering system. Built-in filters: `by_text`, `by_file`, `file_size`, `similarity`, `random`, `rating`. Modules can add custom filters (e.g. `recommendation`, `length`). |
+| `anagnorisis_core.search.metadata_search.get_metadata_search` | Returns the process-wide `MetadataSearch`. Builds text descriptions from file metadata (name, path, EXIF/tags, OmniDescriptor captions, `.meta` sidecars) and embeds them for semantic search. Module-independent: it resolves a file's media type from its extension, so it needs nothing from your module. |
+| `anagnorisis_core.media.media_types.get_registry` | The media-type taxonomy loaded from `anagnorisis_core/media/media_types/`. Answers "what kind of content is this file", which decides its extensions, tag vocabulary and internal-metadata reader. |
+| `anagnorisis_core.models.scoring_models.Evaluator` | Base neural network for scoring. The universal evaluator (`TransformerEvaluator`) is the preferred variant for cross-module rating. |
+| `anagnorisis_core.models.model_manager.ModelManager` | Wraps ML models for GPU memory-efficient inference with automatic device management and idle timeout. |
 | `src.db_models.db` | The shared SQLAlchemy instance. All modules must import `db` from here. |
-| `anagnorisis_core.embedder.get_omni_embedder` | The single embedding model — text, images, audio and video into one shared vector space. Runs in a subprocess to keep the CUDA context out of the Flask process, and unloads when idle. Used by background tasks. |
-| `anagnorisis_core.embedder.get_query_embedder` | The same model on the CPU, in-process, for embedding search queries. Searching must never touch the GPU. |
-| `anagnorisis_core.descriptor.OmniDescriptor` | Multi-modal captioning model that generates text descriptions from images, audio, video, or text files. |
+| `anagnorisis_core.models.embedder.get_omni_embedder` | The single embedding model — text, images, audio and video into one shared vector space. Runs in a subprocess to keep the CUDA context out of the Flask process, and unloads when idle. Used by background tasks. |
+| `anagnorisis_core.models.embedder.get_query_embedder` | The same model on the CPU, in-process, for embedding search queries. Searching must never touch the GPU. |
+| `anagnorisis_core.models.descriptor.OmniDescriptor` | Multi-modal captioning model that generates text descriptions from images, audio, video, or text files. |
 | `src.task_manager.TaskManager` | Centralised background task queue accessible via `app.task_manager`. Tasks run sequentially with cooperative pause/resume/cancel via `TaskContext`. Progress is broadcast to the frontend `TaskManagerComponent`. |
-| `src.scheduler.schedule_task` | Utility to run a function periodically on a daemon thread with `app.app_context()`. Used by all media modules for background rating and description generation. |
-| `anagnorisis_core.caching.TwoLevelCache` | Tiered RAM/disk cache with deferred writes and sharded storage. Used internally by search engines and metadata search. |
+| `src.scheduler.Scheduler` | Runs a function periodically on a daemon thread with `app.app_context()`. Used by all media modules for background rating and description generation. |
+| `anagnorisis_core.storage.caching.TwoLevelCache` | Tiered RAM/disk cache with deferred writes and sharded storage. Used internally by search engines and metadata search. |
 
 ## Shared JavaScript components
 
@@ -212,14 +212,14 @@ if (active and active.get('name', '').startswith(base_name)) or \
 
 ## Scheduled background tasks
 
-Media modules use `src.scheduler.schedule_task()` to periodically check for work and submit it to the Task Manager. Two patterns are standard:
+Media modules use `src.scheduler.Scheduler` to periodically check for work and submit it to the Task Manager. Two patterns are standard:
 
 ### Background rating
 
 Periodically finds files that the universal evaluator hasn't rated yet and submits them as a Task Manager job:
 
 ```python
-from src.scheduler import schedule_task
+from src.scheduler import Scheduler
 
 def _check_and_submit_rating():
     """Scheduled: find unrated files and submit a rating task."""
@@ -228,13 +228,14 @@ def _check_and_submit_rating():
     # 3. app.task_manager.submit('My Module: rate unrated files (N)', task)
 
 rating_interval = OmegaConf.select(cfg, 'my_module.rating_update_interval_minutes', default=None)
-schedule_task(app, interval_minutes=rating_interval, fn=_check_and_submit_rating)
+Scheduler(app, interval_minutes=rating_interval, fn=_check_and_submit_rating,
+          name='My Module: rate unrated files')
 ```
 
 ### Background description generation
 
 Your module does **not** schedule this. Descriptions and metadata embeddings are
-filled by the app-wide `MetadataIndexer` (`src/metadata/indexer.py`), which makes
+filled by the app-wide `MetadataIndexer` (`src/metadata_indexer.py`), which makes
 one pass over every configured server and covers every media type at once — so a
 file is described and searchable whether or not a module owns its content kind.
 Its intervals and batch sizes live in the `metadata_search:` section of

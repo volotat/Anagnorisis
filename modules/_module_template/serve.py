@@ -361,5 +361,5 @@ def init_socket_events(socketio, app=None, cfg=None, data_folder='./project_data
               check_fn=lambda: evaluator.hash is not None and len(example_file_manager.get_unrated_files(evaluator.hash)) > 0)
 
     # Descriptions and metadata embeddings need no scheduler here: the app-wide
-    # MetadataIndexer (src/metadata/indexer.py) covers every media type on every
+    # MetadataIndexer (src/metadata_indexer.py) covers every media type on every
     # configured server in a single pass.

@@ -33,7 +33,7 @@ Consistent naming is what makes auto-discovery and cross-module compatibility wo
 - Define thin socket event handlers that delegate to engine / file manager
 - Register Flask routes
 
-Heavy logic belongs elsewhere: embedding in the shared `ContentSearch` engine, internal-metadata reading in `anagnorisis_core/extractors/`, and anything module-specific in a utility file within your module folder.
+Heavy logic belongs elsewhere: embedding in the shared `ContentSearch` engine, internal-metadata reading in `anagnorisis_core/media/extractors/`, and anything module-specific in a utility file within your module folder.
 
 ### Use `CommonSocketEvents` for all user-facing status
 
@@ -284,7 +284,7 @@ Use `<style>` blocks inside `page.html` for module-specific styles. Don't create
 
 ### Let internal-metadata readers be fast
 
-`get_metadata()` is called for every file on every page load. The readers in `anagnorisis_core/extractors/` avoid heavy I/O for this reason — the `stat` reader never opens a file at all, and the audio reader streams only the tag block rather than the whole track. Results are cached on `(path, mtime)`, but the first call still happens on the request thread, so keep it cheap. If your media type needs an expensive reader, do the expensive part in a background pass instead.
+`get_metadata()` is called for every file on every page load. The readers in `anagnorisis_core/media/extractors/` avoid heavy I/O for this reason — the `stat` reader never opens a file at all, and the audio reader streams only the tag block rather than the whole track. Results are cached on `(path, mtime)`, but the first call still happens on the request thread, so keep it cheap. If your media type needs an expensive reader, do the expensive part in a background pass instead.
 
 ### Never read remote file content in a background pass
 
@@ -305,7 +305,7 @@ Searching is expected to stay responsive no matter what the background tasks are
 | Database tables not created | Ensure `db_models.py` imports `db` from `src.db_models`, not a new `SQLAlchemy()` instance |
 | Module crashes on startup | Check the Docker/app logs; `init_socket_events` runs in a background thread, errors may be swallowed |
 | Files 404 in the browser | Verify the Flask route path matches what the frontend requests (e.g. `/my_module_files/...`) |
-| Stale embeddings after a model change | Bump `CONTENT_ALGORITHM_VERSION` in `src/content_search.py`; the model hash is already part of the cache key, so a genuine model swap invalidates on its own |
+| Stale embeddings after a model change | Bump `CONTENT_ALGORITHM_VERSION` in `anagnorisis_core/search/content_cache.py`; the model hash is already part of the cache key, so a genuine model swap invalidates on its own |
 | Your files are never indexed | Check that the extensions are listed under a media type in `media_types/media_types.yaml`, and that your module declares that type in `media_types:` |
 | `config.defaults.yaml` not being merged | Verify the file is at `modules/my_module/config.defaults.yaml` (not nested deeper) and the top-level YAML key matches the module folder name |
 | Scheduled tasks not running | Check that the interval in config is a positive number, not `null`. Verify `schedule_task()` is called after `init_socket_events` finishes setup |

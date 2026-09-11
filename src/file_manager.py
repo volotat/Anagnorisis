@@ -80,7 +80,7 @@ class FileManager:
         self.engine = engine
 
         # Traversal, the directory cache and server availability are shared
-        # process-wide — see src/file_walker.py.
+        # process-wide — see anagnorisis_core/storage/file_walker.py.
         self._walker = get_file_walker(app.user_cfg.servers, cfg.main.cache_path)
         self.servers = self._walker.servers
 

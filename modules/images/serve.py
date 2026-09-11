@@ -186,7 +186,7 @@ class ImageModuleServer:
         )
 
         # Descriptions and metadata embeddings are filled by the app-wide
-        # MetadataIndexer (src/metadata/indexer.py), which covers every media
+        # MetadataIndexer (src/metadata_indexer.py), which covers every media
         # type on every server in one pass.
 
 
