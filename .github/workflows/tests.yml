@@ -1,0 +1,47 @@
+name: tests
+
+# Tier 1 (engine + application, no GPU) and Tier 3 (security) only, which is
+# what tests/testing_strategy.md asks for here. Tier 2 loads real models and
+# needs an NVIDIA GPU, so it stays a manual Docker run.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: pip
+
+      # Same order as tests/Dockerfile.test and Dockerfile: torch first from the
+      # index that matches this runner (no CUDA on a GitHub runner), then the
+      # rest of requirements.txt, which is satisfied by that torch.
+      - name: Install PyTorch (CPU)
+        run: pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pytest
+          pip install --no-deps -e ./anagnorisis_core
+
+      # The two suites are run separately on purpose: pytest.ini explains that
+      # which half fails tells you whether the break is in the engine or in the
+      # application, and a single `pytest -q` hides that in one summary.
+      - name: Engine tests (anagnorisis_core/tests)
+        run: pytest anagnorisis_core/tests -q
+
+      - name: Application tests (tests)
+        run: pytest tests -q
