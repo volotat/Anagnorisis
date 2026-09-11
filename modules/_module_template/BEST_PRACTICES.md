@@ -33,7 +33,7 @@ Consistent naming is what makes auto-discovery and cross-module compatibility wo
 - Define thin socket event handlers that delegate to engine / file manager
 - Register Flask routes
 
-Heavy logic belongs elsewhere: embedding in the shared `ContentSearch` engine, internal-metadata reading in `anagnorisis_core/extractors/`, and anything module-specific in a utility file within your module folder.
+Heavy logic belongs elsewhere: embedding in the shared `ContentSearch` engine, internal-metadata reading in `anagnorisis_core/media/extractors/`, and anything module-specific in a utility file within your module folder.
 
 ### Use `CommonSocketEvents` for all user-facing status
 
@@ -284,7 +284,7 @@ Use `<style>` blocks inside `page.html` for module-specific styles. Don't create
 
 ### Let internal-metadata readers be fast
 
-`get_metadata()` is called for every file on every page load. The readers in `anagnorisis_core/extractors/` avoid heavy I/O for this reason — the `stat` reader never opens a file at all, and the audio reader streams only the tag block rather than the whole track. Results are cached on `(path, mtime)`, but the first call still happens on the request thread, so keep it cheap. If your media type needs an expensive reader, do the expensive part in a background pass instead.
+`get_metadata()` is called for every file on every page load. The readers in `anagnorisis_core/media/extractors/` avoid heavy I/O for this reason — the `stat` reader never opens a file at all, and the audio reader streams only the tag block rather than the whole track. Results are cached on `(path, mtime)`, but the first call still happens on the request thread, so keep it cheap. If your media type needs an expensive reader, do the expensive part in a background pass instead.
 
 ### Never read remote file content in a background pass
 
