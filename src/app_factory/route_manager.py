@@ -185,7 +185,21 @@ class RouteManager:
                 print(f"[SECURITY WARNING] Path resolution failed for URL: {filename}")
                 abort(400)
 
-            # 3. Open the filesystem and verify the resource exists and is a file
+            # 3. Authorization (default deny) — BEFORE anything touches the
+            #    network or the disk. Opening the filesystem first turned this
+            #    route into an SSRF: base_url comes from the client, so
+            #    /files/ftp://host:port/... made the server connect to a host of
+            #    the caller's choosing (a cloud-metadata address included), and
+            #    the 400/403/404 it answered with told the caller whether that
+            #    host was reachable and whether the file existed. Authorizing
+            #    the resolved URL first means an unconfigured server is never
+            #    contacted at all.
+            file_name = basename(clean_path_in_fs)
+            if not _is_authorized(normalized_url, file_name):
+                print(f"[SECURITY WARNING] Unauthorized access attempt out of bounds: {filename}")
+                abort(403)
+
+            # 4. Open the filesystem and verify the resource exists and is a file
             try:
                 my_fs = fs.open_fs(base_url)
                 info = my_fs.getinfo(clean_path_in_fs, namespaces=['details'])
@@ -200,13 +214,6 @@ class RouteManager:
                 my_fs.close()
                 print(f"[SECURITY WARNING] Attempt to access a non-file path: {filename}")
                 abort(404)
-
-            # 4. Authorization (default deny)
-            file_name = basename(clean_path_in_fs)
-            if not _is_authorized(normalized_url, file_name):
-                my_fs.close()
-                print(f"[SECURITY WARNING] Unauthorized access attempt out of bounds: {filename}")
-                abort(403)
 
             # 5. Serve the file with HTTP Range support (audio seeking/scrubbing).
             #    Werkzeug's send_file only auto-detects size for real paths / BytesIO — for a
