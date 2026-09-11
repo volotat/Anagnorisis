@@ -1,7 +1,7 @@
 from flask_sqlalchemy import SQLAlchemy
 import csv
 from io import StringIO
-from sqlalchemy import inspect, or_, MetaData
+from sqlalchemy import inspect, or_, text, MetaData
 from sqlalchemy.types import DateTime
 from datetime import datetime
 
@@ -36,6 +36,16 @@ def export_db_to_csv(db_session, excluded_columns=None):
     """
     Exports all data from all tables in the database to a CSV string,
     excluding specified BLOB columns.
+
+    The tables are read from the database itself, not from the models. The two
+    can disagree and both directions matter: a table whose model is loaded while
+    the schema has not been migrated yet must not abort the export (querying it
+    raised OperationalError and took the whole /export_database_csv response
+    with it), and a table that is in the database but has no model right now —
+    a module that is disabled or was removed, which the migration guard in
+    migrations/env.py deliberately keeps — must not be silently dropped from the
+    backup. Columns come from the model when there is one, and from the database
+    catalog otherwise.
     """
     if excluded_columns is None:
       excluded_columns = []
@@ -47,21 +57,38 @@ def export_db_to_csv(db_session, excluded_columns=None):
         escapechar='\\'  
     )
 
-    for table_name, table in db.Model.metadata.tables.items():
-        # Get column names from the table
-        inspector = inspect(db.engine)
-        column_names = [col.name for col in table.columns if col.name not in excluded_columns ]
+    # alembic_version is bookkeeping, not user data: it was never part of an
+    # export before and must not become one now.
+    inspector = inspect(db_session.get_bind())
+    db_tables = set(inspector.get_table_names()) - {'alembic_version'}
+    models = db.Model.metadata.tables
+
+    # Model order first so an unchanged database exports byte-identically to
+    # before; then the tables no model claims, in a stable order.
+    ordered = [(name, table) for name, table in models.items() if name in db_tables]
+    ordered += [(name, None) for name in sorted(db_tables - set(models))]
+
+    for table_name, table in ordered:
+        if table is not None:
+            column_names = [col.name for col in table.columns if col.name not in excluded_columns]
+            rows = [[getattr(row, col) for col in column_names]
+                    for row in db_session.query(table).all()]
+        else:
+            # No model: take the columns from the database catalog and read the
+            # rows as plain tuples.
+            column_names = [col['name'] for col in inspector.get_columns(table_name)
+                            if col['name'] not in excluded_columns]
+            quoted_columns = ', '.join('"%s"' % col for col in column_names)
+            result = db_session.execute(
+                text('SELECT %s FROM "%s"' % (quoted_columns, table_name))
+            )
+            rows = [tuple(row) for row in result.fetchall()]
 
         # Write header
         csv_writer.writerow([f'{table_name}.{col}' for col in column_names])
 
-        # Fetch data for the current table
-        query = db_session.query(table)
-        for row in query.all():
-                row_data = []
-                for col in column_names:
-                    row_data.append(getattr(row, col))
-                csv_writer.writerow(row_data)
+        for row in rows:
+            csv_writer.writerow(row)
     return csv_output.getvalue()
 
 def import_db_from_csv(db_session, csv_data):

@@ -19,6 +19,7 @@ import io
 import pytest
 from datetime import datetime
 from flask import Flask
+from sqlalchemy import Column, Integer, String, Table, text
 from src.db_models import db, export_db_to_csv, import_db_from_csv
 
 
@@ -51,11 +52,33 @@ def app():
     flask_app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     db.init_app(flask_app)
     with flask_app.app_context():
-        db.create_all()
+        # Only this file's table is created. SQLAlchemy metadata is process-wide
+        # and src.db_models already registered the application's own tables
+        # (files_library), so db.create_all() would put tables in this database
+        # that this file does not own — and export_db_to_csv() exports what the
+        # database holds, so it would legitimately export them too.
+        _TestLibrary.__table__.create(db.engine)
         yield flask_app
     # Drop everything after each test
     with flask_app.app_context():
-        db.drop_all()
+        _TestLibrary.__table__.drop(db.engine)
+
+
+@pytest.fixture()
+def model_table_without_schema(app):
+    """A table that exists as a model but not in the database.
+
+    This is the state the app is in when a module's models are loaded but the
+    schema has not been migrated for it yet.
+    """
+    table = Table(
+        'model_only_table', db.Model.metadata,
+        Column('id', Integer, primary_key=True),
+        Column('hash', String),
+    )
+    yield table
+    with app.app_context():
+        db.Model.metadata.remove(table)
 
 
 @pytest.fixture()
@@ -81,6 +104,29 @@ def _parse_csv(csv_str: str):
     headers = rows[0] if rows else []
     data = rows[1:]
     return headers, data
+
+
+def _sections(csv_str: str):
+    """Split an export into ``{table: (header_row, data_rows)}``.
+
+    An export holds one section per table and each section has its own header
+    row, so the first line of the file is only the first table's header. A row
+    starts a section when every cell is ``table.column`` for one table — the
+    same rule import_db_from_csv() uses to find a header.
+    """
+    reader = csv.reader(io.StringIO(csv_str), quoting=csv.QUOTE_MINIMAL, escapechar='\\')
+    sections = {}
+    current = None
+    for row in reader:
+        if row and all('.' in cell for cell in row):
+            table = row[0].split('.', 1)[0]
+            if all(cell.split('.', 1)[0] == table for cell in row):
+                current = table
+                sections[current] = (row, [])
+                continue
+        if current is not None:
+            sections[current][1].append(row)
+    return sections
 
 
 # ---------------------------------------------------------------------------
@@ -121,6 +167,58 @@ class TestExportDbToCsv:
         _insert(session, hash='dt1', file_path='d.jpg', rated_at=dt)
         result = export_db_to_csv(session)
         assert '2024-06-15' in result
+
+    def test_export_skips_a_model_table_missing_from_the_database(
+            self, session, model_table_without_schema):
+        """A model whose table has not been created must not abort the export.
+
+        src/app_factory/database_manager.py reaches this state on a restored
+        backup or a re-enabled module: the models are imported, so they are in
+        the metadata, while the schema still has to be migrated. Querying the
+        missing table used to raise OperationalError and take the whole
+        /export_database_csv response down with it.
+        """
+        _insert(session, hash='abc', file_path='a.jpg', user_rating=7.0)
+
+        result = export_db_to_csv(session)
+
+        sections = _sections(result)
+        assert 'model_only_table' not in sections
+        assert len(sections['test_library'][1]) == 1
+
+    def test_export_includes_a_database_table_without_a_model(self, session):
+        """A table left behind by a disabled or removed module is still exported.
+
+        migrations/env.py deliberately refuses to drop a data-bearing table when
+        its module is not loaded, so such a table can exist in the database with
+        no model to describe it. It has to survive a backup.
+        """
+        session.execute(text(
+            'CREATE TABLE videos_library (id INTEGER PRIMARY KEY, hash TEXT, user_rating REAL)'
+        ))
+        session.execute(text(
+            "INSERT INTO videos_library (hash, user_rating) VALUES ('v1', 9.5)"
+        ))
+        session.commit()
+
+        result = export_db_to_csv(session)
+
+        headers, rows = _sections(result)['videos_library']
+        assert headers == ['videos_library.id', 'videos_library.hash',
+                           'videos_library.user_rating']
+        assert rows == [['1', 'v1', '9.5']]
+
+    def test_export_excludes_columns_from_a_database_table_without_a_model(self, session):
+        """excluded_columns applies to model-less tables too."""
+        session.execute(text(
+            'CREATE TABLE videos_library (id INTEGER PRIMARY KEY, hash TEXT, embedding BLOB)'
+        ))
+        session.commit()
+
+        result = export_db_to_csv(session, excluded_columns=['embedding'])
+
+        headers, _ = _sections(result)['videos_library']
+        assert headers == ['videos_library.id', 'videos_library.hash']
 
 
 class TestImportDbFromCsv:
@@ -196,3 +294,4 @@ class TestImportDbFromCsv:
 if __name__ == '__main__':
     import pytest
     pytest.main([__file__, '-v'])
+
