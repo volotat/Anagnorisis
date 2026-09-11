@@ -135,7 +135,7 @@ class MusicModuleServer:
 
         # .meta sidecar handlers + full description handler (shared helper)
         src.module_helpers.register_meta_handlers(
-            self.socketio, 'music', self.metadata_search_engine
+            self.socketio, 'music', self.metadata_search_engine, app=self.app
         )
 
     def _register_schedulers(self):

@@ -148,7 +148,7 @@ class ImageModuleServer:
 
         # .meta sidecar handlers + full description handler (shared helper)
         src.module_helpers.register_meta_handlers(
-            self.socketio, 'images', self.metadata_search_engine
+            self.socketio, 'images', self.metadata_search_engine, app=self.app
         )
 
     def _register_schedulers(self):

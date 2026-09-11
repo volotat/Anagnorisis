@@ -225,6 +225,20 @@ def _cap_visual_pixels(model, max_side: int = 512) -> None:
                 pass
 
 
+def _apply_input_caps(model, cfg) -> None:
+    """Apply the input caps to a freshly loaded model, in whichever process it is.
+
+    Both copies of the tower must preprocess a file the same way or they do not
+    produce interchangeable vectors: the query tower embeds *files* as well as
+    phrases when a search box is handed an image, a clip or a song, and those
+    vectors are compared against file embeddings built by the worker. Applying
+    the caps in one process and not the other means the same image is resized
+    twice differently and "find things like this one" quietly stops matching.
+    """
+    _cap_audio_decode(float(getattr(cfg.embedder, 'audio_seconds', 30.0) or 30.0))
+    _cap_visual_pixels(model, int(getattr(cfg.embedder, 'video_frame_max_size', 512) or 512))
+
+
 def cosine_similarity(embeddings, query_embedding) -> List[float]:
     """Cosine similarity of each row against the query.
 
@@ -284,8 +298,7 @@ class _OmniEmbedderImpl:
         )
         self.model.eval()
         _block_url_fetching()
-        _cap_audio_decode(float(getattr(self.cfg.embedder, 'audio_seconds', 30.0) or 30.0))
-        _cap_visual_pixels(self.model, self._visual_max_side())
+        _apply_input_caps(self.model, self.cfg)
 
         self.max_seq_length = int(getattr(self.model, 'max_seq_length', 0) or 0)
         self.model_hash = self._calculate_model_hash(local_path)
@@ -1027,6 +1040,11 @@ class QueryEmbedder:
                 # The search path is the more exposed one: a query pasted into
                 # the search bar reaches this directly.
                 _block_url_fetching()
+                # And the same input caps the worker applied to the tower that
+                # built the index: without them this tower resizes the same
+                # image differently and its vectors stop lining up with the
+                # file embeddings they are compared against.
+                _apply_input_caps(self._model, self.cfg)
                 self._load_attempted = True
                 print(f"[QueryEmbedder] Loaded on CPU for search queries "
                       f"(modality={self.modality!r}).")
