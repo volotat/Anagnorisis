@@ -9,28 +9,28 @@ music:
   media_directory: osfs:///mnt/media/music/
   media_types: [audio]
   rating_update_interval_minutes: 10 # How often to proactively rate unrated files in the background (set to null to disable)
-  rating_update_batch_size: 3000 # Max number of files rated per background run (set to null for no limit)
-  embedding_update_batch_size: 1000
+  rating_update_batch_size: 1000 # Max number of files rated per background run (set to null for no limit)
+  embedding_update_batch_size: 500 # Audio embeddings generation is roughly 2x slower then images or text
   embedding_update_interval_minutes: 10
 images:
   media_directory: osfs:///mnt/media/images/
   media_types: [images]
   rating_update_interval_minutes: 10 # How often to proactively rate unrated files in the background (set to null to disable)
-  rating_update_batch_size: 3000 # Max number of files rated per background run (set to null for no limit)
+  rating_update_batch_size: 1000 # Max number of files rated per background run (set to null for no limit)
   embedding_update_batch_size: 1000
   embedding_update_interval_minutes: 10
 videos:
   media_directory: osfs:///mnt/media/videos/
   media_types: [videos]
   rating_update_interval_minutes: 10 # How often to proactively rate unrated files in the background (set to null to disable)
-  rating_update_batch_size: 3000 # Max number of files rated per background run (set to null for no limit)
-  embedding_update_batch_size: 200 # Videos are the slowest to embed — keep the batch small
+  rating_update_batch_size: 1000 # Max number of files rated per background run (set to null for no limit)
+  embedding_update_batch_size: 150  # Videos are the slowest to embed — keep the batch small
   embedding_update_interval_minutes: 10
 text:
   media_directory: osfs:///mnt/media/text/
   media_types: [text]
   rating_update_interval_minutes: 10 # How often to proactively rate unrated files in the background (set to null to disable)
-  rating_update_batch_size: 1500 # Max number of files rated per background run (set to null for no limit)
+  rating_update_batch_size: 1000 # Max number of files rated per background run (set to null for no limit)
   embedding_update_batch_size: 1000
   embedding_update_interval_minutes: 10
 embedder: # The single model that embeds everything — text, images, audio and video.

@@ -21,6 +21,42 @@
 
 services:
   anagnorisis:
+    # --- GPU ---
+    # NVIDIA is the default and needs nothing here: install the NVIDIA
+    # Container Toolkit on the host and leave this section commented out.
+    #
+    # --- AMD Radeon (ROCm) ---
+    # Uncomment this whole block to use an AMD GPU instead. It replaces the
+    # NVIDIA setup from docker-compose.yaml. Needs Docker Compose 2.24 or newer.
+    #
+    # image: anagnorisis:rocm
+    # build:
+    #   args:
+    #     GPU_BACKEND: rocm
+    # deploy: !reset {}
+    # devices:
+    #   - /dev/kfd
+    #   - /dev/dri
+    # group_add:
+    #   - video
+    #   - render
+    #
+    # Only for consumer cards ROCm does not officially support. Leave it
+    # commented out on supported cards, where it breaks things. Add it under
+    # "environment:" below:
+    #   - HSA_OVERRIDE_GFX_VERSION=10.3.0   # RDNA2, RX 6000 series
+    #   - HSA_OVERRIDE_GFX_VERSION=11.0.0   # RDNA3, RX 7000 series
+    #
+    # --- No GPU (CPU only) ---
+    # Uncomment instead to run without a GPU. Much slower, and the descriptor
+    # needs omni.load_in_4bit set to false in config.yaml.
+    #
+    # image: anagnorisis:cpu
+    # build:
+    #   args:
+    #     GPU_BACKEND: cpu
+    # deploy: !reset {}
+
 
     # --- Container name (used for log file naming) ---
     container_name: anagnorisis-app
@@ -74,3 +110,8 @@ services:
       
       # Uncomment to enable file deletion features (send to trash):
       # - ALLOW_FILE_DELETION=true
+
+      # Uncomment for AMD support. RDNA2 (RX 6000 series)
+      # - HSA_OVERRIDE_GFX_VERSION=10.3.0   
+      # Uncomment for AMD support. RDNA3 (RX 7000 series)
+      # - HSA_OVERRIDE_GFX_VERSION=11.0.0 

@@ -20,7 +20,16 @@ ENV PATH="/venv/bin:$PATH"
 # Upgrade pip and install PyTorch with CUDA support
 # PyTorch CUDA wheels bundle their own libcudart/cuBLAS, so no CUDA base image needed.
 RUN pip install --no-cache-dir --upgrade pip
-RUN pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
+
+# Install torch with selected backend (CUDA, ROCm or CPU)
+ARG GPU_BACKEND=cuda
+RUN case "$GPU_BACKEND" in \
+      cuda) IDX=https://download.pytorch.org/whl/cu124 ;; \
+      rocm) IDX=https://download.pytorch.org/whl/rocm6.2 ;; \
+      cpu)  IDX=https://download.pytorch.org/whl/cpu ;; \
+      *) echo "GPU_BACKEND must be cuda, rocm or cpu, got '$GPU_BACKEND'" >&2; exit 1 ;; \
+    esac \
+ && pip install --no-cache-dir torch torchvision torchaudio --index-url "$IDX"
 
 # Copy and install main requirements
 COPY requirements.txt /tmp/
