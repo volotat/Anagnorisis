@@ -373,9 +373,12 @@ class ImageModuleServer:
         # Step 1: Compute content embeddings (fast — results are disk-cached)
         _progress[0] = 0.1
         _status(f"Computing content embeddings for {len(files_list)} files...")
-        embeddings = self.images_search_engine.process_files(
+        # The return value is deliberately unused: this call is here to warm the
+        # content-embedding cache, which the proxy section of each description
+        # reads below. Holding on to the vectors as well only costs memory.
+        self.images_search_engine.process_files(
             files_list, callback=_embedding_callback, media_folder=self.media_directory
-        )  # list of per-file chunk vectors
+        )
 
 
         # Step 3: Build text descriptions (includes proxy section) + Jina embed
@@ -402,6 +405,9 @@ class ImageModuleServer:
                 all_embeddings.append(np.zeros((1, embedding_dim), dtype=np.float32))
 
         # Step 4: Predict with the universal evaluator and persist into FilesLibrary
+        # Silent until now: the status still read "computing metadata
+        # embeddings" while this ran, so a pause here looked like a hang.
+        _status(f"Scoring {len(all_embeddings)} images with the evaluator...")
         model_ratings = self.images_evaluator.predict(all_embeddings)
 
         _progress[0] = 0.7

@@ -43,6 +43,14 @@ class MetadataSearch:
         # which is constant until the descriptor is actually loaded. '' means
         # "asked, and there is none"; None means "not asked yet".
         self._cold_omni_hash: Optional[str] = None
+
+        # Composed embedding keys, remembered briefly for the read-only search
+        # path. See _search_cache_key for why this is safe there and not while
+        # indexing. Cleared wholesale rather than evicted: it is a speed aid,
+        # and rebuilding it costs one search.
+        self._search_key_memo: dict[str, tuple[float, str]] = {}
+        self._search_key_ttl = 30.0
+        self._search_key_memo_max = 200_000
         self.types = get_registry(cfg)
         # The GPU worker builds the index; the CPU tower answers queries.
         self.embedder = get_omni_embedder(cfg)
@@ -125,8 +133,13 @@ class MetadataSearch:
             self._cold_omni_hash = None
         return descriptor.model_hash
 
-    def make_description_cache_key(self, file_path: str) -> str:
-        media_type = self.media_type_for(file_path)
+    def make_description_cache_key(self, file_path: str, media_type=None) -> str:
+        # *media_type* is accepted so a caller that already resolved it does not
+        # make this parse the extension again. Searching calls this once per
+        # file over the whole library, and it used to be the second of two
+        # identical lookups for every one of them.
+        if media_type is None:
+            media_type = self.media_type_for(file_path)
         method_name = models.describe_method_for(media_type.name if media_type else None)
         return (
             f"auto_desc::{file_path}::{self._get_omni_model_hash()}::{method_name}"
@@ -255,7 +268,8 @@ class MetadataSearch:
         """
         media_type = self.media_type_for(file_path)
 
-        description = self._fast_cache.get(self.make_description_cache_key(file_path))
+        description = self._fast_cache.get(
+            self.make_description_cache_key(file_path, media_type))
         desc_sig = _digest(description) if description else 'none'
 
         proxy = self._proxy_for(media_type)
@@ -267,6 +281,33 @@ class MetadataSearch:
             f"proxy::{proxy_sig}::"
             f"alg::{self.get_algorithm_version()}"
         )
+
+    def _search_cache_key(self, file_path: str) -> str:
+        """The embedding key, memoised briefly, for read-only search.
+
+        Composing the key needs the file's description fetched and hashed, so
+        it is a second cache lookup for every file in the library on every
+        query. The key only changes when a background pass writes a new
+        description for that file.
+
+        A stale key is not a wrong answer: the previous key still resolves to
+        the embedding that was written under it, so the worst case is one
+        slightly out-of-date ranking for at most a few seconds.
+
+        Deliberately not used while indexing, where the same staleness would
+        mean re-embedding a file that is already done, or skipping one that is
+        not.
+        """
+        now = time.time()
+        entry = self._search_key_memo.get(file_path)
+        if entry is not None and entry[0] > now:
+            return entry[1]
+
+        key = self.make_embedding_cache_key(file_path)
+        if len(self._search_key_memo) >= self._search_key_memo_max:
+            self._search_key_memo.clear()
+        self._search_key_memo[file_path] = (now + self._search_key_ttl, key)
+        return key
 
     def get_unembedded_files(self, file_paths: list[str]) -> list[str]:
         """Return paths with no cached metadata embedding, unknown types skipped."""
@@ -282,6 +323,7 @@ class MetadataSearch:
         Called when something outside the cache-key inputs changes the
         description — in practice, the user editing a .meta sidecar.
         """
+        self._search_key_memo.pop(file_path, None)
         self._fast_cache.set(self.make_embedding_cache_key(file_path), None)
 
     def process_query(self, query_text: str):
@@ -322,7 +364,11 @@ class MetadataSearch:
         score per file by smooth-max.
         """
         try:
-            cache_key = self.make_embedding_cache_key(file_path)
+            # Searching is read-only and runs over the whole library, so it can
+            # take the memoised key. Indexing composes it fresh every time.
+            cache_key = (self.make_embedding_cache_key(file_path)
+                         if generate_embs_if_not_in_cache
+                         else self._search_cache_key(file_path))
 
             cached_chunks = self._fast_cache.get(cache_key)
             if cached_chunks is not None:

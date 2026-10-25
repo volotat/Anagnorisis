@@ -408,6 +408,9 @@ class MusicModuleServer:
                 all_embeddings.append(np.zeros((1, embedding_dim), dtype=np.float32))
 
         # Step 4: Predict with the universal evaluator and persist into FilesLibrary
+        # Silent until now: the status still read "computing metadata
+        # embeddings" while this ran, so a pause here looked like a hang.
+        _status(f"Scoring {len(all_embeddings)} music with the evaluator...")
         model_ratings = self.music_evaluator.predict(all_embeddings)
 
         _progress[0] = 0.7

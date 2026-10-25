@@ -27,37 +27,43 @@ def weighted_shuffle(scores, temperature=1.0):
     of the *scored* items too; in the sampling branch it turns the probability
     sum into NaN and degrades every item to a uniform draw.
     """
-    remaining = list(range(len(scores)))
-    indices = []
     scores = np.array(scores, dtype=np.float64)  # Use float64 for stability
     scores = np.nan_to_num(scores, nan=-np.inf)
 
     if temperature == 0:
-        # Strict mode: sort remaining indices by their scores in descending order
-        # and append them all at once.
-        sorted_remaining_indices = sorted(remaining, key=lambda i: scores[i], reverse=True)
-        return sorted_remaining_indices
+        # Strict mode: highest score first, ties in their original order.
+        return np.argsort(-scores, kind='stable').tolist()
 
-    while remaining:
-        # Apply temperature to the scores of the remaining items
-        current_scores = scores[remaining]
-        
-        # Prevent overflow/underflow with very high/low scores
-        current_scores = np.clip(current_scores, 1e-9, None)
-        
-        # The core of the temperature logic
-        adjusted_scores = current_scores ** (1 / temperature)
+    # Sampling without replacement, with probability proportional to
+    # score ** (1 / temperature), in one pass.
+    #
+    # This used to be a loop that re-sliced, re-normalised and re-sampled the
+    # whole remaining array for every single pick, and then popped from the
+    # middle of a list. That is O(n^2): measured 0.6s at 5,000 items, 1.9s at
+    # 9,500, and around 13s at 24,000, all of it inside a search request.
+    #
+    # The Gumbel top-k identity gives the identical distribution from one sort:
+    # perturb each log-weight by a Gumbel variate and rank by the result.
+    # Drawing repeatedly in proportion to w and sorting by log(w) + G produce
+    # the same ordering, so this is a speed change and not a behaviour one.
+    #
+    # Working in logs also removes the overflow the old code had to guard: at a
+    # low temperature, score ** (1 / temperature) could reach inf and collapse
+    # every probability to uniform.
+    weights = np.clip(scores, 1e-9, None)
+    log_weights = np.log(weights) / temperature
 
-        total = adjusted_scores.sum()
-        if total == 0 or not np.isfinite(total):
-            # If total is 0 or inf, assign uniform probabilities.
-            probs = np.ones(len(remaining)) / len(remaining)
-        else:
-            probs = adjusted_scores / total
-        
-        pick = np.random.choice(len(remaining), p=probs)
-        indices.append(remaining.pop(pick))
-    return indices
+    # np.random rather than a Generator on purpose: the app seeds the global
+    # legacy RNG (file_manager.get_files) so that a given seed keeps paging
+    # stable, and a Generator would ignore that seed.
+    uniform = np.random.random(len(scores))
+    # Both ends of the interval send the Gumbel variate to an infinity, which
+    # would make the sort order undefined rather than merely extreme.
+    uniform = np.clip(uniform, 1e-12, 1.0 - 1e-12)
+    gumbel = -np.log(-np.log(uniform))
+
+    # Descending: argsort is ascending, so rank the negated keys.
+    return np.argsort(-(log_weights + gumbel), kind='stable').tolist()
 
 import time
 

@@ -65,6 +65,80 @@ Each entry records the version, the machine, and how many files were actually me
 
 <!-- Append a new block per release. Do not edit old ones: the point is the trend. -->
 
+### 0.4.12 — 2026-08-31
+
+- **Machine:** NVIDIA GeForce RTX 3070 Laptop GPU 8GB, 30GB RAM, media on an external HDD drive
+- **Measured on:** 439 indexed files (demo set); 100,000-file figures are extrapolated from the per-file cost
+- **Listing the files:** 0.0041s for 439 files (9.3 µs/file) through the cache
+- **Process startup:** unchanged, `import anagnorisis_core.api` plus building the media-type registry is 0.55s. 
+
+**Finding the files on the drive**, cached per directory by mtime, so three regimes:
+
+| Regime | Time | µs/file | Est. @100,000 |
+|---|---|---|---|
+| uncached (cache empty) | 1.1280s | 2569.52 | 257.0s |
+| cold (cache on disk) | 0.0133s | 30.19 | 3.0s |
+| warm (cache in RAM) | 0.0041s | 9.27 | 0.9s |
+
+The *uncached* row depends entirely on how much of the directory tree the operating system happens to have cached, and it is the least reproducible number in this file: measured at 43.61 µs/file in 0.4.11 with a warm OS cache and 9557.94 in an earlier 0.4.12 run with a cold one. Treat it as a range, not a figure.
+
+**Building the index**: embedding each file's content, and embedding its description text. This does *not* include writing the description in the first place; that is the table below, and it dominates.
+
+| Media type | Files | Content s/file | Descriptions s/file |
+|---|---|---|---|
+| `audio` | 205 | 0.4039 | 0.4487 |
+| `images` | 202 | 0.2312 | 0.4453 |
+| `text` | 17 | 0.3308 | 1.7446 |
+| `videos` | 15 | 1.9233 | 1.8479 |
+
+| Phase | Total | s/file | Est. @100,000 |
+|---|---|---|---|
+| content | 163.97s | 0.3735 | 37,365s (10.4h) |
+| descriptions | 239.31s | 0.5451 | 54,526s (15.1h) |
+| **both, whole library** | — | — | **91,887s (25.5h)** |
+| re-index, everything already cached | 0.011s | 0.025 ms | 2.5s |
+
+Embedder load, measured once and excluded above: 13.41s. Indexing is unchanged from 0.4.11 within run-to-run noise, which is what should be expected: nothing in this release touches it. The `text` and `videos` rows move the most because they are only 17 and 15 files.
+
+**Writing the descriptions**: the descriptor model, sampled per media type (10 files each). This is the real cost of indexing a fresh library, and it is measured in hours:
+
+| Media type | s/file (mean) | median | min–max | n | All 100,000 of this type |
+|---|---|---|---|---|---|
+| `audio` | 21.41 | 20.80 | 18.93–23.48 | 10 | 594.7h |
+| `images` | 15.52 | 15.47 | 14.72–16.57 | 10 | 431.2h |
+| `text` | 7.74 | 7.10 | 0.00–16.30 | 10 | 214.9h |
+| `videos` | 25.02 | 24.96 | 21.68–29.47 | 10 | 695.0h |
+
+At this set's media mix (18.29s per file on average), 100,000 files would take **508.2 hours**. The mix is what varies between libraries, so the per-type rows are the ones that travel.
+
+Descriptor load, once: 14.73s.
+
+**Searching**, once the files are known:
+
+| Mode | Indexed | Query (constant) | Score cold | Score warm (avg 5) | Cold µs/file | Warm µs/file | Est. cold @100,000 | Est. warm @100,000 |
+|---|---|---|---|---|---|---|---|---|
+| `name` | 439/439 | 0.0s | 0.0082s | 0.0087s ±0.0002 | 18.57 | 19.72 | 1.9s | 2.0s |
+| `semantic` | 439/439 | 0.3138s | 0.0130s | 0.0131s ±0.0013 | 29.56 | 29.77 | 3.3s | 3.3s |
+| `metadata` | 439/439 | 0.3066s | 0.0175s | 0.0079s ±0.0007 | 39.84 | 18.00 | 4.3s | 2.1s |
+
+| Mode | recall@1 | recall@5 | MRR | sampled |
+|---|---|---|---|---|
+| `metadata` | 0.533 | 0.8 | 0.639 | 15 |
+| `semantic` | 0.6 | 0.8 | 0.689 | 15 |
+
+Model warm-up, excluded from the timings above: name 0.0s, semantic 10.862s, metadata 0.311s.
+Queries used: `name`: "winter", `semantic`: "a quiet acoustic recording", `metadata`: "a quiet acoustic recording".
+
+#### What this run says
+
+This release is search-path and memory only. Quality is identical to 0.4.11 on every metric, which is the expected result: nothing here changes a vector, only how quickly one is found and how much memory is spent finding it.
+
+- **Metadata search is 32% faster warm**, 26.38 → 18.00 µs/file. The media type is resolved once per file instead of twice, and the composed embedding key is remembered briefly on the read-only search path so that composing it does not need a second cache lookup for every file in the library on every query. That memo is deliberately not used while indexing, where a stale key would mean re-embedding a file that is already done.
+- **Every cache read got cheaper.** There are only ever 256 shards, but each read rebuilt its file path with `os.path.join` and took a global lock purely to find that shard's own lock in a dictionary. Both answers depend on nothing but the shard number, so both are now built once at startup and indexed.
+- **`weighted_shuffle` is no longer quadratic.** Ordering results with a temperature above 0 re-sliced, re-normalised and re-sampled the whole remaining array for every single pick: 0.6s at 5,000 items, 1.9s at 9,500, around 13s at 24,000. It is now one sort using the Gumbel top-k identity, which draws from the same distribution: 0.0013s at 9,500 and 0.023s at 74,050. This never showed up in these tables because the benchmark sorts at temperature 0, which always took the fast path.
+- **The cache no longer grows without limit.** Reading one key used to copy every entry of its shard into the RAM tier, so a pass over a large library pulled the whole cache into memory twice over and kept it there. On a 74,000-file library in an 8 GB container that ended in the kernel killing the process. Both tiers are bounded now and the duplication is gone.
+- **Rating files is 19x faster to score**, 2.54s → 0.14s per 1,500 files, for identical output. The evaluator ran one forward pass per file at batch size 1 with a synchronisation after each; it now groups by sequence length and runs real batches.
+
 ### 0.4.11 — 2026-08-24
 
 - **Machine:** NVIDIA GeForce RTX 3070 Laptop GPU 8GB, 30GB RAM, media on an external HDD drive
@@ -78,7 +152,7 @@ Each entry records the version, the machine, and how many files were actually me
 |---|---|---|---|
 | uncached (cache empty) | 0.0191s | 43.61 | 4.4s |
 | cold (cache on disk) | 0.0051s | 11.56 | 1.2s |
-| warm (cache in RAM) | 0.0046s ±0.0001 | 10.42 | 1.0s |
+| warm (cache in RAM) | 0.0046s | 10.42 | 1.0s |
 
 The *uncached* row is measured with our cache empty but the operating system's own directory cache were likely warm, so it is a floor rather than a true first-ever scan.
 
@@ -152,7 +226,7 @@ Every figure above comes from a single run against an empty cache on an otherwis
 |---|---|---|---|
 | uncached (cache empty) | 0.0237s | 53.96 | 5.4s |
 | cold (cache on disk) | 0.0053s | 12.11 | 1.2s |
-| warm (cache in RAM) | 0.0045s ±0.0 | 10.29 | 1.0s |
+| warm (cache in RAM) | 0.0045s | 10.29 | 1.0s |
 
 The *uncached* row is measured with our cache empty but the operating system's own directory cache were likely warm, so it is a floor rather than a true first-ever scan. 
 

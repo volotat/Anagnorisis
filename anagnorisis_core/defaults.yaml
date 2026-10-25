@@ -71,6 +71,43 @@ embedder: # The single model that embeds everything — text, images, audio and 
   # more than this is pure waste. Raising it changes nothing but the cost.
   audio_seconds: 30
   idle_timeout_seconds: 120 # Unload the model after this long without use, to free VRAM
+cache: # The two-tier cache under everything: embeddings, descriptions, listings.
+  # Share of this process's memory limit that all caches together may hold in
+  # RAM. Inside a container the limit is the container's, not the machine's.
+  # The rest is for the models, which need several GB while resident. Both
+  # tiers evict least-recently-used entries once over budget; without that a
+  # pass over a large library pulled the whole cache into memory and kept it
+  # there until the process was killed.
+  ram_budget_fraction: 0.12
+  # Optional cap on how much *disk* one cache directory may use, in bytes.
+  # null means no cap.
+  #
+  # This is the mechanism for clearing out orphaned entries. Cache keys carry
+  # the identity of the model that produced the value, so every model change
+  # orphans whatever was written under the old one and nothing reads it again.
+  # Measured on a real library, only 9% of the metadata cache belonged to the
+  # live model. When a cache is over budget, the least recently used entries of
+  # each shard are dropped as that shard is read, so the orphans go first
+  # without anything here needing to know what a model hash is.
+  #
+  # Off by default because it cannot tell an orphan from a live entry that
+  # simply has not been searched lately, and pruning the latter means paying to
+  # embed it again. Set it above the size your library legitimately needs:
+  # `du -sh <project_config>/cache/*` shows what each store currently holds.
+  max_disk_bytes_per_store: null
+  # Optional cap on how much memory one cache directory may hold as whole
+  # loaded shards. null means no cap.
+  #
+  # Off by default, and worth understanding before turning on. This tier is
+  # what stands between a lookup and the disk, so capping it below the size of
+  # the cache means re-reading shards constantly. Measured against a real
+  # 2.15 GB metadata cache on an external drive: a 1 GB cap turned 256 disk
+  # reads into 4,043 and ran 21x slower, a 216 MB cap 41x slower.
+  #
+  # The reason a cache reaches 2 GB is mostly orphaned entries, so prune with
+  # max_disk_bytes_per_store first. Once the cache is down to what is actually
+  # in use, a cap here is cheap; before that it only makes searching slow.
+  max_resident_bytes_per_store: null
 omni: # The descriptor: writes the natural-language description of a file.
   # That description is what metadata search indexes, what the evaluator rates
   # from, and the only thing remote servers publish about a file — so it is the

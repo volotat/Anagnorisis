@@ -1,5 +1,28 @@
 # Change History
 
+### Version 0.4.12 (31.08.2026)
+
+Another speed release, this time entirely in the search path. Nothing here changes a description or an embedding, so results are identical to 0.4.11: only the time taken to find them changed. The gains grow with the size of the library, so the demo set understates them.
+
+| Improvements | Measured |
+|---|---|
+| metadata search ~32% | 26.38 → 17.91 µs/file (439 files) |
+| metadata on a real library ~3.3x | 17.19 → 5.20 µs/file (75,346 files) |
+| semantic on a real library ~1.3x | 4.21 → 3.21 µs/file |
+| ordering results, 9,500 items | 1.941s → 0.0013s |
+| ordering results, 24,448 items | ~13s → 0.004s |
+
+Finally search inside the Flask app now also feels much faster as well, as it was dependent even more heavily than the CLI on the bottlenecks improved in this version.
+
+*  **Core Search:**
+    *   Metadata search worked out each file's type twice per query and looked its description up a second time just to build a cache key. It now does each once.
+*  **Core Caching:**
+    *   The cache is 256 files. Every single read rebuilt the name of the one it wanted and took a lock shared by the whole cache just to find that file's own lock. Both are now worked out once at startup. Everything that reads the cache benefits, indexing included.
+*  **Core Ranking:**
+    *   Sorting results with a temperature above zero was quadratic: it redid the whole calculation for every item it placed. On a large result set this ran for seconds inside the search, and nobody had noticed because the default temperature of zero takes a different path. It is one sort now, drawing from the same distribution.
+*  **Core Benchmarks:**
+    *   Descriptions are now sampled ten files per media type instead of three, so those figures are steadier but not comparable with the previous entry.
+
 ### Version 0.4.11 (30.08.2026)
 
 This release is mostly about speed improvements. Here is roughly what you can expect from the app now:

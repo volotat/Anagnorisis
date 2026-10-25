@@ -11,7 +11,7 @@ Every recommendation system you typically use from the cloud services (i.e. Yout
 
 Anagnorisis has the other arrangement that turns the whole client-server architecture upside down. The servers are now pure data-sharing thin hosts and all the main processing, search and recommendations are happening on your machine. You rate local or remote files and other data you own on a scale of 0 to 10. This feedback then used to locally train a recommendation model that scores everything you haven't rated yet automatically. You correct what it got wrong, that correction goes to the next round of training data. You repeat these steps again and again, getting each time model that better and better aligns to your preferences.  
 
-The big vision of this project is to provide a platform that creates a local, private model of your interests. That likes what you like and sees importance where you would see it. Then you can use this model to search and filter local and global information on your behalf in a way you would do it yourself but in a much faster and efficient way. Making this platform (in the future) a go to place to see news, recommendations and insights, and so on, tailored specifically for you. As the internet gets populated with bots and AI slop, a platform like this might create a necessary filter to be able to navigate in this chaotic information space effectively.
+The big vision of this project is to provide a platform that creates a local, private model of your interests. That likes what you like and sees importance where you would see it. Then you can use this model to search and filter local and global information on your behalf in a way you would do it yourself but in a much faster and efficient way. Making this platform (in the future) a go to place to see news, recommendations and insights, and so on, tailored specifically for you. As the internet gets populated with bots and all kinds of slop, a platform like this might create a necessary filter to be able to navigate in this chaotic information space effectively.
 
 To find more about the project and ideas behind it you can read these articles:  
 [Anagnorisis. Part 1: A Vision for Better Information Management.](https://volotat.github.io/p/anagnorisis-part-1-a-vision-for-better-information-management/)  
@@ -87,7 +87,7 @@ The main goal of the core package is to have single independent reusable peace o
 
 ## Benchmarks
 
-The benchmarks exist for tracking purpose. Note that only minor work has been done on speed, as the main goal of the project so far was to establish the right infrastructure to build upon. 
+The benchmarks exist for tracking purpose. Measurements are done with CLI, not a Flask app. The later will be somewhat slower because of additional complexity and logging overheads. Note that only the minor work has been done on speed yet, as the main goal of the project so far was to establish the right infrastructure to build upon. 
 
 Here only a subset of benchmarks are present, see [`anagnorisis_core/benchmarks/README.md`](anagnorisis_core/benchmarks/README.md) for more information and over time tracking.
 
@@ -95,38 +95,46 @@ Here only a subset of benchmarks are present, see [`anagnorisis_core/benchmarks/
 
 | Regime | Time | µs/file | Est. @100,000 |
 |---|---|---|---|
-| uncached (cache empty) | 0.0191s | 43.61 | 4.4s |
-| cold (cache on disk) | 0.0051s | 11.56 | 1.2s |
-| warm (cache in RAM) | 0.0046s ±0.0001 | 10.42 | 1.0s |
+| uncached (cache empty) | 1.1280s | 2569.52 | 257.0s |
+| cold (cache on disk) | 0.0133s | 30.19 | 3.0s |
+| warm (cache in RAM) | 0.0041s | 9.27 | 0.9s |
+
+**Searching:**
+
+| Mode | Indexed | Query (constant) | Score cold | Score warm (avg 5) | Cold µs/file | Warm µs/file | Est. cold @100,000 | Est. warm @100,000 |
+|---|---|---|---|---|---|---|---|---|
+| `name` | 439/439 | 0.0s | 0.0082s | 0.0087s ±0.0002 | 18.57 | 19.72 | 1.9s | 2.0s |
+| `semantic` | 439/439 | 0.3138s | 0.0130s | 0.0131s ±0.0013 | 29.56 | 29.77 | 3.3s | 3.3s |
+| `metadata` | 439/439 | 0.3066s | 0.0175s | 0.0079s ±0.0007 | 39.84 | 18.00 | 4.3s | 2.1s |
 
 **Building the index:**
 
 | Media type | Files | Content s/file | Descriptions s/file |
 |---|---|---|---|
-| `audio` | 205 | 0.4285 | 0.4505 |
-| `images` | 202 | 0.2144 | 0.4409 |
-| `text` | 17 | 0.0833 | 1.4209 |
-| `videos` | 15 | 1.5251 | 1.6546 |
+| `audio` | 205 | 0.4039 | 0.4487 |
+| `images` | 202 | 0.2312 | 0.4453 |
+| `text` | 17 | 0.3308 | 1.7446 |
+| `videos` | 15 | 1.9233 | 1.8479 |
 
 | Phase | Total | s/file | Est. @100,000 |
 |---|---|---|---|
-| content | 155.45s | 0.3541 | 35,425s (9.8h) |
-| descriptions | 230.39s | 0.5248 | 52,496s (14.6h) |
-| **both, whole library** | — | — | **87,920s (24.4h)** |
-| re-index, everything already cached | 0.012s | 0.03 ms | 2.8s |
+| content | 163.97s | 0.3735 | 37,365s (10.4h) |
+| descriptions | 239.31s | 0.5451 | 54,526s (15.1h) |
+| **both, whole library** | — | — | **91,887s (25.5h)** |
+| re-index, everything already cached | 0.011s | 0.025 ms | 2.5s |
 
-Embedder load, measured once and excluded from above: 14.74s. The *descriptions* row also carries a one-off computation: indexing embeds the tag vocabularies up front, about 9,000 tags. It is paid once, and the whole-library figure includes it. 
+Embedder load, measured once and excluded above: 13.41s. 
 
 **Writing the descriptions:**
 
 | Media type | s/file (mean) | median | min–max | n | All 100,000 of this type |
 |---|---|---|---|---|---|
-| `audio` | 19.93 | 20.42 | 18.92–20.43 | 3 | 553.5h |
-| `images` | 14.26 | 14.13 | 13.99–14.66 | 3 | 396.2h |
-| `text` | 4.54 | 0.0 | 0.0–13.61 | 3 | 126.1h |
-| `videos` | 23.68 | 23.33 | 23.12–24.60 | 3 | 657.9h |
+| `audio` | 21.41 | 20.80 | 18.93–23.48 | 10 | 594.7h |
+| `images` | 15.52 | 15.47 | 14.72–16.57 | 10 | 431.2h |
+| `text` | 7.74 | 7.10 | 0.00–16.30 | 10 | 214.9h |
+| `videos` | 25.02 | 24.96 | 21.68–29.47 | 10 | 695.0h |
 
-Descriptor load, once: 11.66s.
+Descriptor load, once: 14.73s.
 
 
 ## Running from Docker
@@ -245,6 +253,7 @@ If you have a lot of data in your data folder, for the first time hash cache and
 
 The project requires GPU to run properly. When running the project inside the Docker container, make sure that `NVIDIA Container Toolkit` is installed for Linux and `WSL2` for Windows.
 
+It is **highly preferred** to keep both `project_config` (where the DB and the persistent cache are stored) and `models` folders on SSD, instead of HDD for much more responsive and snappy experience.
 
 ## Modules
 

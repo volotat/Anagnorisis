@@ -120,6 +120,17 @@ def load_config(
             cfg.main[key] = os.path.expanduser(str(value))
 
     os.makedirs(cfg.main.cache_path, exist_ok=True)
+
+    # Applied here because every entry point loads a config, and the caches
+    # themselves are reached through a factory that takes no config.
+    from anagnorisis_core.storage.caching import configure_cache_budgets
+    cache_cfg = OmegaConf.select(cfg, 'cache', default=None) or {}
+    configure_cache_budgets(
+        ram_fraction=cache_cfg.get('ram_budget_fraction', None),
+        max_disk_bytes=cache_cfg.get('max_disk_bytes_per_store', None),
+        shard_resident_bytes=cache_cfg.get('max_resident_bytes_per_store', None),
+    )
+
     return cfg
 
 

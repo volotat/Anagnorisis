@@ -427,6 +427,9 @@ class VideoModuleServer:
                 print(f"[VideoModuleServer] Embedding failed for {full_path}: {e}")
                 all_embeddings.append(np.zeros((1, embedding_dim), dtype=np.float32))
 
+        # Silent until now: the status still read "computing metadata
+        # embeddings" while this ran, so a pause here looked like a hang.
+        _status(f"Scoring {len(all_embeddings)} videos with the evaluator...")
         model_ratings = self.videos_evaluator.predict(all_embeddings)
 
         _progress[0] = 0.7

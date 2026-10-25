@@ -6,13 +6,24 @@ is a filesystem store that shards keys across many small pickle files to keep ea
 write cheap. Sharding is based on a fast hash so keys are evenly spread without any
 central index.
 
-Disk I/O is minimized by design. On a disk miss, the whole shard is loaded once and its
-live entries are “warmed” into RAM in one shot, so subsequent lookups for nearby keys
-are served from memory. Expired entries are cleaned lazily when a shard is read, and the
-shard is only rewritten when it matters (or when we actually modify a value), avoiding
-write‑amplification during steady reads. When a key is read, its lifetime is optionally
-refreshed on disk after a configurable interval, and always refreshed in RAM, so frequently
-accessed items stay hot without rewriting on every access.
+Disk I/O is minimized by design. On a disk miss the whole shard is loaded once and kept,
+so subsequent lookups for nearby keys need no further reads. Expired entries are cleaned
+lazily when a shard is read, and the shard is only rewritten when it matters (or when we
+actually modify a value), avoiding write‑amplification during steady reads. When a key is
+read, its lifetime is optionally refreshed on disk after a configurable interval, and
+always refreshed in RAM, so frequently accessed items stay hot without rewriting on every
+access.
+
+Both tiers are bounded, and that is load‑bearing rather than tidiness. Cache keys carry
+the identity of the model that produced the value, so every model change orphans whatever
+was written under the old one; nothing reads those entries again. Left unbounded, a pass
+over a large library pulled the whole cache — live and orphaned alike — into memory and
+kept it there until the process was killed. The RAM tier now evicts least‑recently‑used
+entries against a byte budget derived from the process's actual memory limit, the shard
+cache keeps only the most recently used shards resident, and an optional disk budget
+prunes the least recently used entries of a shard as it is read. Since an orphaned
+generation is precisely the part nothing touches, pruning by last use removes it without
+this file needing to know anything about model hashes or key formats.
 
 All writes to disk are atomic (tempfile + replace) to avoid partial files on crashes, and
 a simple per‑shard lock guards concurrent access within a process. The public surface area
@@ -30,6 +41,7 @@ import pickle
 import hashlib
 import atexit
 import contextlib
+from collections import OrderedDict
 
 try:
     import fcntl                      # POSIX advisory locks
@@ -41,6 +53,118 @@ three_months_in_seconds = 90 * 24 * 60 * 60
 one_hour_in_seconds = 3600
 ten_minutes_in_seconds = 60 * 10
 five_minutes_in_seconds = 60 * 5
+
+# Share of the process's memory limit that all caches together may hold in RAM.
+# The rest belongs to the models, which need several GB while resident.
+DEFAULT_RAM_BUDGET_FRACTION = 0.12
+MIN_RAM_BUDGET_BYTES = 64 * 1024 * 1024
+MAX_RAM_BUDGET_BYTES = 4 * 1024 * 1024 * 1024
+
+# Applied to caches created after this is set. Every cache is reached through
+# get_two_level_cache(), which does not take a config, so the settings are put
+# here once at startup rather than threaded through eight call sites.
+_BUDGETS = {
+    'ram_fraction': DEFAULT_RAM_BUDGET_FRACTION,
+    # Off unless asked for. Pruning is by least-recent use, and a live entry
+    # that simply has not been searched lately looks exactly like an orphaned
+    # one, so too small a budget quietly throws away embeddings that then cost
+    # real time to rebuild. The right number depends on how big the library is,
+    # which only the person running it knows.
+    'max_disk_bytes': None,
+    # Also off by default, and for a sharper reason: capping the shard tier on
+    # a cache bigger than the cap means re-reading shards from disk constantly.
+    # Only worth setting once the cache has been pruned to its live size.
+    'shard_resident_bytes': None,
+}
+
+
+def configure_cache_budgets(ram_fraction: Optional[float] = None,
+                            max_disk_bytes: Optional[int] = None,
+                            shard_resident_bytes: Optional[int] = None) -> None:
+    """Set cache limits for caches created from now on.
+
+    Call once at startup. Existing caches keep the limits they were built with.
+    """
+    if ram_fraction is not None:
+        _BUDGETS['ram_fraction'] = max(0.01, min(float(ram_fraction), 0.9))
+    if max_disk_bytes is not None:
+        _BUDGETS['max_disk_bytes'] = int(max_disk_bytes) or None
+    if shard_resident_bytes is not None:
+        _BUDGETS['shard_resident_bytes'] = int(shard_resident_bytes) or None
+
+
+def memory_limit_bytes() -> int:
+    """How much memory this process is actually allowed, in bytes.
+
+    Inside a container that is the cgroup limit, not the size of the machine:
+    reading the host's total would let the cache size itself for 30 GB while
+    the container is killed at 16 GB. cgroup v2 first, then v1, then the host
+    as a last resort.
+    """
+    for path in ('/sys/fs/cgroup/memory.max',
+                 '/sys/fs/cgroup/memory/memory.limit_in_bytes'):
+        try:
+            with open(path) as fh:
+                raw = fh.read().strip()
+            if raw and raw != 'max':
+                value = int(raw)
+                # cgroup v1 reports a sentinel near 2^63 when unlimited.
+                if 0 < value < (1 << 62):
+                    return value
+        except (OSError, ValueError):
+            pass
+
+    # Not in a limited cgroup, or the files are not where we looked.
+    try:
+        return os.sysconf('SC_PAGE_SIZE') * os.sysconf('SC_PHYS_PAGES')
+    except (OSError, ValueError, AttributeError):
+        return 2 * 1024 * 1024 * 1024
+
+
+def default_ram_budget_bytes(share: float = 1.0) -> int:
+    """A cache's slice of the total RAM budget.
+
+    *share* is that cache's fraction of the whole budget, so several caches can
+    divide one allowance rather than each claiming it in full.
+    """
+    total = memory_limit_bytes() * _BUDGETS['ram_fraction']
+    budget = int(total * max(share, 0.0))
+    return max(MIN_RAM_BUDGET_BYTES, min(budget, MAX_RAM_BUDGET_BYTES))
+
+
+def estimate_bytes(value: Any, _depth: int = 0) -> int:
+    """Roughly what *value* costs to keep in memory.
+
+    Deliberately cheap and approximate: it exists to keep a budget honest, not
+    to be exact. Numpy arrays and strings are the overwhelming majority of what
+    is cached and both report their size directly. Containers are sampled
+    rather than walked, because this runs on every write.
+    """
+    if value is None:
+        return 16
+    nbytes = getattr(value, 'nbytes', None)   # numpy arrays and friends
+    if isinstance(nbytes, int):
+        return nbytes + 96
+    if isinstance(value, (str, bytes, bytearray)):
+        return len(value) + 48
+    if isinstance(value, (int, float, bool)):
+        return 32
+    if _depth >= 2:
+        return 256
+    if isinstance(value, (list, tuple)):
+        if not value:
+            return 56
+        sample = value[:8]
+        per_item = sum(estimate_bytes(v, _depth + 1) for v in sample) / len(sample)
+        return int(per_item * len(value)) + 56
+    if isinstance(value, dict):
+        if not value:
+            return 64
+        sample = list(value.items())[:8]
+        per_item = sum(estimate_bytes(k, _depth + 1) + estimate_bytes(v, _depth + 1)
+                       for k, v in sample) / len(sample)
+        return int(per_item * len(value)) + 64
+    return 256
 
 @contextlib.contextmanager
 def _shard_file_lock(path: str):
@@ -79,12 +203,28 @@ def _shard_file_lock(path: str):
 
 class RAMCache:
     """
-    A simple thread-safe in-memory cache with a Time-To-Live (TTL) for each item.
+    A thread-safe in-memory cache with a per-key TTL and a size budget.
+
+    Bounded because it used to not be. Entries only expired when the same key
+    was read again, so anything never read again stayed for the life of the
+    process, and a pass over a large library pulled the whole cache into memory
+    until the process was killed. The budget is in bytes rather than entries
+    because what is stored varies by two orders of magnitude between caches:
+    measured on a real library, 296 bytes per entry for file listings against
+    60 KB for audio embeddings. Counting entries would either waste most of the
+    budget or blow through it, depending on which cache you looked at.
+
+    Eviction is least-recently-used: reads move a key to the back, and writes
+    drop from the front until the total fits.
     """
-    def __init__(self, ttl_seconds: int):
+    def __init__(self, ttl_seconds: int, max_bytes: Optional[int] = None):
         self.ttl = ttl_seconds
-        # key -> (timestamp, value)
-        self._data: Dict[str, Tuple[float, Any]] = {}
+        self.max_bytes = max_bytes
+        # key -> (timestamp, value), in least-recently-used order
+        self._data: "OrderedDict[str, Tuple[float, Any]]" = OrderedDict()
+        self._sizes: Dict[str, int] = {}
+        self._total_bytes = 0
+        self._evictions = 0
         self._lock = threading.Lock()
 
     def get(self, key: str) -> Optional[Any]:
@@ -97,39 +237,74 @@ class RAMCache:
             item = self._data.get(key)
             if not item:
                 return None
-            
+
             ts, value = item
 
             # check if item has expired
             if self.ttl and now - ts > self.ttl:
                 # expired
-                del self._data[key]
+                self._forget(key)
                 return None
+
+            self._data.move_to_end(key)   # most recently used
             return value
-        
+
     def set(self, key: str, value):
         """
         Adds an item to the cache with the current timestamp.
         """
         now = time.time()
+        size = estimate_bytes(value) + len(key) + 64
         with self._lock:
+            if key in self._data:
+                self._total_bytes -= self._sizes.pop(key, 0)
             self._data[key] = (now, value)
+            self._data.move_to_end(key)
+            self._sizes[key] = size
+            self._total_bytes += size
+            self._evict_if_needed()
+
+    # -- internals ------------------------------------------------------
+
+    def _forget(self, key: str) -> None:
+        """Drop one key. Caller holds the lock."""
+        self._data.pop(key, None)
+        self._total_bytes -= self._sizes.pop(key, 0)
+
+    def _evict_if_needed(self) -> None:
+        """Drop least-recently-used entries until inside the budget.
+
+        Caller holds the lock. The newest entry is never evicted, so a single
+        value larger than the whole budget is still served rather than dropped
+        the instant it is written.
+        """
+        if not self.max_bytes:
+            return
+        while self._total_bytes > self.max_bytes and len(self._data) > 1:
+            oldest = next(iter(self._data))
+            self._forget(oldest)
+            self._evictions += 1
+
+    def stats(self) -> Dict[str, int]:
+        with self._lock:
+            return {
+                'entries': len(self._data),
+                'bytes': self._total_bytes,
+                'max_bytes': self.max_bytes or 0,
+                'evictions': self._evictions,
+            }
 
 class DiskCache:
     """
     Disk-backed cache with sharded pickle files and TTL.
     Exposes: get(key), set(key, value)
 
-    on_shard_loaded: optional callback(dict[key]=value) to warm a higher-level cache.
-    warm_interval_seconds: how often to invoke on_shard_loaded per shard (limits repeated warms).
     refresh_after_seconds: on get(), if (now - saved_ts) >= refresh_after_seconds, bump ts and persist.
     """
     def __init__(
         self,
         cache_dir: str,
         ttl_seconds: int,
-        on_shard_loaded: Optional[callable] = None,
-        warm_interval_seconds: int = 60,
         refresh_after_seconds: Optional[int] = None,
         cleanup_write_threshold: int = 64,
         *,
@@ -137,18 +312,28 @@ class DiskCache:
         flush_interval_seconds: int = five_minutes_in_seconds,  # periodic flush cadence
         flush_batch_size: int = 5 * 1024 * 1024,               # flush when shard buffer reaches this (5mb)
         max_pending_per_shard: int = 4096,                     # safety cap per shard
+        max_resident_bytes: Optional[int] = None,              # None = unbounded
+        max_disk_bytes: Optional[int] = None,                  # None = unbounded
         name: Optional[str] = None,
     ):
         self.cache_dir = cache_dir
         os.makedirs(self.cache_dir, exist_ok=True)
         self.ttl = ttl_seconds
-        self._locks: Dict[int, threading.Lock] = {}
-        self._locks_master = threading.Lock()
+
+        # There are only ever 256 shards, so their file paths and their locks
+        # are built once here and indexed by shard number.
+        #
+        # Every read used to rebuild `cache_dir/<shard>.pkl` with os.path.join
+        # and then take a global lock purely to find that shard's own lock in a
+        # dict. Both answers depend on nothing but the shard number, and a
+        # search over a large library does this once per file: measured 17% of
+        # the per-file cost with everything else already cached.
+        self._shard_paths = [
+            os.path.join(self.cache_dir, f"{shard:02x}.pkl") for shard in range(256)
+        ]
+        self._shard_locks = [threading.Lock() for _ in range(256)]
 
         # Warming and refresh policy
-        self._on_shard_loaded = on_shard_loaded
-        self._warm_interval_seconds = max(0, int(warm_interval_seconds))
-        self._last_warm: Dict[int, float] = {}
         # Default refresh interval: 1/4 of TTL (at least 1s) to avoid writing on every read
         self._refresh_after = (
             int(refresh_after_seconds) if refresh_after_seconds is not None
@@ -193,8 +378,36 @@ class DiskCache:
         # set() and _flush_shard(). Eliminates repeated disk I/O when the same
         # shard is queried many times in a row (the typical case for
         # process_files looping over thousands of paths that all miss cache).
-        self._shard_data: Dict[int, Dict[str, Tuple[Any, float]]] = {}
+        # Bounded, least-recently-used. This used to grow without limit: a pass
+        # over a large library reads every shard, so the whole cache ended up
+        # resident and stayed that way, which is what exhausted the container.
+        #
+        # Bounded by *bytes*, not by a count of shards. Keys hash uniformly
+        # across all 256, so a sweep touches every one of them; capping the
+        # count means a shard is evicted just before it is needed again.
+        # Measured on a real library, a 48-of-256 cap turned 256 disk reads
+        # into 4,031 and ran 15x slower on an external drive. A byte budget
+        # keeps the whole working set resident whenever it fits, and degrades
+        # to re-reading only when it genuinely cannot.
+        self._shard_data: "OrderedDict[int, Dict[str, Tuple[Any, float]]]" = OrderedDict()
+        self._shard_bytes: Dict[int, int] = {}
+        self._resident_bytes = 0
+        self._max_resident_bytes = int(max_resident_bytes) if max_resident_bytes else None
+        self._shard_evictions = 0
         self._shard_data_lock = threading.Lock()
+
+        # Disk budget. Cache keys carry the identity of the model that produced
+        # the value, so every model or algorithm change orphans the entries
+        # written under the old one. They are never read again but nothing ever
+        # removed them: measured on a real library, only 9% of the metadata
+        # cache and 25% of the content cache belonged to the live generation.
+        # Rather than special-casing model hashes, which would tie this file to
+        # the key formats its callers invent, the budget prunes by last use:
+        # an orphaned generation is simply the part nothing touches.
+        self._max_disk_bytes = int(max_disk_bytes) if max_disk_bytes else None
+        self._disk_bytes_checked_at = 0.0
+        self._disk_bytes = 0
+        self._pruned_entries = 0
         # Identity of the shard file as we last saw it, so a flush can tell
         # whether another process has written since and a re-read is needed.
         self._shard_disk_stamp: Dict[int, tuple] = {}
@@ -206,13 +419,7 @@ class DiskCache:
 
     def _get_shard_path_and_lock(self, key: str) -> Tuple[int, str, threading.Lock]:
         shard = self._shard_for_key(key)
-        path = os.path.join(self.cache_dir, f"{shard:02x}.pkl")
-        with self._locks_master:
-            lock = self._locks.get(shard)
-            if lock is None:
-                lock = threading.Lock()
-                self._locks[shard] = lock
-        return shard, path, lock
+        return shard, self._shard_paths[shard], self._shard_locks[shard]
 
     def _load_and_clean_shard(self, shard_path: str) -> Tuple[Dict[str, Tuple[Any, float]], int]:
         """
@@ -251,7 +458,73 @@ class DiskCache:
                 data.pop(k, None)
             removed = len(expired)
 
+        removed += self._prune_to_budget(data)
         return data, removed
+
+    # -- disk budget ----------------------------------------------------
+
+    def _disk_usage_bytes(self, max_age_seconds: float = 60.0) -> int:
+        """Total size of the shard files, remeasured at most once a minute.
+
+        256 stat calls, so cheap, but not cheap enough to repeat on every
+        shard load during a pass over a large library.
+        """
+        now = time.time()
+        if now - self._disk_bytes_checked_at < max_age_seconds:
+            return self._disk_bytes
+        total = 0
+        for path in self._shard_paths:
+            try:
+                total += os.path.getsize(path)
+            except OSError:
+                pass
+        self._disk_bytes = total
+        self._disk_bytes_checked_at = now
+        return total
+
+    def _prune_to_budget(self, data: Dict[str, Tuple[Any, float]]) -> int:
+        """Drop the least recently used entries of one shard, if over budget.
+
+        Called as a shard is read, so pruning is spread across the shards a
+        workload actually touches instead of needing a stop-the-world sweep.
+        Each shard is held to its equal share of the budget.
+
+        Entries carry the time they were last written or refreshed, and reads
+        refresh them (see *refresh_after_seconds*), so the oldest entries are
+        the ones nothing has asked for. That is what makes this remove orphaned
+        model generations without knowing anything about model hashes.
+        """
+        if not self._max_disk_bytes or not data:
+            return 0
+        if self._disk_usage_bytes() <= self._max_disk_bytes:
+            return 0
+
+        # Each shard is held to its equal slice of the budget. The floor is only
+        # there to stop a tiny budget pruning shards down to nothing; the real
+        # guard is the total-usage check above, which is why it is small. A
+        # larger floor would silently disable the budget entirely: at 64 KB no
+        # budget under 16 MB could ever have had an effect.
+        share = max(self._max_disk_bytes // 256, 2048)
+        total = sum(estimate_bytes(value) + len(key)
+                    for key, (value, _ts) in data.items())
+        if total <= share:
+            return 0
+
+        # Oldest first, which is least recently used.
+        by_age = sorted(data.items(), key=lambda kv: kv[1][1])
+        dropped = 0
+        for key, (value, _ts) in by_age:
+            if total <= share or len(data) <= 1:
+                break
+            total -= estimate_bytes(value) + len(key)
+            data.pop(key, None)
+            dropped += 1
+
+        if dropped:
+            self._pruned_entries += dropped
+            # The measurement is now stale by roughly what we just removed.
+            self._disk_bytes_checked_at = 0.0
+        return dropped
     
     def _get_or_load_shard(self, shard: int, shard_path: str) -> Tuple[Dict[str, Tuple[Any, float]], int]:
         """Return shard data from the in-memory cache, loading from disk on first access.
@@ -262,13 +535,68 @@ class DiskCache:
         """
         with self._shard_data_lock:
             cached = self._shard_data.get(shard)
-        if cached is not None:
-            return cached, 0
+            if cached is not None:
+                self._shard_data.move_to_end(shard)   # most recently used
+                return cached, 0
 
         data, removed = self._load_and_clean_shard(shard_path)
+        # The file's size stands in for what the unpickled shard costs. Walking
+        # thousands of entries to weigh them precisely would cost more than the
+        # eviction decision is worth; measured expansion is roughly 1-2x.
+        try:
+            resident = os.path.getsize(shard_path) * 2
+        except OSError:
+            resident = 0
         with self._shard_data_lock:
             self._shard_data[shard] = data
+            self._shard_data.move_to_end(shard)
+            self._resident_bytes += resident - self._shard_bytes.get(shard, 0)
+            self._shard_bytes[shard] = resident
+            self._evict_resident_shards()
         return data, removed
+
+    def _note_shard_size(self, shard: int, shard_path: str) -> None:
+        """Re-weigh a shard after it changed on disk, and evict if that pushed
+        the resident set over budget.
+
+        Writes grow a shard, so accounting only at load time would leave every
+        shard recorded at whatever it weighed when first read — zero, for one
+        created by this process.
+        """
+        try:
+            resident = os.path.getsize(shard_path) * 2
+        except OSError:
+            resident = 0
+        with self._shard_data_lock:
+            if shard not in self._shard_data:
+                return
+            self._resident_bytes += resident - self._shard_bytes.get(shard, 0)
+            self._shard_bytes[shard] = resident
+            self._evict_resident_shards()
+
+    def _evict_resident_shards(self) -> None:
+        """Drop least-recently-used shards until inside the budget.
+
+        Caller holds the lock. A shard with writes still pending is kept:
+        dropping it would lose them, and it becomes evictable once the flusher
+        has written it out. The most recent shard is never evicted, so a cache
+        whose single shard exceeds the budget still works.
+        """
+        if not self._max_resident_bytes:
+            return
+        while (self._resident_bytes > self._max_resident_bytes
+               and len(self._shard_data) > 1):
+            for candidate in list(self._shard_data.keys())[:-1]:
+                with self._pending_lock:
+                    has_pending = bool(self._pending.get(candidate))
+                if not has_pending:
+                    self._shard_data.pop(candidate, None)
+                    self._shard_disk_stamp.pop(candidate, None)
+                    self._resident_bytes -= self._shard_bytes.pop(candidate, 0)
+                    self._shard_evictions += 1
+                    break
+            else:
+                return   # every evictable shard still has writes waiting
 
     def _atomic_write_pickle(self, path: str, data: Dict[str, Tuple[Any, float]]) -> None:
         d = os.path.dirname(path)
@@ -344,24 +672,6 @@ class DiskCache:
     def reset_stats(self) -> None:
         self.stats(reset=True)
 
-    def _maybe_warm_ram(self, shard: int, data: Dict[str, Tuple[Any, float]]) -> None:
-        if not self._on_shard_loaded:
-            return
-        now = time.time()
-        last = self._last_warm.get(shard, 0.0)
-        if now - last < self._warm_interval_seconds:
-            return
-        # Prepare a compact dict of unexpired entries key -> value
-        if self.ttl:
-            to_warm = {k: v for k, (v, ts) in data.items() if now - ts <= self.ttl}
-        else:
-            to_warm = {k: v for k, (v, _) in data.items()}
-        if to_warm:
-            try:
-                self._on_shard_loaded(to_warm)
-            finally:
-                self._last_warm[shard] = now
-
     def _flush_shard(self, shard: int) -> None:
         """Drain pending updates for shard to disk (merge + atomic write)."""
         with self._pending_lock:
@@ -371,12 +681,10 @@ class DiskCache:
             updates = pending
             self._pending[shard] = {}
 
-        # Serialize with the shard's file lock while merging and writing
-        path = os.path.join(self.cache_dir, f"{shard:02x}.pkl")
-        with self._locks_master:
-            lock = self._locks.get(shard) or threading.Lock()
-            self._locks[shard] = lock
-        with lock, _shard_file_lock(path):
+        # Serialize with the shard's file lock while merging and writing. Same
+        # path and same lock object the read path uses, both indexed by shard.
+        path = self._shard_paths[shard]
+        with self._shard_locks[shard], _shard_file_lock(path):
             # Prefer the in-memory copy, but only while it still matches what is
             # on disk. If another process has written this shard since we loaded
             # it, merging into our stale copy would erase their entries.
@@ -401,6 +709,7 @@ class DiskCache:
             with self._shard_data_lock:
                 self._shard_data[shard] = data
             self._shard_disk_stamp[shard] = self._disk_stamp(path)
+        self._note_shard_size(shard, path)
 
     @staticmethod
     def _disk_stamp(path: str) -> tuple:
@@ -447,20 +756,16 @@ class DiskCache:
                 return value
 
         with lock:
-            with self._shard_data_lock:
-                was_resident = shard in self._shard_data
-
             # Prefer in-memory shard cache over reading from disk on every call.
             data, removed = self._get_or_load_shard(shard, shard_path)
 
-            # Warm RAM only when the shard actually came off disk. Doing it on
-            # every get meant rebuilding a dict over the whole shard and
-            # re-setting every entry into the RAM tier, holding the shard lock
-            # throughout, even though the value had just been served from
-            # memory. On a miss-heavy indexing run that is up to 256 full-shard
-            # copies a minute for nothing.
-            if not was_resident:
-                self._maybe_warm_ram(shard, data)
+            # No shard warming. It used to copy every entry of a freshly loaded
+            # shard into the RAM tier, but TwoLevelCache.get already promotes
+            # the key it read, so warming only ever pre-loaded neighbours
+            # nobody had asked for. Measured on a real cache it bought nothing
+            # (0.61 vs 0.59 µs per repeated read), and against a *bounded* RAM
+            # tier it is actively harmful: one shard load would flood the
+            # budget with unrequested entries and evict the ones in use.
 
             entry = data.get(key)
             if entry is None:
@@ -511,6 +816,7 @@ class DiskCache:
             data, _ = self._get_or_load_shard(shard, shard_path)
             data[key] = (value, time.time())
             self._atomic_write_pickle(shard_path, data)
+        self._note_shard_size(shard, shard_path)
 
     def flush(self) -> None:
         """Flush all pending shards to disk."""
@@ -542,27 +848,43 @@ class TwoLevelCache:
         cache_dir: str,
         disk_ttl_seconds: int = three_months_in_seconds,
         ram_ttl_seconds: int = one_hour_in_seconds,
-        warm_interval_seconds: int = 60,
         refresh_after_seconds: Optional[int] = None,
+        ram_max_bytes: Optional[int] = None,
+        ram_budget_share: float = 0.15,
+        max_disk_bytes: Optional[int] = None,
         name: Optional[str] = None,
     ):
-        self.ram = RAMCache(ram_ttl_seconds)
+        # The per-key tier is bounded; the shard tier is not, unless asked for.
+        #
+        # They hold the same values in different shapes, and only one of them
+        # can be capped cheaply. The shard cache is what stands between a lookup
+        # and the disk, so on a spinning drive capping it is punishing: measured
+        # against a real 2.15 GB metadata cache, a 1 GB shard budget turned 256
+        # disk reads into 4,043 and ran 21x slower, and a 216 MB budget 41x.
+        #
+        # The reason such a cache needs 2 GB in the first place is that most of
+        # it is orphaned: entries written under models that have since been
+        # replaced, which nothing will ever read. Pruning those (max_disk_bytes)
+        # shrinks the cache to its live working set, and only then is capping
+        # the shard tier something other than a way to make searching slow.
+        budget = (ram_max_bytes if ram_max_bytes is not None
+                  else default_ram_budget_bytes(ram_budget_share))
+        self.ram = RAMCache(ram_ttl_seconds, max_bytes=budget)
 
         if cache_dir is None:
             # None is used to indicate a RAM-only cache (no disk persistence)
             self.disk = None
         else:
-            # When DiskCache loads a shard, push all its values into RAM (one-hot timestamps).
-            def _on_shard_loaded(mapping: Dict[str, Any]):
-                for k, v in mapping.items():
-                    self.ram.set(k, v)
-
+            # The RAM tier is filled by get() below, one key at a time, as keys
+            # are actually asked for. See the note in DiskCache.get for why
+            # pre-loading a whole shard into it was removed.
             self.disk = DiskCache(
                 cache_dir=cache_dir,
                 ttl_seconds=disk_ttl_seconds,
-                on_shard_loaded=_on_shard_loaded,
-                warm_interval_seconds=warm_interval_seconds,
                 refresh_after_seconds=refresh_after_seconds,
+                max_resident_bytes=_BUDGETS['shard_resident_bytes'],
+                max_disk_bytes=(max_disk_bytes if max_disk_bytes is not None
+                                else _BUDGETS['max_disk_bytes']),
                 name=name,
             )
 
