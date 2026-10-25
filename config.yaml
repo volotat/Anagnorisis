@@ -60,8 +60,12 @@ omni: # The descriptor: writes the natural-language description of a file.
   # from, and the only thing remote servers publish about a file — so it is the
   # one representation shared between machines running different models.
   model_name: "google/gemma-4-E2B-it"
-  load_in_4bit: true # 4-bit NF4: ~6.7 GB of VRAM, peaking near 6.9 GB while it
-                     # writes. Unquantized needs 11 GB and will not fit an 8 GB card.
+  load_in_4bit: auto # auto | true | false. 4-bit NF4 needs ~6.9 GB of VRAM;
+                     # unquantized bfloat16 needs ~11 GB and describes better.
+                     # "auto" goes unquantized when the card has room for it
+                     # (16 GB and up), otherwise 4-bit once a quick test shows
+                     # bitsandbytes works on this GPU. If it does not, the
+                     # unquantized model is split between the card and system RAM.
   cpu_offload_embeddings: false # Escape hatch for cards under ~8 GB: moves the
                      # big embedding table into system RAM, cutting VRAM to
                      # ~2.2 GB. Measured ~20x slower (6s -> 125s per
@@ -77,13 +81,16 @@ omni: # The descriptor: writes the natural-language description of a file.
   video_frames_per_window: 4
   video_sample_max_size: 512 # Max dimension (width or height) for video frame sampling to the omni descriptor
   image_max_size: 512 # Max dimension (width or height) for input images to the omni descriptor
-  min_free_vram_to_run: 7168 # Refuse to load with less than this much free VRAM,
-                     # in MB. Measured peak is 6842 MB, so on an 8 GB card this
-                     # effectively means "only when nothing else is resident" —
-                     # correct, since the descriptor and the embedder cannot
-                     # share the card. A background pass that is refused simply
-                     # retries on its next tick, which is far cheaper than an
-                     # out-of-memory abort halfway through a batch.
+  min_free_vram_to_run: auto # Refuse to load with less than this much free VRAM,
+                     # in MB (null: never check). "auto" follows load_in_4bit:
+                     # 7168 for 4-bit (measured peak 6842 MB; 3072 with
+                     # cpu_offload_embeddings), the weights plus 1.5 GB
+                     # unquantized. On an 8 GB card that effectively means "only
+                     # when nothing else is resident" — correct, since the
+                     # descriptor and the embedder cannot share the card. A
+                     # background pass that is refused simply retries on its next
+                     # tick, which is far cheaper than an out-of-memory abort
+                     # halfway through a batch.
   image_prompt: "Describe this image in detail. Include objects, scene, colors, actions, and any text visible."
   audio_prompt: "Describe the audio in detail. Include instruments, genre, mood, tempo, and any notable features."
   video_prompt: "Describe the video in detail. Include the scene, actions, objects, and any notable events."

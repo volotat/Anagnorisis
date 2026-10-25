@@ -30,13 +30,13 @@ import traceback
 import threading
 import multiprocessing
 import queue
-from typing import Optional, List, Dict, Sequence
+from typing import Optional, List, Dict, NamedTuple, Sequence
 
 import numpy as np
 import setproctitle
 
 import anagnorisis_core.storage.virtual_file_system as vfs
-from anagnorisis_core.models.model_identity import fingerprint_model_dir
+from anagnorisis_core.models.model_identity import fingerprint_model_dir, model_files
 
 # Gemma 4's audio input is a *fixed* window, not a maximum: the processor emits
 # `audio_seq_length` = 750 soft tokens at `audio_ms_per_token` = 40 ms, which is
@@ -78,6 +78,122 @@ def fit_audio_window(clip):
     if len(clip) < AUDIO_WINDOW_SAMPLES:
         return np.pad(clip, (0, AUDIO_WINDOW_SAMPLES - len(clip)))
     return clip
+
+
+# --- Choosing a precision for the card ---
+#
+# `omni.load_in_4bit` and `omni.min_free_vram_to_run` both default to 'auto',
+# so one config serves an 8 GB laptop and a 16 GB desktop card alike. The
+# figures below are what 'auto' works from.
+
+# Measured on an 8 GB card: 4-bit NF4 peaks at 6842 MB while it writes.
+VRAM_NEEDED_4BIT_MB = 7168
+# 4-bit with the embedding table in system RAM (cpu_offload_embeddings):
+# ~2.2 GB measured, plus headroom for the largest window.
+VRAM_NEEDED_4BIT_OFFLOADED_MB = 3072
+# What the unquantized model needs beyond its weights: the GPU runtime's own
+# context and the activations of the largest window. Gemma 4 E2B has been put at
+# 11 GB unquantized against 9.8 GB of weights; this rounds that difference up.
+VRAM_WORKING_MB = 1536
+# Left for whatever else shares the card, such as a desktop on the same GPU.
+VRAM_RESERVE_MB = 1024
+
+
+class PrecisionChoice(NamedTuple):
+    load_in_4bit: bool
+    min_free_vram_mb: Optional[int]  # None: start without checking
+    offload_to_ram: bool  # unquantized and too big: accelerate moves part to RAM
+    reason: str
+
+
+def _is_auto(value) -> bool:
+    return isinstance(value, str) and value.strip().lower() == 'auto'
+
+
+def choose_precision(load_in_4bit, min_free_vram_to_run, total_vram_mb: Optional[int],
+                     weights_mb: int, cpu_offload_embeddings: bool = False,
+                     four_bit_works=lambda: True) -> PrecisionChoice:
+    """How the descriptor is loaded on this machine.
+
+    *load_in_4bit* and *min_free_vram_to_run* are the config values, either
+    explicit or ``'auto'``. *total_vram_mb* is None when there is no GPU.
+
+    'auto' prefers the unquantized model whenever the card holds it with room to
+    spare: better descriptions, and no dependence on bitsandbytes, which ships
+    no working kernels for some GPUs. Smaller cards get 4-bit, but only if
+    *four_bit_works* — asked lazily, because answering it costs a subprocess.
+    """
+    auto_precision = _is_auto(load_in_4bit)
+    if total_vram_mb is None:
+        use_4bit = False if auto_precision else bool(load_in_4bit)
+        return PrecisionChoice(use_4bit, None, False, 'no GPU')
+
+    bf16_mb = int(weights_mb) + VRAM_WORKING_MB
+    fits_bf16 = total_vram_mb >= bf16_mb + VRAM_RESERVE_MB
+
+    if not auto_precision:
+        use_4bit, reason = bool(load_in_4bit), 'set in config'
+    elif fits_bf16:
+        use_4bit, reason = False, f'a {total_vram_mb} MB card holds the unquantized model'
+    elif four_bit_works():
+        use_4bit, reason = True, f'the unquantized model does not fit a {total_vram_mb} MB card'
+    else:
+        use_4bit, reason = False, 'bitsandbytes 4-bit does not work on this GPU'
+
+    if use_4bit:
+        offload = False
+        needed = (VRAM_NEEDED_4BIT_OFFLOADED_MB if cpu_offload_embeddings
+                  else VRAM_NEEDED_4BIT_MB)
+    elif fits_bf16:
+        offload, needed = False, bf16_mb
+    else:
+        # Part of the model will live in system RAM, so wait for a near-empty
+        # card rather than for room that will never exist.
+        offload, needed = True, int(total_vram_mb) - VRAM_RESERVE_MB
+
+    if not _is_auto(min_free_vram_to_run):
+        needed = int(min_free_vram_to_run) if min_free_vram_to_run else None
+    return PrecisionChoice(use_4bit, needed, offload, reason)
+
+
+def checkpoint_size_mb(local_path: str) -> int:
+    """Size of the weight files — for a bf16 checkpoint, what they take on the card."""
+    total = 0
+    for rel in model_files(local_path):
+        name = os.path.basename(rel)
+        if name.endswith('.safetensors') or name.startswith('pytorch_model'):
+            total += os.path.getsize(os.path.join(local_path, rel))
+    return total // 2**20
+
+
+def four_bit_quantization_works() -> bool:
+    """Whether bitsandbytes can quantize to 4-bit on this GPU.
+
+    Asked from a throwaway process, because bitsandbytes does not raise when its
+    kernels cannot run on a card: it prints "no kernel image is available" and
+    calls exit(1). Inside the worker that killed the whole process on every
+    attempt, and the next pass simply tried again — so a GPU bitsandbytes does
+    not support never got a single description.
+    """
+    import subprocess
+    import sys
+
+    probe = ("import torch, bitsandbytes.functional as F; "
+             "F.quantize_4bit(torch.ones(4096, device='cuda', dtype=torch.bfloat16), "
+             "quant_type='nf4'); torch.cuda.synchronize()")
+    try:
+        result = subprocess.run([sys.executable, '-c', probe],
+                                capture_output=True, text=True, timeout=120)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        print(f"OmniDescriptor (Worker): could not test bitsandbytes ({exc}).")
+        return False
+    if result.returncode != 0:
+        lines = (result.stderr or result.stdout or '').strip().splitlines()
+        detail = next((line for line in reversed(lines) if 'error' in line.lower()),
+                      f'exit code {result.returncode}')
+        print(f"OmniDescriptor (Worker): bitsandbytes 4-bit failed on this GPU: {detail}")
+        return False
+    return True
 
 
 # --- The Worker Implementation (Runs in separate process) ---
@@ -151,6 +267,7 @@ class _OmniDescriptorImpl:
 
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.model_hash = None
+        self.precision = None
 
     # ------------------------------------------------------------------
     # Setup
@@ -163,6 +280,10 @@ class _OmniDescriptorImpl:
         local_path = os.path.join(models_folder, self.model_name.replace('/', '__'))
         _ensure_model_downloaded(self.model_name, local_path)
 
+        # Before the hash: the precision changes every description, so it is
+        # part of the identity they are cached under.
+        self.precision = self._choose_precision(local_path)
+
         # Hash the files, not the loaded model — cheap, and it means a failed
         # load still cannot poison the cache with a different key.
         self.model_hash = self._calculate_model_hash(local_path)
@@ -172,6 +293,26 @@ class _OmniDescriptorImpl:
 
         print(f"OmniDescriptor (Worker): Initiated '{self.model_name}' on {self.device}.")
 
+    def _choose_precision(self, local_path: str) -> PrecisionChoice:
+        omni = self.cfg.omni
+        total_mb = None
+        if self.device.type == 'cuda':
+            import torch
+            total_mb = torch.cuda.get_device_properties(0).total_memory // 2**20
+        choice = choose_precision(
+            omni.get('load_in_4bit', 'auto'),
+            omni.get('min_free_vram_to_run', 'auto'),
+            total_mb,
+            checkpoint_size_mb(local_path),
+            cpu_offload_embeddings=omni.get('cpu_offload_embeddings', False),
+            four_bit_works=four_bit_quantization_works,
+        )
+        mode = '4-bit NF4' if choice.load_in_4bit else 'unquantized bfloat16'
+        needs = (f", starts with {choice.min_free_vram_mb} MB of VRAM free"
+                 if choice.min_free_vram_mb else '')
+        print(f"OmniDescriptor (Worker): {mode} ({choice.reason}){needs}.")
+        return choice
+
     def _check_free_vram(self):
         """Refuse to load when the GPU is too full to hold the model.
 
@@ -180,7 +321,7 @@ class _OmniDescriptorImpl:
         scheduler that will simply try again on its next tick, whereas an
         out-of-memory abort takes the whole worker down mid-batch.
         """
-        required_mb = self.cfg.omni.get('min_free_vram_to_run', None)
+        required_mb = self.precision.min_free_vram_mb
         if not required_mb or self.device.type != 'cuda':
             return
         import torch
@@ -207,7 +348,7 @@ class _OmniDescriptorImpl:
 
         load_kwargs = dict(dtype=torch.bfloat16, device_map='auto')
 
-        if self.cfg.omni.get('load_in_4bit', True):
+        if self.precision.load_in_4bit:
             print("OmniDescriptor (Worker): Loading with 4-bit NF4 quantization...")
             # The compute dtype must match the dtype above: the vision and audio
             # towers are not quantised, and handing a bfloat16 conv weight a
@@ -235,6 +376,14 @@ class _OmniDescriptorImpl:
                     load_kwargs['device_map'][self._PER_LAYER_EMBEDDING] = 'cpu'
         else:
             print("OmniDescriptor (Worker): Loading in bfloat16 (unquantized)...")
+            if self.device.type == 'cuda' and not self.precision.offload_to_ram:
+                # Known to fit, so place it ourselves: 'auto' judges by the free
+                # memory of the moment and would quietly move layers to system
+                # RAM if something else happened to be on the card.
+                load_kwargs['device_map'] = {'': 0}
+            elif self.device.type == 'cuda':
+                print("OmniDescriptor (Worker): the card cannot hold it all; part "
+                      "goes to system RAM, so describing will be slow.")
 
         try:
             self.processor = AutoProcessor.from_pretrained(local_path)
@@ -257,7 +406,10 @@ class _OmniDescriptorImpl:
         return fingerprint_model_dir(
             local_path,
             self.model_name,
-            omni.get('load_in_4bit', True),
+            # The resolved choice, not the config value: 'auto' must hash like
+            # the explicit setting it lands on, or switching to it would throw
+            # away every description already cached.
+            self.precision.load_in_4bit,
             omni.get('max_new_tokens', 256),
             omni.get('segment_max_new_tokens', 96),
             omni.get('do_sample', False),

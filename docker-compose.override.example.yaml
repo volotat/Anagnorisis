@@ -48,8 +48,7 @@ services:
     #   - HSA_OVERRIDE_GFX_VERSION=11.0.0   # RDNA3, RX 7000 series
     #
     # --- No GPU (CPU only) ---
-    # Uncomment instead to run without a GPU. Much slower, and the descriptor
-    # needs omni.load_in_4bit set to false in config.yaml.
+    # Uncomment instead to run without a GPU. Much slower.
     #
     # image: anagnorisis:cpu
     # build:
