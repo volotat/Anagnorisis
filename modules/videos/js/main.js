@@ -196,24 +196,115 @@ import createModuleMetaEditors from '/modules/ModuleMetaEditors.js';
 
     const search_state = searchBar.getState();
 
-    video.addEventListener('ended', () => {
-      const list = window.videoPlaylist || [];
-      const next = list[(window.currentVideoIndex || 0) + 1];
-      if (!next) return;
-      window.currentVideoIndex += 1;
-      socket.emit('emit_videos_page_start_streaming', next.file_path, (response) => {
-        if (response && response.stream_url) {
-          if (window.currentHls) {
+    // Bumped by every new play request and by closing the player, so a stream
+    // that finishes starting after it was superseded is dropped, not played.
+    let playRequest = 0;
+
+    // Tell the server to kill the current stream's FFmpeg and remove its files.
+    const stopCurrentStream = () => {
+      const streamId = window.currentStreamId;
+      if (!streamId) return;
+      window.currentStreamId = null;
+      socket.emit('emit_videos_page_stop_streaming', streamId, (response) => {
+        console.log('Stream cleanup response:', response);
+      });
+    };
+
+    // Plays window.videoPlaylist[index]. Clicking a tile and moving on when a
+    // video ends both come through here: the end-of-video path used to have its
+    // own copy, which never stopped the stream it left behind.
+    const playVideoAt = (index) => {
+      const fileData = (window.videoPlaylist || [])[index];
+      if (!fileData) return;
+      window.currentVideoIndex = index;
+      const request = ++playRequest;
+
+      // A fresh player for every video: a reused one could replay what it still
+      // had buffered from the last.
+      if (window.currentHls) {
+        window.currentHls.destroy();
+        window.currentHls = null;
+      }
+      stopCurrentStream();
+
+      socket.emit('emit_videos_page_start_streaming', fileData.file_path, (response) => {
+        if (!response || !response.stream_url) return;
+        if (request !== playRequest) {
+          socket.emit('emit_videos_page_stop_streaming', response.stream_id);
+          return;
+        }
+        // Store the stream ID for cleanup later
+        window.currentStreamId = response.stream_id;
+        // Emit event to update last_played timestamp for the video
+        socket.emit('emit_videos_page_video_start_playing', fileData.file_path);
+
+        // Use an HLS.js player
+        if (Hls.isSupported()) {
+          const hls = new Hls({
+            maxBufferLength: 60,           // Increase buffer length for smoother playback
+            maxMaxBufferLength: 120,        // Maximum buffer size during seeking
+            enableWorker: true,            // Use web workers for better performance
+            lowLatencyMode: false,         // Disable low latency for stability
+            backBufferLength: 60,          // Keep 60 seconds of past video in buffer
+            nudgeMaxRetry: 10,             // More retries when playback stalls
+            maxFragLookUpTolerance: 1.0,   // More tolerance for finding fragments
+            maxLoadingDelay: 4,            // Wait longer for segments to load
+            manifestLoadingMaxRetry: 6,    // More retries for manifest loading
+            levelLoadingMaxRetry: 6,       // More retries for playlist loading
+            fragLoadingMaxRetry: 6,        // More retries for fragment loading
+            startFragPrefetch: true,       // Start fetching next fragment early
+            testBandwidth: false           // Don't do bandwidth testing (more stable)
+          });
+          window.currentHls = hls;
+          // Add event listeners for better debugging
+          hls.on(Hls.Events.ERROR, function(event, data) {
+            console.error('HLS error:', data);
+            if (data.fatal) {
+              console.error('Fatal error:', data.type, data.details);
+              if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+                console.log('Trying to recover from network error');
+                hls.startLoad();
+              } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+                console.log('Trying to recover from media error');
+                hls.recoverMediaError();
+              }
+            }
+          });
+          hls.on(Hls.Events.MANIFEST_PARSED, function() {
+            console.log('HLS manifest loaded successfully');
+            // Reset the video position to 0 before playing
             video.currentTime = 0;
-            window.currentHls.loadSource(response.stream_url);
-            window.currentHls.attachMedia(video);
-          } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-            video.src = response.stream_url;
-          }
-          socket.emit('emit_videos_page_video_start_playing', next.file_path);
-          video.play().catch(()=>{});
+            // Play after a slight delay to ensure proper initialization
+            setTimeout(() => {
+              video.currentTime = 0; // Reset again just to be sure
+              video.play().catch(err => console.log('Auto-play prevented:', err));
+            }, 100);
+          });
+          hls.on(Hls.Events.LEVEL_LOADED, function(event, data) {
+            console.log('HLS level loaded:', data);
+            // Set correct duration from the level details if available
+            if (data.details && data.details.totalduration) {
+              video.duration = data.details.totalduration;
+            }
+          });
+          hls.on(Hls.Events.FRAG_LOADING, function() { /* document.getElementById('loading-indicator').style.display = 'block'; */ });
+          hls.on(Hls.Events.FRAG_LOADED, function() { /* document.getElementById('loading-indicator').style.display = 'none'; */ });
+          // Load the source
+          video.currentTime = 0;
+          hls.loadSource(response.stream_url);
+          hls.attachMedia(video);
+        } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+          // Native HLS support (Safari)
+          video.src = response.stream_url;
+          video.addEventListener('loadedmetadata', () => video.play(), { once: true });
+        } else {
+          alert('Your browser does not support HLS streaming');
         }
       });
+    };
+
+    video.addEventListener('ended', () => {
+      playVideoAt(window.currentVideoIndex + 1);
     });
 
     // Request files from the main media folder
@@ -273,7 +364,9 @@ import createModuleMetaEditors from '/modules/ModuleMetaEditors.js';
         // Close modal functions
         const closeModal = () => {
           modal.classList.remove('is-active');
-          
+          // A stream still starting must not begin playing behind a closed player
+          playRequest++;
+
           // 1. Stop video playback
           video.pause();
           
@@ -293,12 +386,7 @@ import createModuleMetaEditors from '/modules/ModuleMetaEditors.js';
           }
           
           // 5. Notify server to stop transcoding and clean up resources
-          if (window.currentStreamId) {
-            socket.emit('emit_videos_page_stop_streaming', window.currentStreamId, (response) => {
-              console.log('Stream cleanup response:', response);
-              window.currentStreamId = null;
-            });
-          }
+          stopCurrentStream();
         };
 
         // Close when X button clicked
@@ -309,89 +397,10 @@ import createModuleMetaEditors from '/modules/ModuleMetaEditors.js';
     });
 
     const handleFileClickAction = (fileData) => {
-        //Logic to open modal and play video
         modal.classList.add('is-active');
-        window.currentVideoIndex = (window.videoPlaylist || []).findIndex(f => f.hash === fileData.hash);
-        
-        // Request a stream for the video file
-        socket.emit('emit_videos_page_start_streaming', fileData.file_path, (response) => {
-            if (response && response.stream_url) {
-                // Store the stream ID for cleanup later
-                window.currentStreamId = response.stream_id;
-                // Emit event to update last_played timestamp for the video
-                socket.emit('emit_videos_page_video_start_playing', fileData.file_path); 
-
-                // Use an HLS.js player
-                if (Hls.isSupported()) {
-                    const video = document.getElementById('modal-video-player');
-                    // Destroy previous HLS instance if it exists
-                    if (window.currentHls) {
-                        window.currentHls.destroy();
-                    }
-                    const hls = new Hls({
-                        maxBufferLength: 60,           // Increase buffer length for smoother playback
-                        maxMaxBufferLength: 120,        // Maximum buffer size during seeking
-                        enableWorker: true,            // Use web workers for better performance
-                        lowLatencyMode: false,         // Disable low latency for stability
-                        backBufferLength: 60,          // Keep 60 seconds of past video in buffer
-                        nudgeMaxRetry: 10,             // More retries when playback stalls
-                        maxFragLookUpTolerance: 1.0,   // More tolerance for finding fragments
-                        maxLoadingDelay: 4,            // Wait longer for segments to load
-                        manifestLoadingMaxRetry: 6,    // More retries for manifest loading
-                        levelLoadingMaxRetry: 6,       // More retries for playlist loading
-                        fragLoadingMaxRetry: 6,        // More retries for fragment loading
-                        startFragPrefetch: true,       // Start fetching next fragment early
-                        testBandwidth: false           // Don't do bandwidth testing (more stable)
-                    });
-                    window.currentHls = hls;
-                    // Add event listeners for better debugging
-                    hls.on(Hls.Events.ERROR, function(event, data) {
-                        console.error('HLS error:', data);
-                        if (data.fatal) {
-                            console.error('Fatal error:', data.type, data.details);
-                            if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
-                                console.log('Trying to recover from network error');
-                                hls.startLoad();
-                            } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
-                                console.log('Trying to recover from media error');
-                                hls.recoverMediaError();
-                            }
-                        }
-                    });
-                    hls.on(Hls.Events.MANIFEST_PARSED, function() {
-                        console.log('HLS manifest loaded successfully');
-                        // Reset the video position to 0 before playing
-                        video.currentTime = 0;
-                        // Play after a slight delay to ensure proper initialization
-                        setTimeout(() => {
-                            video.currentTime = 0; // Reset again just to be sure
-                            video.play().catch(err => console.log('Auto-play prevented:', err));
-                        }, 100);
-                    });
-                    hls.on(Hls.Events.LEVEL_LOADED, function(event, data) {
-                        console.log('HLS level loaded:', data);
-                        // Set correct duration from the level details if available
-                        if (data.details && data.details.totalduration) {
-                            video.duration = data.details.totalduration;
-                        }
-                    });
-                    hls.on(Hls.Events.FRAG_LOADING, function() { /* document.getElementById('loading-indicator').style.display = 'block'; */ });
-                    hls.on(Hls.Events.FRAG_LOADED, function() { /* document.getElementById('loading-indicator').style.display = 'none'; */ });
-                    // Load the source
-                    video.currentTime = 0;
-                    hls.loadSource(response.stream_url);
-                    hls.attachMedia(video);
-                } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-                    // Native HLS support (Safari)
-                    video.src = response.stream_url;
-                    video.addEventListener('loadedmetadata', function() {
-                        video.play();
-                    });
-                } else {
-                    alert('Your browser does not support HLS streaming');
-                }
-            }
-        });
+        // By file_path: files no longer carry a hash, and matching on the
+        // missing field found the first video on the page every time.
+        playVideoAt((window.videoPlaylist || []).findIndex(f => f.file_path === fileData.file_path));
     }
         
     // Display current search status
