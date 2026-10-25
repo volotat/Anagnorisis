@@ -4,6 +4,7 @@ import PaginationComponent from '/modules/PaginationComponent.js';
 import SearchBarComponent from '/modules/SearchBarComponent.js';
 import ContextMenuComponent from '/modules/ContextMenuComponent.js';
 import createModuleMetaEditors from '/modules/ModuleMetaEditors.js';
+import StarRatingComponent from '/modules/StarRating.js';
 
 // Create a closed scope to avoid any variable collisions  
 (function() {
@@ -41,6 +42,12 @@ import createModuleMetaEditors from '/modules/ModuleMetaEditors.js';
     return videoPreviewContainer;
   }
 
+  // Shared by the tile and by rating from the player, which updates the tile.
+  function userRatingHtml(fileData) {
+    const rating = fileData.file_info.user_rating;
+    return `<b>User rating:</b>&nbsp;${rating !== null && rating !== undefined ? rating.toFixed(1) : 'N/A'}`;
+  }
+
   function renderCustomData(fileData) {
     const dataContainer = document.createElement('div');
     dataContainer.className = 'file-custom-data';
@@ -69,7 +76,7 @@ import createModuleMetaEditors from '/modules/ModuleMetaEditors.js';
     // User Rating
     const userRatingElement = document.createElement('p');
     userRatingElement.className = 'file-info file-user-rating';
-    userRatingElement.innerHTML = `<b>User rating:</b>&nbsp;${fileData.file_info.user_rating !== null ? fileData.file_info.user_rating.toFixed(1) : 'N/A'}`;
+    userRatingElement.innerHTML = userRatingHtml(fileData);
     dataContainer.appendChild(userRatingElement);
 
     // Model Rating
@@ -210,14 +217,49 @@ import createModuleMetaEditors from '/modules/ModuleMetaEditors.js';
       });
     };
 
-    // Plays window.videoPlaylist[index]. Clicking a tile and moving on when a
-    // video ends both come through here: the end-of-video path used to have its
-    // own copy, which never stopped the stream it left behind.
+    // The player's own controls: previous / next on its sides, hidden at the
+    // ends of the page, and the rating of whatever is playing.
+    const prevBtn = document.getElementById('video_prev_btn');
+    const nextBtn = document.getElementById('video_next_btn');
+    const ratingElement = document.getElementById('video_modal_rating');
+
+    const showNowPlaying = (index, fileData) => {
+      const count = (window.videoPlaylist || []).length;
+      prevBtn.toggleAttribute('disabled', index <= 0);
+      nextBtn.toggleAttribute('disabled', index >= count - 1);
+      // Names the video in the system's media controls, where those keys show it.
+      if ('mediaSession' in navigator) {
+        navigator.mediaSession.metadata = new MediaMetadata({ title: fileData.base_name });
+      }
+
+      // As in the music player: the user's rating, or the model's until then.
+      const info = fileData.file_info;
+      const starRating = new StarRatingComponent({
+        initialRating: info.user_rating ?? info.model_rating ?? null,
+        callback: (rating) => {
+          socket.emit('emit_set_file_rating', { file_path: fileData.file_path, rating: rating });
+          info.user_rating = rating;
+          const tileRating = document.querySelector(
+            `[data-file-path="${CSS.escape(fileData.file_path)}"] .file-user-rating`);
+          if (tileRating) tileRating.innerHTML = userRatingHtml(fileData);
+        },
+      });
+      starRating.isUserRated = info.user_rating != null;
+      ratingElement.replaceChildren(starRating.issueNewHtmlComponent({
+        containerType: 'span', size: 24, isActive: true,
+      }));
+    };
+
+    // Plays window.videoPlaylist[index]. Clicking a tile, the previous/next
+    // buttons and moving on when a video ends all come through here: the
+    // end-of-video path used to have its own copy, which never stopped the
+    // stream it left behind.
     const playVideoAt = (index) => {
       const fileData = (window.videoPlaylist || [])[index];
       if (!fileData) return;
       window.currentVideoIndex = index;
       const request = ++playRequest;
+      showNowPlaying(index, fileData);
 
       // A fresh player for every video: a reused one could replay what it still
       // had buffered from the last.
@@ -306,6 +348,18 @@ import createModuleMetaEditors from '/modules/ModuleMetaEditors.js';
     video.addEventListener('ended', () => {
       playVideoAt(window.currentVideoIndex + 1);
     });
+    prevBtn.addEventListener('click', () => playVideoAt(window.currentVideoIndex - 1));
+    nextBtn.addEventListener('click', () => playVideoAt(window.currentVideoIndex + 1));
+
+    // The keyboard's previous / next track keys, as in the music module. Only
+    // while the player is open, so a key press never starts a hidden video.
+    if ('mediaSession' in navigator) {
+      const step = (delta) => {
+        if (modal.classList.contains('is-active')) playVideoAt(window.currentVideoIndex + delta);
+      };
+      navigator.mediaSession.setActionHandler('previoustrack', () => step(-1));
+      navigator.mediaSession.setActionHandler('nexttrack', () => step(1));
+    }
 
     // Request files from the main media folder
     // --- Folder View ---
